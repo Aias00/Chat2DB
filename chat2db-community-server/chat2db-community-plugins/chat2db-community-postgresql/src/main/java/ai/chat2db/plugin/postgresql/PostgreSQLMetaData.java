@@ -172,7 +172,7 @@ public class PostgreSQLMetaData extends DefaultMetaService implements IDbMetaDat
             while (resultSet.next()) {
                 String constraintDefinition = resultSet.getString("CONSTRAINT_DEFINITION");
                 String constraintName = resultSet.getString("CONSTRAINT_NAME");
-                if (StringUtils.isNotBlank(constraintName) && StringUtils.isNotBlank(constraintName)) {
+                if (StringUtils.isNotBlank(constraintName) && StringUtils.isNotBlank(constraintDefinition)) {
                     constraintNameSet.add(constraintName);
                     constraintsBuilder.append("\t").append(" constraint ")
                             .append(constraintName)
