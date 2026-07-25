@@ -23,7 +23,7 @@ const Log = forwardRef((props: IProps, ref: ForwardedRef<LogRef>) => {
   const timer = useRef<NodeJS.Timeout>();
   const logEndRef = useRef<HTMLDivElement>(null);
   const timerNumber = useRef<number>(500);
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
   const { getTaskList } = useImportExportStore((state) => {
     return {
       getTaskList: state.getTaskList,
@@ -31,11 +31,12 @@ const Log = forwardRef((props: IProps, ref: ForwardedRef<LogRef>) => {
   });
 
   useEffect(() => {
-    mountedRef.current = true;
-    getTaskDetails();
+    const requestGeneration = requestGenerationRef.current + 1;
+    requestGenerationRef.current = requestGeneration;
     timerNumber.current = 500;
+    getTaskDetails(requestGeneration);
     return () => {
-      mountedRef.current = false;
+      requestGenerationRef.current += 1;
       // clear timer
       if (timer.current) {
         clearTimeout(timer.current);
@@ -43,14 +44,14 @@ const Log = forwardRef((props: IProps, ref: ForwardedRef<LogRef>) => {
     };
   }, [taskId]);
 
-  const getTaskDetails = () => {
+  const getTaskDetails = (requestGeneration: number) => {
     // clear timer
     if (timer.current) {
       clearTimeout(timer.current);
     }
     // Get task details
     importExportServices.getTaskDetails({ id: taskId }).then((res) => {
-      if (!mountedRef.current) {
+      if (requestGeneration !== requestGenerationRef.current) {
         return;
       }
       // Setup task details
@@ -63,7 +64,7 @@ const Log = forwardRef((props: IProps, ref: ForwardedRef<LogRef>) => {
       ) {
         //
         timer.current = setTimeout(() => {
-          getTaskDetails();
+          getTaskDetails(requestGeneration);
         }, timerNumber.current);
         // timer time increment
         timerNumber.current = timerNumber.current + 1000;
