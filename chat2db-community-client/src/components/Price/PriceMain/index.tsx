@@ -66,14 +66,17 @@ const PriceMain = ({ tabIndex, onTabChange, isSinglePage, productParams }: IProp
       // for conversion reporting after polling confirms payment.
       // Use a ref instead of curOrderInfo state because recursive polling captures state from before setState.
   const orderInfoRef = useRef<CreateOrderResponse>();
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (!isSinglePage) {
       const { curOrg } = useOrgStore.getState();
       handleTabChange(curOrg?.type || OrganizationType.PERSONAL);
     }
 
     return () => {
+      mountedRef.current = false;
       clearTimeout(timer.current);
     };
   }, []);
@@ -150,6 +153,9 @@ const PriceMain = ({ tabIndex, onTabChange, isSinglePage, productParams }: IProp
     pricingServices
       .getOrder({ orderId: _id })
       .then((res) => {
+        if (!mountedRef.current) {
+          return;
+        }
         if (res.status === PayStatus.PAY_SUCCESS) {
           setPricingModalStatus(false);
           updatePayStatus(PayStatus.PAY_SUCCESS);
