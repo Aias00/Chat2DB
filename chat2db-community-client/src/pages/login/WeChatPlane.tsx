@@ -12,36 +12,36 @@ const WeChatPlane = memo<Props>(() => {
   const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string>('');
   const setIntervalRef = useRef<any>();
   const startTime = useRef<any>();
-  const disposedRef = useRef(false);
+  const requestGenerationRef = useRef(0);
 
   useEffect(() => {
-    disposedRef.current = false;
-    getQRCode();
+    const generation = ++requestGenerationRef.current;
+    getQRCode(generation);
 
     return () => {
-      disposedRef.current = true;
-      setIntervalRef.current && clearInterval(setIntervalRef.current);
+      requestGenerationRef.current += 1;
+      setIntervalRef.current && clearTimeout(setIntervalRef.current);
     };
   }, []);
 
-  const getQRCode = () => {
+  const getQRCode = (generation: number) => {
     oauthServices.getWechatQrCode().then((res) => {
-      if (disposedRef.current) {
+      if (generation !== requestGenerationRef.current) {
         return;
       }
       startTime.current = new Date().getTime();
       setWechatQrCodeUrl(res.wechatQrCodeUrl);
-      checkQRCodeStatus(res.token);
+      checkQRCodeStatus(res.token, generation);
     });
   };
 
-  const checkQRCodeStatus = (token) => {
+  const checkQRCodeStatus = (token, generation: number) => {
     oauthServices
       .getWechatLoginStatus({
         token,
       })
       .then((res) => {
-        if (disposedRef.current) {
+        if (generation !== requestGenerationRef.current) {
           return;
         }
         if (res) {
@@ -58,13 +58,13 @@ const WeChatPlane = memo<Props>(() => {
         }
 
         if (new Date().getTime() - startTime.current > 10 * 60 * 1000) {
-          clearInterval(setIntervalRef.current);
-          getQRCode();
+          clearTimeout(setIntervalRef.current);
+          getQRCode(generation);
           return;
         }
 
         setIntervalRef.current = setTimeout(() => {
-          checkQRCodeStatus(token);
+          checkQRCodeStatus(token, generation);
         }, 2000);
       });
   };
