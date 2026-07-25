@@ -66,17 +66,15 @@ const PriceMain = ({ tabIndex, onTabChange, isSinglePage, productParams }: IProp
       // for conversion reporting after polling confirms payment.
       // Use a ref instead of curOrderInfo state because recursive polling captures state from before setState.
   const orderInfoRef = useRef<CreateOrderResponse>();
-  const mountedRef = useRef(true);
 
   useEffect(() => {
-    mountedRef.current = true;
     if (!isSinglePage) {
       const { curOrg } = useOrgStore.getState();
       handleTabChange(curOrg?.type || OrganizationType.PERSONAL);
     }
 
     return () => {
-      mountedRef.current = false;
+      curOrderIndex.current += 1;
       clearTimeout(timer.current);
     };
   }, []);
@@ -140,20 +138,22 @@ const PriceMain = ({ tabIndex, onTabChange, isSinglePage, productParams }: IProp
       setPayUrl(res.qrCodeUrl);
     } else {
       createQRCode(res.url).then((url) => {
-        setPayUrl(url);
+        if (nextOrderIndex === curOrderIndex.current) {
+          setPayUrl(url);
+        }
       });
     }
 
     setOrderInfo(res);
     orderInfoRef.current = res;
-    polling(res.orderId);
+    polling(res.orderId, nextOrderIndex);
   };
 
-  const polling = (_id: string) => {
+  const polling = (_id: string, orderIndex: number) => {
     pricingServices
       .getOrder({ orderId: _id })
       .then((res) => {
-        if (!mountedRef.current) {
+        if (orderIndex !== curOrderIndex.current) {
           return;
         }
         if (res.status === PayStatus.PAY_SUCCESS) {
@@ -180,11 +180,13 @@ const PriceMain = ({ tabIndex, onTabChange, isSinglePage, productParams }: IProp
         }
 
         timer.current = setTimeout(() => {
-          polling(_id);
+          polling(_id, orderIndex);
         }, 3000);
       })
       .catch(() => {
-        clearTimeout(timer.current);
+        if (orderIndex === curOrderIndex.current) {
+          clearTimeout(timer.current);
+        }
       });
   };
 
