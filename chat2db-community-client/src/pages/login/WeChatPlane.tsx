@@ -12,17 +12,23 @@ const WeChatPlane = memo<Props>(() => {
   const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string>('');
   const setIntervalRef = useRef<any>();
   const startTime = useRef<any>();
+  const disposedRef = useRef(false);
 
   useEffect(() => {
+    disposedRef.current = false;
     getQRCode();
 
     return () => {
+      disposedRef.current = true;
       setIntervalRef.current && clearInterval(setIntervalRef.current);
     };
   }, []);
 
   const getQRCode = () => {
     oauthServices.getWechatQrCode().then((res) => {
+      if (disposedRef.current) {
+        return;
+      }
       startTime.current = new Date().getTime();
       setWechatQrCodeUrl(res.wechatQrCodeUrl);
       checkQRCodeStatus(res.token);
@@ -35,6 +41,9 @@ const WeChatPlane = memo<Props>(() => {
         token,
       })
       .then((res) => {
+        if (disposedRef.current) {
+          return;
+        }
         if (res) {
           const { redirect } = getAllUrlParams(window.location.href);
           if (redirect) {
