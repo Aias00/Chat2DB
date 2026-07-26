@@ -139,7 +139,7 @@ public enum KingBaseColumnTypeEnum implements IColumnBuilder {
     public String buildModifyColumn(TableColumn column) {
 
         if (EditStatusEnum.DELETE.name().equals(column.getEditStatus())) {
-            return StringUtils.join(SQL_DROP_COLUMN, column.getName() + "`");
+            return StringUtils.join(SQL_DROP_COLUMN, column.getName() + "\"");
         }
         if (EditStatusEnum.ADD.name().equals(column.getEditStatus())) {
             return StringUtils.join("ADD COLUMN ", buildCreateColumnSql(column));
