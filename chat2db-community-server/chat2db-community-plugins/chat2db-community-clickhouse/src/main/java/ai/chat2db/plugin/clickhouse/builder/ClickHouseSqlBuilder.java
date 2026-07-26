@@ -12,9 +12,11 @@ import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.metadata.TableIndex;
 import ai.chat2db.community.domain.api.config.TableBuilderConfig;
 import org.apache.commons.lang3.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 
 import static ai.chat2db.plugin.clickhouse.constant.ClickHouseSqlBuilderConstants.*;
+@Slf4j
 public class ClickHouseSqlBuilder extends DefaultSqlBuilder {
 
 
@@ -46,6 +48,10 @@ public class ClickHouseSqlBuilder extends DefaultSqlBuilder {
                 continue;
             }
             ClickHouseIndexTypeEnum mysqlIndexTypeEnum = ClickHouseIndexTypeEnum.getByType(tableIndex.getType());
+            if (mysqlIndexTypeEnum == null) {
+                log.warn("Skipping unknown ClickHouse index type '{}' for index '{}'", tableIndex.getType(), tableIndex.getName());
+                continue;
+            }
             if (!ClickHouseIndexTypeEnum.PRIMARY.equals(mysqlIndexTypeEnum) ) {
                 script.append(SQLConstants.TAB).append(SQLConstants.EMPTY).append(mysqlIndexTypeEnum.buildIndexScript(tableIndex)).append(SQLConstants.COMMA_LINE_SEPARATOR);
             }
