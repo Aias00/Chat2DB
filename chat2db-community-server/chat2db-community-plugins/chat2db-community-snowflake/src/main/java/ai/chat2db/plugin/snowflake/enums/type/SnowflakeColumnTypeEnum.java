@@ -147,7 +147,7 @@ public enum SnowflakeColumnTypeEnum implements IColumnBuilder {
         }
 
         if (Arrays.asList(DECIMAL, FLOAT, DOUBLE,TINYINT, INT, NUMBER, NUMERIC, INTEGER, BIGINT, SMALLINT, BYTEINT).contains(type)) {
-            if (column.getColumnSize() == null || column.getDecimalDigits() == null) {
+            if (column.getColumnSize() == null) {
                 return columnType;
             }
             if (column.getColumnSize() != null && column.getDecimalDigits() == null) {
