@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Flex, Form, Input, Modal } from 'antd';
 import { OrgUserRoleCode, OrganizationType } from '@/typings/enterprise/organization';
 import orgService from '@/service/enterprise/organization';
@@ -36,13 +36,18 @@ function OrgSetting() {
 
   const [userList, setUserList] = useState<OptionType>([]);
   const [userOptions, setUserOptions] = useState<OptionType>([]);
+  const mountedRef = useRef(true);
 
   if (!curOrg) return null;
 
   const isOwner = useMemo(() => curOrg?.roleCodes?.find((v) => v === OrgUserRoleCode.SUPER_ADMIN), [curOrg]);
 
   useEffect(() => {
+    mountedRef.current = true;
     queryUserList();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const queryUserList = async () => {
@@ -61,6 +66,7 @@ function OrgSetting() {
         });
         return acc;
       }, []);
+      if (!mountedRef.current) return;
       setUserList(options);
       setUserOptions(options);
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStyles } from './style';
 import { Button, Flex, Form, Table, Tag } from 'antd';
 import { CopyButton, IconButton, Input, Modal, staticMessage } from '@chat2db/ui';
@@ -37,9 +37,14 @@ const Invite = () => {
     appUrlConfig: state.appUrlConfig,
   }));
   const [form] = Form.useForm();
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     queryInvitationCode();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -53,6 +58,7 @@ const Invite = () => {
    */
   const queryInvitationCode = async () => {
     const code = await invitationService.getMyInvitationCode();
+    if (!mountedRef.current) return;
     setInvitationCode(code);
   };
 
@@ -60,11 +66,14 @@ const Invite = () => {
     setLoading(true);
     try {
       const res = await invitationService.getInvitationOrderItem();
+      if (!mountedRef.current) return;
       setInvitationOrder(res);
     } catch {
       return;
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

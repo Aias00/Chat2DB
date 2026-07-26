@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import connection from '@/service/connection';
 import sqlService from '@/service/sql';
 import { Cascader } from 'antd';
@@ -41,9 +41,14 @@ interface CascaderDBProps {
 const CascaderDB = (props: CascaderDBProps) => {
   const [options, setOptions] = useState<Option[]>([]);
   const { styles } = useStyles();
+  const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     // TODO: Request data-source data.
     loadDataSource();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const loadDataSource = async () => {
@@ -70,6 +75,7 @@ const CascaderDB = (props: CascaderDBProps) => {
         isLeaf: false,
         dataSourceId: item.id,
       }));
+      if (!mountedRef.current) return;
       setOptions(formattedData);
     } catch (error) {
       console.log(error);

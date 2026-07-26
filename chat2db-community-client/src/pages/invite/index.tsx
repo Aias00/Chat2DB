@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStyles } from './style';
 import { Input, TextArea } from '@chat2db/ui';
 import Logo from '@/components/Logo';
@@ -32,14 +32,20 @@ const Invite = () => {
     appUrlConfig: state.appUrlConfig,
   }));
   const [form] = Form.useForm();
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     queryTeamInfo();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const queryTeamInfo = async () => {
     const { organizationCode, inviterId } = getAllUrlParams();
     const res = await organizationService.queryOrgByTeamCode({ teamCode: organizationCode, inviterId });
+    if (!mountedRef.current) return;
     setInviteOrg(res);
     setPageStep(res ? PageStep.Init : PageStep.Empty);
   };

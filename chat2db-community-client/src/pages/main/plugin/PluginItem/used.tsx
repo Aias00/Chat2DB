@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PluginService from '@/service/plugin';
 import { IPluginDataPackageVO } from '@/typings/plugin';
 import { Table, Tag } from 'antd';
@@ -10,14 +10,20 @@ import { useStyles } from './style';
 const UsedContent = ({ token }) => {
   const { styles } = useStyles();
   const [pluginDataPackageList, setPluginDataPackageList] = useState<IPluginDataPackageVO[]>([]);
+  const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     if (token) {
       queryPluginDataPackageList(token);
     }
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const queryPluginDataPackageList = async (accessToken) => {
     const res = await PluginService.queryPluginDataPackageList({ token: accessToken });
+    if (!mountedRef.current) return;
     setPluginDataPackageList(res);
   };
 
