@@ -80,7 +80,7 @@ export const barDataTreating = (props: DataTreatingProps) => {
     const sortedIndices = dataToSort
       .map((_, index) => index)
       .sort((a, b) => {
-        const compareResult = dataToSort[a] < dataToSort[b] ? -1 : 1;
+        const compareResult = dataToSort[a] < dataToSort[b] ? -1 : dataToSort[a] > dataToSort[b] ? 1 : 0;
         return orderByRule === OrderByRule.ASC ? compareResult : -compareResult;
       });
 
