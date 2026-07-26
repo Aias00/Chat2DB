@@ -376,7 +376,7 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             if (Arrays.asList(DECIMAL).contains(type) && column.getColumnSize() == null && column.getDecimalDigits() != null) {
                 return StringUtils.join(columnType, "(", DEFAULT_DECIMAL_COLUMN_SIZE + "," + column.getDecimalDigits() + ")");
             }
-            if (column.getColumnSize() == null || column.getDecimalDigits() == null) {
+            if (column.getColumnSize() == null) {
                 return columnType;
             }
             if (column.getColumnSize() != null && column.getDecimalDigits() == null) {
@@ -391,7 +391,7 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             if (Arrays.asList(DECIMAL_UNSIGNED).contains(type) && column.getColumnSize() == null && column.getDecimalDigits() != null) {
                 return unsignedDataType(columnType, "(" + DEFAULT_DECIMAL_COLUMN_SIZE + "," + column.getDecimalDigits() + ")");
             }
-            if (column.getColumnSize() == null || column.getDecimalDigits() == null) {
+            if (column.getColumnSize() == null) {
                 return columnType;
             }
             if (column.getColumnSize() != null && column.getDecimalDigits() == null) {
