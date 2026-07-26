@@ -9,6 +9,7 @@ import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.metadata.TableIndex;
 import ai.chat2db.community.domain.api.config.TableBuilderConfig;
 import org.apache.commons.lang3.StringUtils;
+import java.util.Objects;
 
 import static ai.chat2db.plugin.snowflake.constant.SnowflakeSqlBuilderConstants.*;
 public class SnowflakeSqlBuilder extends DefaultSqlBuilder {
@@ -33,6 +34,9 @@ public class SnowflakeSqlBuilder extends DefaultSqlBuilder {
                 continue;
             }
             SnowflakeColumnTypeEnum typeEnum = SnowflakeColumnTypeEnum.getByType(column.getColumnType());
+            if (typeEnum == null) {
+                continue;
+            }
             script.append(SQLConstants.TAB).append(typeEnum.buildCreateColumnSql(column)).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
         for (TableIndex tableIndex : table.getIndexList()) {
@@ -40,6 +44,9 @@ public class SnowflakeSqlBuilder extends DefaultSqlBuilder {
                 continue;
             }
             SnowflakeIndexTypeEnum mysqlIndexTypeEnum = SnowflakeIndexTypeEnum.getByType(tableIndex.getType());
+            if (mysqlIndexTypeEnum == null) {
+                continue;
+            }
             script.append(SQLConstants.TAB).append(SQLConstants.EMPTY).append(mysqlIndexTypeEnum.buildIndexScript(tableIndex)).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
 
@@ -94,12 +101,15 @@ public class SnowflakeSqlBuilder extends DefaultSqlBuilder {
                 script.append(SQLConstants.TAB).append(SQL_SET_COMMENT).append(SQLConstants.SINGLE_QUOTE).append(newTable.getComment()).append(SQLConstants.SINGLE_QUOTE).append(SQLConstants.COMMA_LINE_SEPARATOR);
             }
         }
-        if (oldTable.getIncrementValue() != newTable.getIncrementValue()) {
+        if (!Objects.equals(oldTable.getIncrementValue(), newTable.getIncrementValue())) {
             script.append(SQLConstants.TAB).append(SQL_AUTO_INCREMENT_EQUAL).append(newTable.getIncrementValue()).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
         for (TableColumn tableColumn : newTable.getColumnList()) {
             if (StringUtils.isNotBlank(tableColumn.getEditStatus()) && StringUtils.isNotBlank(tableColumn.getColumnType()) && StringUtils.isNotBlank(tableColumn.getName())) {
                 SnowflakeColumnTypeEnum typeEnum = SnowflakeColumnTypeEnum.getByType(tableColumn.getColumnType());
+                if (typeEnum == null) {
+                    continue;
+                }
                 script.append(SQLConstants.TAB).append(typeEnum.buildModifyColumn(tableColumn)).append(SQLConstants.COMMA_LINE_SEPARATOR);
             }
         }
