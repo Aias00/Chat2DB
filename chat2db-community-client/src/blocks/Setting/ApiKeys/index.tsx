@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useStyles } from './style';
 import SettingSubsection from '../SettingSubsection';
 import i18n, { i18nElement } from '@/i18n';
@@ -23,6 +23,7 @@ export default memo<IProps>((props) => {
   const [loading, setLoading] = useState(false);
   const [apiKeys, setApiKeys] = useState<ApiKeyDetail[]>([]);
   const [currentApiKey, setCurrentApiKey] = useState<ApiKeyDetail | null>(null);
+  const mountedRef = useRef(true);
 
   const { openUnifiedConfirmationModal, appUrlConfig } = useGlobalStore((state) => {
     return {
@@ -32,7 +33,11 @@ export default memo<IProps>((props) => {
   });
 
   useEffect(() => {
+    mountedRef.current = true;
     getApiKeyList();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const renderDescribe = () => {
@@ -52,6 +57,7 @@ export default memo<IProps>((props) => {
     apiKeysServices
       .getApiKeyList()
       .then((res) => {
+        if (!mountedRef.current) return;
         setApiKeys(res);
       });
   };

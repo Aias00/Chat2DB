@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useStyles } from './style';
 import i18n from '@/i18n';
 import { ToolbarBtn, LoadingGracile, staticMessage } from '@chat2db/ui';
@@ -44,8 +44,14 @@ export default memo<IProps>((props) => {
   const [submitLoading] = useState(false);
   const [dataSource, setDataSource, getDataSource] = useSyncState<any[]>([]);
 
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
     getTableComment();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const getTableComment = () => {
@@ -89,6 +95,7 @@ export default memo<IProps>((props) => {
         tableName,
         refresh: true,
       }).then((sqlRes) => {
+        if (!mountedRef.current) return;
         const findColumnAlias = (columnName: string) => {
           return aiRes.tableCommentExt?.columnAlias?.find((item) => item.columnName === columnName) || {};
         };

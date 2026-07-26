@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import SearchResult from '@/blocks/SearchResult';
 import { processResultDataList } from '@/utils/database';
 import { IManageResultData, IViewTableParams } from '@/typings';
@@ -16,15 +16,21 @@ const ViewTable = memo<IProps>((props) => {
   const { viewTableParams } = props;
   const { styles } = useStyles();
   const [resultDataList, setResultDataList] = useState<IManageResultData[]>();
+  const mountedRef = useRef(true);
   const { executing, executeSQL, stopExecuteSQL } = useViewTable();
 
   useEffect(() => {
+    mountedRef.current = true;
     if (viewTableParams) {
       executeSQL(viewTableParams).then((data) => {
+        if (!mountedRef.current) return;
         const _resultDataList = processResultDataList(data, viewTableParams);
         setResultDataList(_resultDataList);
       });
     }
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   return (

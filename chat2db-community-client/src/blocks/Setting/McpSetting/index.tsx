@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Form, Input, Popconfirm, Switch } from 'antd';
 import { staticMessage } from '@chat2db/ui';
 import i18n from '@/i18n';
@@ -11,6 +11,7 @@ import { useStyles } from '../BaseSetting/style';
 export default function McpSetting() {
   const { styles } = useStyles();
   const [token, setToken] = useState('');
+  const mountedRef = useRef(true);
   const { enableMcp, setBaseSetting } = useGlobalStore((state) => {
     return {
       enableMcp: state.baseSetting.enableMcp,
@@ -19,7 +20,15 @@ export default function McpSetting() {
   });
 
   useEffect(() => {
-    jcefApi.getMcpToken().then(setToken);
+    mountedRef.current = true;
+    jcefApi.getMcpToken().then((t) => {
+      if (mountedRef.current) {
+        setToken(t);
+      }
+    });
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   function changeMcpEnabled(checked: boolean) {

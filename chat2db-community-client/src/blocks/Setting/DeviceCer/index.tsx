@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStyles } from './style';
 import SettingSubsection from '../SettingSubsection';
 import { Form, Input, Select, Button, Typography, Flex, Popconfirm } from 'antd';
@@ -23,8 +23,14 @@ const DeviceCer = () => {
   const { appUrlConfig } = useGlobalStore((state) => ({
     appUrlConfig: state.appUrlConfig,
   }));
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
     queryLicenseInfo();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const handleFormValuesChange = (changedValues: any, allValues: any) => {
@@ -47,6 +53,7 @@ const DeviceCer = () => {
     const filterArr = res.filter((t) => t.canGenerateCer);
     const canSelectArr = filterArr.filter((t) => t.licenseBindCount < t.licenseAvailableCount);
     const canNotSelectArr = filterArr.filter((t) => t.licenseBindCount >= t.licenseAvailableCount);
+    if (!mountedRef.current) return;
     setLicenseList([...canSelectArr, ...canNotSelectArr]);
   };
 
