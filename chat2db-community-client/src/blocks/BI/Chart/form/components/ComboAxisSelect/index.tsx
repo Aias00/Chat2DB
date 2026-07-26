@@ -122,7 +122,7 @@ const ComboAxisSelectItem = (props: IItemProps) => {
   }, []);
 
   const actionList = useMemo(() => {
-    const _list = [
+    const allActions = [
       {
         key: 'move-up',
         label: i18n('common.button.moveUp'),
@@ -148,13 +148,13 @@ const ComboAxisSelectItem = (props: IItemProps) => {
         },
       },
     ];
-    if (isFirst) {
-      _list.splice(0, 1); // Remove Move Up
-    }
-    if (isLast) {
-      _list.splice(1, 1); // Remove Move Down
-    }
-    return _list;
+    // Filter by action key instead of splicing by index, so the result
+    // is correct regardless of whether both isFirst and isLast are true.
+    return allActions.filter((action) => {
+      if (isFirst && action.key === 'move-up') return false;
+      if (isLast && action.key === 'move-down') return false;
+      return true;
+    });
   }, [isFirst, isLast]);
 
   return (
