@@ -11,6 +11,7 @@ import { copyToClipboard } from '@/utils';
 import { Dot } from 'lucide-react';
 import { useGlobalStore } from '@/store/global';
 import { openWebPage } from '@/utils/url';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 const DeviceCer = () => {
   const { styles } = useStyles();
@@ -23,13 +24,12 @@ const DeviceCer = () => {
   const { appUrlConfig } = useGlobalStore((state) => ({
     appUrlConfig: state.appUrlConfig,
   }));
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
 
   useEffect(() => {
-    mountedRef.current = true;
     queryLicenseInfo();
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
@@ -49,11 +49,12 @@ const DeviceCer = () => {
   };
 
   const queryLicenseInfo = async () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     const res = await LicenseService.getLicenseList();
     const filterArr = res.filter((t) => t.canGenerateCer);
     const canSelectArr = filterArr.filter((t) => t.licenseBindCount < t.licenseAvailableCount);
     const canNotSelectArr = filterArr.filter((t) => t.licenseBindCount >= t.licenseAvailableCount);
-    if (!mountedRef.current) return;
+    if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
     setLicenseList([...canSelectArr, ...canNotSelectArr]);
   };
 

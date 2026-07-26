@@ -7,11 +7,12 @@ import { useGlobalStore } from '@/store/global';
 import { copyToClipboard } from '@/utils/copy';
 import SettingSubsection from '../SettingSubsection';
 import { useStyles } from '../BaseSetting/style';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 export default function McpSetting() {
   const { styles } = useStyles();
   const [token, setToken] = useState('');
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
   const { enableMcp, setBaseSetting } = useGlobalStore((state) => {
     return {
       enableMcp: state.baseSetting.enableMcp,
@@ -20,14 +21,14 @@ export default function McpSetting() {
   });
 
   useEffect(() => {
-    mountedRef.current = true;
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     jcefApi.getMcpToken().then((t) => {
-      if (mountedRef.current) {
+      if (isLatestRequest(requestGenerationRef, requestGeneration)) {
         setToken(t);
       }
     });
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 

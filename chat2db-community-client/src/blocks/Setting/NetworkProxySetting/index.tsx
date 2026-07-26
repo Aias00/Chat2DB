@@ -12,6 +12,7 @@ import networkProxyService, {
 import SettingSubsection from '../SettingSubsection';
 import { useStyles as useBaseStyles } from '../BaseSetting/style';
 import { useStyles } from './style';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 const defaultProxySettings: INetworkProxySettings = {
   mode: NetworkProxyMode.NO_PROXY,
@@ -29,12 +30,12 @@ export default function NetworkProxySetting() {
   const [testing, setTesting] = useState(false);
   const [restartRequired, setRestartRequired] = useState(false);
   const mode = Form.useWatch('mode', form);
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
 
   useEffect(() => {
-    mountedRef.current = true;
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     networkProxyService.get().then((settings) => {
-      if (!mountedRef.current) return;
+      if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
       const nextSettings = {
         ...defaultProxySettings,
         ...settings,
@@ -46,7 +47,7 @@ export default function NetworkProxySetting() {
       setRestartRequired(!!nextSettings.restartRequired);
     });
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, [form]);
 

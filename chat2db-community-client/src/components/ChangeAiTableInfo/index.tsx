@@ -11,6 +11,7 @@ import { EditableCellType } from '@/blocks/EditableAntdTable/components/InputEdi
 import { cloneDeep } from 'lodash';
 import useSyncState from '@/hooks/useSyncState';
 import { DataCollectionElementType } from '@/constants/aiDataCollection';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 interface IProps {
   className?: string;
@@ -44,17 +45,17 @@ export default memo<IProps>((props) => {
   const [submitLoading] = useState(false);
   const [dataSource, setDataSource, getDataSource] = useSyncState<any[]>([]);
 
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
 
   useEffect(() => {
-    mountedRef.current = true;
     getTableComment();
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
   const getTableComment = () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     setColumnAlias(null);
     setBasicInfo(null);
     form.resetFields();
@@ -95,7 +96,7 @@ export default memo<IProps>((props) => {
         tableName,
         refresh: true,
       }).then((sqlRes) => {
-        if (!mountedRef.current) return;
+        if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         const findColumnAlias = (columnName: string) => {
           return aiRes.tableCommentExt?.columnAlias?.find((item) => item.columnName === columnName) || {};
         };

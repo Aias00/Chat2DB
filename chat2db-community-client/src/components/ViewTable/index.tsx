@@ -6,6 +6,7 @@ import { Spin } from 'antd';
 import i18n from '@/i18n';
 import useViewTable from '@/hooks/useViewTable';
 import { useStyles } from './style';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 interface IProps {
   className?: string;
@@ -16,20 +17,20 @@ const ViewTable = memo<IProps>((props) => {
   const { viewTableParams } = props;
   const { styles } = useStyles();
   const [resultDataList, setResultDataList] = useState<IManageResultData[]>();
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
   const { executing, executeSQL, stopExecuteSQL } = useViewTable();
 
   useEffect(() => {
-    mountedRef.current = true;
     if (viewTableParams) {
+      const requestGeneration = beginLatestRequest(requestGenerationRef);
       executeSQL(viewTableParams).then((data) => {
-        if (!mountedRef.current) return;
+        if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         const _resultDataList = processResultDataList(data, viewTableParams);
         setResultDataList(_resultDataList);
       });
     }
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 

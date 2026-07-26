@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
 import { copyToClipboard } from '@/utils';
 import { useGlobalStore } from '@/store/global';
 import AntdTable from '@/components/AntdTable';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 interface IProps {
   className?: string;
@@ -23,7 +24,7 @@ export default memo<IProps>((props) => {
   const [loading, setLoading] = useState(false);
   const [apiKeys, setApiKeys] = useState<ApiKeyDetail[]>([]);
   const [currentApiKey, setCurrentApiKey] = useState<ApiKeyDetail | null>(null);
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
 
   const { openUnifiedConfirmationModal, appUrlConfig } = useGlobalStore((state) => {
     return {
@@ -33,10 +34,9 @@ export default memo<IProps>((props) => {
   });
 
   useEffect(() => {
-    mountedRef.current = true;
     getApiKeyList();
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
@@ -54,10 +54,11 @@ export default memo<IProps>((props) => {
   };
 
   const getApiKeyList = () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     apiKeysServices
       .getApiKeyList()
       .then((res) => {
-        if (!mountedRef.current) return;
+        if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         setApiKeys(res);
       });
   };
