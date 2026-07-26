@@ -92,10 +92,10 @@ public enum KingBaseIndexTypeEnum {
             StringBuilder script = new StringBuilder();
             script.append(" REFERENCES ");
             if (StringUtils.isNotBlank(tableIndex.getForeignSchemaName())) {
-                script.append(tableIndex.getForeignSchemaName()).append(".");
+                script.append("\"").append(tableIndex.getForeignSchemaName()).append("\".");
             }
             if (StringUtils.isNotBlank(tableIndex.getForeignTableName())) {
-                script.append(tableIndex.getForeignTableName()).append(" ");
+                script.append("\"").append(tableIndex.getForeignTableName()).append("\" ");
             }
             if (CollectionUtils.isNotEmpty(tableIndex.getForeignColumnNamelist())) {
                 script.append("(");
