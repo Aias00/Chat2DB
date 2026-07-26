@@ -31,6 +31,7 @@ public class ERPositionStorage extends SmallDataStorage<ERPosition> {
             if (p.getDataSourceId().equals(param.getDataSourceId()) &&
                     ObjectUtil.equals(p.getDatabaseName(), param.getDatabaseName())
                     && ObjectUtil.equals(p.getSchemaName(), param.getSchemaName())) {
+                p.setPosition(param.getPosition());
                 update(p);
                 return;
             }
