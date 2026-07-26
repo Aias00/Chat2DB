@@ -63,7 +63,7 @@ public class SqlGenerateUtil {
             query.setOrderBy(null);
             query.setLimit(null);
             query.setOffset(null);
-            return SQLUtils.toSQLString(stmt, DbType.sqlserver);
+            return SQLUtils.toSQLString(stmt, dbType);
         }
     }
 
