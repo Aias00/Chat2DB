@@ -6,24 +6,25 @@ import { IconButton } from '@chat2db/ui';
 import { formatFileSize } from '@/utils/file';
 import i18n from '@/i18n';
 import { useStyles } from './style';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 const UsedContent = ({ token }) => {
   const { styles } = useStyles();
   const [pluginDataPackageList, setPluginDataPackageList] = useState<IPluginDataPackageVO[]>([]);
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
   useEffect(() => {
-    mountedRef.current = true;
     if (token) {
       queryPluginDataPackageList(token);
     }
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
   const queryPluginDataPackageList = async (accessToken) => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     const res = await PluginService.queryPluginDataPackageList({ token: accessToken });
-    if (!mountedRef.current) return;
+    if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
     setPluginDataPackageList(res);
   };
 

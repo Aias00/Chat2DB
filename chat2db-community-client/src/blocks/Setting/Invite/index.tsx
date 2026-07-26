@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import i18n from '@/i18n';
 import { useGlobalStore } from '@/store/global';
 import { openWebPage } from '@/utils/url';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 const InvitationStatus = {
   /** is withdrawing */
@@ -37,13 +38,12 @@ const Invite = () => {
     appUrlConfig: state.appUrlConfig,
   }));
   const [form] = Form.useForm();
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
 
   useEffect(() => {
-    mountedRef.current = true;
     queryInvitationCode();
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
@@ -57,21 +57,23 @@ const Invite = () => {
    * Get invitation code
    */
   const queryInvitationCode = async () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     const code = await invitationService.getMyInvitationCode();
-    if (!mountedRef.current) return;
+    if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
     setInvitationCode(code);
   };
 
   const queryInvitationList = async () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     setLoading(true);
     try {
       const res = await invitationService.getInvitationOrderItem();
-      if (!mountedRef.current) return;
+      if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
       setInvitationOrder(res);
     } catch {
       return;
     } finally {
-      if (mountedRef.current) {
+      if (isLatestRequest(requestGenerationRef, requestGeneration)) {
         setLoading(false);
       }
     }

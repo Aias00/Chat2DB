@@ -13,6 +13,7 @@ import Avatar from '@/components/Avatar';
 import { refreshPage } from '@/utils';
 import i18n from '@/i18n';
 import CopyContainer from '@/components/CopyContainer';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 enum ModalType {
   TRANSFER = 'TRANSFER',
@@ -36,21 +37,21 @@ function OrgSetting() {
 
   const [userList, setUserList] = useState<OptionType>([]);
   const [userOptions, setUserOptions] = useState<OptionType>([]);
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
 
   if (!curOrg) return null;
 
   const isOwner = useMemo(() => curOrg?.roleCodes?.find((v) => v === OrgUserRoleCode.SUPER_ADMIN), [curOrg]);
 
   useEffect(() => {
-    mountedRef.current = true;
     queryUserList();
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
   const queryUserList = async () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     const res = await orgService.getOrganizationUserList({
       organizationId: curOrg?.id,
       searchKey: '',
@@ -66,7 +67,7 @@ function OrgSetting() {
         });
         return acc;
       }, []);
-      if (!mountedRef.current) return;
+      if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
       setUserList(options);
       setUserOptions(options);
     }

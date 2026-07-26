@@ -6,6 +6,7 @@ import Iconfont from '@/components/Iconfont';
 import { databaseMap } from '@/constants/database';
 import { useStyles } from './style';
 import { IConnectionListItem } from '@/typings/connection';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 enum DBFieldType {
   'dataSource',
@@ -41,17 +42,17 @@ interface CascaderDBProps {
 const CascaderDB = (props: CascaderDBProps) => {
   const [options, setOptions] = useState<Option[]>([]);
   const { styles } = useStyles();
-  const mountedRef = useRef(true);
+  const requestGenerationRef = useRef(0);
   useEffect(() => {
-    mountedRef.current = true;
     // TODO: Request data-source data.
     loadDataSource();
     return () => {
-      mountedRef.current = false;
+      invalidateLatestRequest(requestGenerationRef);
     };
   }, []);
 
   const loadDataSource = async () => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     try {
       let dataSourceList = props.dataSourceList ?? [];
       if (dataSourceList.length === 0) {
@@ -75,7 +76,7 @@ const CascaderDB = (props: CascaderDBProps) => {
         isLeaf: false,
         dataSourceId: item.id,
       }));
-      if (!mountedRef.current) return;
+      if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
       setOptions(formattedData);
     } catch (error) {
       console.log(error);
