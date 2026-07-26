@@ -114,7 +114,7 @@ public enum SnowflakeColumnTypeEnum implements IColumnBuilder {
         }
         if (EditStatusEnum.MODIFY.name().equals(tableColumn.getEditStatus())) {
             if (!StringUtils.equalsIgnoreCase(tableColumn.getOldName(), tableColumn.getName())) {
-                return StringUtils.join("CHANGE COLUMN ", tableColumn.getOldName(), " ", buildCreateColumnSql(tableColumn));
+                return StringUtils.join("RENAME COLUMN \"", tableColumn.getOldName(), "\" TO \"", tableColumn.getName(), "\"");
             } else {
                 return StringUtils.join("MODIFY COLUMN ", buildCreateColumnSql(tableColumn));
             }
