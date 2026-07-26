@@ -107,7 +107,7 @@ public enum SnowflakeColumnTypeEnum implements IColumnBuilder {
     @Override
     public String buildModifyColumn(TableColumn tableColumn) {
         if (EditStatusEnum.DELETE.name().equals(tableColumn.getEditStatus())) {
-            return StringUtils.join(SQL_DROP_COLUMN, tableColumn.getName());
+            return StringUtils.join(SQL_DROP_COLUMN, tableColumn.getName() + "\"");
         }
         if (EditStatusEnum.ADD.name().equals(tableColumn.getEditStatus())) {
             return StringUtils.join("ADD COLUMN ", buildCreateColumnSql(tableColumn));

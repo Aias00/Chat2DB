@@ -15,7 +15,7 @@ import java.util.Map;
 public final class SnowflakeColumnTypeEnumConstants {
 
     public static final String SQL_COMMENT = "COMMENT '";
-    public static final String SQL_DROP_COLUMN = "DROP COLUMN ";
+    public static final String SQL_DROP_COLUMN = "DROP COLUMN \"";
     public static final String SQL_SET_DEFAULT = "SET DEFAULT ";
     public static final String SQL_SET_DEFAULT_2 = "SET DEFAULT '";
     public static final String SQL_SET_DEFAULT_3 = "SET DEFAULT ''";
