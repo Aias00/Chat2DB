@@ -27,7 +27,7 @@ public class SnowflakeSqlBuilder extends DefaultSqlBuilder {
         StringBuilder script = new StringBuilder();
         script.append(SQL_CREATE_TABLE);
         if (StringUtils.isNotBlank(table.getSchemaName())) {
-            script.append(table.getSchemaName()).append(SQLConstants.DOT);
+            script.append(SQLConstants.DOUBLE_QUOTE).append(table.getSchemaName()).append(SQLConstants.DOUBLE_QUOTE).append(SQLConstants.DOT);
         }
         script.append(SQLConstants.DOUBLE_QUOTE).append(table.getName()).append(SQLConstants.DOUBLE_QUOTE).append(SQLConstants.SPACE_OPEN_PARENTHESIS).append(SQLConstants.LINE_SEPARATOR);
         for (TableColumn column : table.getColumnList()) {
