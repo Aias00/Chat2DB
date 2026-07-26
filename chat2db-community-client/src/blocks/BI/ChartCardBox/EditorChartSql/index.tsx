@@ -73,6 +73,15 @@ const EditorChartSql = forwardRef((props: IProps, ref: ForwardedRef<EditorChartS
       data,
     } = params;
 
+    if (!data.length) {
+      // Clear stale metadata from a previous execution while preserving the
+      // current execution's database context.
+      setDatabaseInfoAndMetaData({
+        databaseInfo: { dataSourceId, dataSourceName, databaseType, databaseName, schemaName, sql },
+        metaData: { dataList: [], headerList: [] } as any,
+      });
+      return;
+    }
     const { dataList, headerList } = data[0];
 
     setDatabaseInfoAndMetaData({
