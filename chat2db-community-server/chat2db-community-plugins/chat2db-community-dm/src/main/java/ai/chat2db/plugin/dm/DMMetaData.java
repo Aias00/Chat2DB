@@ -138,7 +138,7 @@ public class DMMetaData extends DefaultMetaService implements IDbMetaData {
         List<TableColumn> columns = super.columns(connection, databaseName, schemaName, tableName);
         for (TableColumn column : columns) {
             String columnType = column.getColumnType();
-            if (StringUtils.equals(columnType.toUpperCase(), DMColumnTypeEnum.TIMESTAMP.name())) {
+            if (StringUtils.equalsIgnoreCase(columnType, DMColumnTypeEnum.TIMESTAMP.name())) {
                 column.setColumnSize(column.getDecimalDigits());
             }
         }
