@@ -222,7 +222,7 @@ public enum HiveColumnTypeEnum implements IColumnBuilder {
 
 
         if (Arrays.asList(DECIMAL, FLOAT, DOUBLE,TINYINT).contains(type)) {
-            if (column.getColumnSize() == null || column.getDecimalDigits() == null) {
+            if (column.getColumnSize() == null) {
                 return columnType;
             }
             if (column.getColumnSize() != null && column.getDecimalDigits() == null) {
