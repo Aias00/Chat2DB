@@ -39,7 +39,7 @@ const useLabelRotate = (antdTheme: any) => {
       const font = `12px ${antdTheme.fontFamily}`;
 
       const yAxisLabelWidth = yAxisLabels.reduce((max, label) => {
-        const labelText = label.formattedLabel || label.rawLabel;
+        const labelText = typeof label === 'object' ? (label.formattedLabel || label.rawLabel) : String(label);
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         context!.font = font; // Assume a 12px font.
@@ -57,7 +57,7 @@ const useLabelRotate = (antdTheme: any) => {
 
       // Measure the longest label in pixels.
       const longestLabelWidth = labels.reduce((max, label) => {
-        const labelText = label.formattedLabel || label.rawLabel;
+        const labelText = typeof label === 'object' ? (label.formattedLabel || label.rawLabel) : String(label);
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         context!.font = font; // Assume a 12px font.
