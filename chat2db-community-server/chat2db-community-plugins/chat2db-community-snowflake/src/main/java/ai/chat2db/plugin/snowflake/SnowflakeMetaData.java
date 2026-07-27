@@ -3,6 +3,8 @@ package ai.chat2db.plugin.snowflake;
 import ai.chat2db.plugin.snowflake.builder.SnowflakeSqlBuilder;
 import ai.chat2db.plugin.snowflake.enums.type.*;
 import ai.chat2db.spi.IDbMetaData;
+import ai.chat2db.spi.DefaultSQLIdentifierProcessor;
+import ai.chat2db.spi.ISQLIdentifierProcessor;
 import ai.chat2db.spi.ISqlBuilder;
 import ai.chat2db.spi.DefaultMetaService;
 import ai.chat2db.community.domain.api.model.account.*;
@@ -28,6 +30,8 @@ import java.util.stream.Collectors;
 
 import static ai.chat2db.plugin.snowflake.constant.SnowflakeMetaDataConstants.*;
 public class SnowflakeMetaData extends DefaultMetaService implements IDbMetaData {
+
+    public static final ISQLIdentifierProcessor SNOWFLAKE_SQL_IDENTIFIER_PROCESSOR = new DefaultSQLIdentifierProcessor();
 
 
 
