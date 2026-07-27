@@ -249,6 +249,14 @@ class SqlCompletionMetadataProviderAdapterTest {
         }
 
         @Override
+        public String quoteIdentifierAlways(String identifier) {
+            if (identifier == null) {
+                return null;
+            }
+            return "`" + identifier.replace("`", "``") + "`";
+        }
+
+        @Override
         public String removeIdentifierQuote(String identifier) {
             return identifier == null ? null : identifier.replace("`", "");
         }

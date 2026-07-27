@@ -87,4 +87,16 @@ public interface ISQLIdentifierProcessor {
      */
     String escapeString(String str);
 
+
+    /**
+     * Quotes an identifier unconditionally, preserving the exact name.
+     * <p>
+     * Embedded delimiter characters are escaped per the dialect convention.
+     * Satisfies: {@code removeIdentifierQuote(quoteIdentifierAlways(raw)).equals(raw)}
+     *
+     * @param identifier raw identifier text.
+     * @return unconditionally quoted identifier text with the original case preserved.
+     */
+    String quoteIdentifierAlways(String identifier);
+
 }
