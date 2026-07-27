@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static ai.chat2db.plugin.postgresql.constant.PostgreSQLIndexTypeEnumConstants.*;
+import ai.chat2db.plugin.postgresql.PostgreSQLMetaData;
 public enum PostgreSQLIndexTypeEnum {
 
     PRIMARY("Primary", "PRIMARY KEY"),
@@ -92,10 +93,10 @@ public enum PostgreSQLIndexTypeEnum {
             StringBuilder script = new StringBuilder();
             script.append(" REFERENCES ");
             if (StringUtils.isNotBlank(tableIndex.getForeignSchemaName())) {
-                script.append(tableIndex.getForeignSchemaName()).append(".");
+                script.append(PostgreSQLMetaData.POSTGRE_SQL_IDENTIFIER_PROCESSOR.quoteIdentifierAlways(tableIndex.getForeignSchemaName())).append(".");
             }
             if (StringUtils.isNotBlank(tableIndex.getForeignTableName())) {
-                script.append(tableIndex.getForeignTableName()).append(" ");
+                script.append(PostgreSQLMetaData.POSTGRE_SQL_IDENTIFIER_PROCESSOR.quoteIdentifierAlways(tableIndex.getForeignTableName())).append(" ");
             }
             if (CollectionUtils.isNotEmpty(tableIndex.getForeignColumnNamelist())) {
                 script.append("(");
