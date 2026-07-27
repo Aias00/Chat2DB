@@ -1,6 +1,7 @@
 package ai.chat2db.plugin.kingbase.enums.type;
 
 import ai.chat2db.spi.IColumnBuilder;
+import ai.chat2db.plugin.kingbase.KingBaseMetaData;
 import ai.chat2db.community.domain.api.enums.plugin.EditStatusEnum;
 import ai.chat2db.community.domain.api.model.metadata.ColumnType;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
@@ -139,7 +140,7 @@ public enum KingBaseColumnTypeEnum implements IColumnBuilder {
     public String buildModifyColumn(TableColumn column) {
 
         if (EditStatusEnum.DELETE.name().equals(column.getEditStatus())) {
-            return StringUtils.join(SQL_DROP_COLUMN, column.getName() + "`");
+            return StringUtils.join(SQL_DROP_COLUMN, KingBaseMetaData.KINGBASE_SQL_IDENTIFIER_PROCESSOR.quoteIdentifierAlways(column.getName()));
         }
         if (EditStatusEnum.ADD.name().equals(column.getEditStatus())) {
             return StringUtils.join("ADD COLUMN ", buildCreateColumnSql(column));
