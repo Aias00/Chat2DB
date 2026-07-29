@@ -92,18 +92,28 @@ public interface ISQLIdentifierProcessor {
      * Quotes an identifier unconditionally, preserving the exact name.
      * <p>
      * Embedded delimiter characters are escaped per the dialect convention.
-     * Satisfies: {@code removeIdentifierQuote(quoteIdentifierAlways(raw)).equals(raw)}
+     * Implementations must satisfy:
+     * {@code removeIdentifierQuote(quoteIdentifierAlways(raw)).equals(raw)}.
      * <p>
      * This is a default method for backward compatibility with external
-     * implementations that do not yet override it. The default delegates
-     * to {@link #quoteIdentifierIgnoreCase(String)} as a best-effort fallback;
-     * dialect implementations should override for correct always-quote semantics.
+     * implementations that do not yet override it. The default accepts the
+     * result of {@link #quoteIdentifierIgnoreCase(String)} only when the
+     * implementation reports that result as quoted. Otherwise it fails fast
+     * instead of silently violating the always-quote contract.
      *
      * @param identifier raw identifier text.
      * @return unconditionally quoted identifier text with the original case preserved.
      */
     default String quoteIdentifierAlways(String identifier) {
-        return quoteIdentifierIgnoreCase(identifier);
+        if (identifier == null) {
+            return null;
+        }
+        String quoted = quoteIdentifierIgnoreCase(identifier);
+        if (isQuoteIdentifier(quoted)) {
+            return quoted;
+        }
+        throw new UnsupportedOperationException(
+                "quoteIdentifierAlways must be implemented for this SQL dialect");
     }
 
 }

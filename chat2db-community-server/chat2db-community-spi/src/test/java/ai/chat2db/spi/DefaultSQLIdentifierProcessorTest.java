@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Contract tests for {@link DefaultSQLIdentifierProcessor}.
@@ -106,5 +107,60 @@ class DefaultSQLIdentifierProcessorTest {
     void roundTrip_empty() {
         String raw = "";
         assertEquals(raw, processor.removeIdentifierQuote(processor.quoteIdentifierAlways(raw)));
+    }
+
+    @Test
+    void legacyConditionalImplementationFailsFastInsteadOfReturningUnquotedIdentifier() {
+        ISQLIdentifierProcessor legacyProcessor = new LegacyConditionalIdentifierProcessor();
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> legacyProcessor.quoteIdentifierAlways("plain"));
+    }
+
+    private static final class LegacyConditionalIdentifierProcessor implements ISQLIdentifierProcessor {
+        @Override
+        public boolean isValidIdentifier(String identifier) {
+            return true;
+        }
+
+        @Override
+        public boolean isReservedKeyword(String identifier, Integer majorVersion, Integer minorVersion) {
+            return false;
+        }
+
+        @Override
+        public String quoteIdentifier(String identifier, Integer majorVersion, Integer minorVersion) {
+            return identifier;
+        }
+
+        @Override
+        public String quoteIdentifier(String identifier) {
+            return identifier;
+        }
+
+        @Override
+        public String removeIdentifierQuote(String identifier) {
+            return identifier;
+        }
+
+        @Override
+        public String quoteIdentifierIgnoreCase(String identifier) {
+            return identifier;
+        }
+
+        @Override
+        public boolean isQuoteIdentifier(String identifier) {
+            return false;
+        }
+
+        @Override
+        public String convertIdentifierCase(String identifier) {
+            return identifier;
+        }
+
+        @Override
+        public String escapeString(String str) {
+            return str;
+        }
     }
 }
