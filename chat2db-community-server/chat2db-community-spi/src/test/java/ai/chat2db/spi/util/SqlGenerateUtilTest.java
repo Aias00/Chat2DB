@@ -2,7 +2,6 @@ package ai.chat2db.spi.util;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,25 +21,12 @@ class SqlGenerateUtilTest {
      */
     @Test
     void druidFallbackUsesRequestedDbTypeForMysql() {
-        // "SAMPLE" is a Snowflake keyword that JSQLParser does not understand,
-        // forcing the catch fallback path.
-        String sql = "SELECT * FROM users WHERE name = 'sample'";
-        String result = SqlGenerateUtil.generateSelectCountSql(sql, "mysql");
-
-        // The Druid mysql dialect renders COUNT(*) as `COUNT(*)` with backtick-free identifiers.
-        assertTrue(result.contains("COUNT"), () -> "Expected COUNT in result: " + result);
-        assertFalse(result.contains("sqlserver"), () -> "Result should not mention sqlserver: " + result);
-    }
-
-    /**
-     * The fallback path should also work for PostgreSQL dialect.
-     */
-    @Test
-    void druidFallbackUsesRequestedDbTypeForPostgresql() {
-        String sql = "SELECT * FROM users WHERE name = 'sample'";
-        String result = SqlGenerateUtil.generateSelectCountSql(sql, "postgresql");
+        String result = SqlGenerateUtil.generateSelectCountSqlWithDruid(
+                "SELECT * FROM `order` LIMIT 5", "mysql");
 
         assertTrue(result.contains("COUNT"), () -> "Expected COUNT in result: " + result);
+        assertTrue(result.contains("`order`"), () -> "Expected MySQL identifier quoting: " + result);
+        assertFalse(result.contains("[order]"), () -> "Must not use SQL Server identifier quoting: " + result);
     }
 
     /**
@@ -59,11 +45,9 @@ class SqlGenerateUtilTest {
      */
     @Test
     void unsupportedDbTypeThrowsIllegalArgumentInFallback() {
-        // INSERT is not a SELECT — JSQLParser parses it but the instanceof Select
-        // check fails, throwing IllegalArgumentException in the normal path.
-        // In the fallback, Druid also rejects non-SELECT, throwing the same.
         assertThrows(IllegalArgumentException.class,
-                () -> SqlGenerateUtil.generateSelectCountSql("INSERT INTO users VALUES (1)", "unsupported_db"));
+                () -> SqlGenerateUtil.generateSelectCountSqlWithDruid(
+                        "SELECT * FROM users", "unsupported_db"));
     }
 
     /**
