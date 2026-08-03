@@ -11,6 +11,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -113,9 +120,37 @@ public class SmallDataStorage<T> implements IWorkspaceLocalStorage<T> {
 
     protected synchronized void saveDataList() {
         List<T> dataList = getDataList();
-        FileUtil.writeUtf8String("", filePath);
-        for (T data : dataList) {
-            FileUtil.appendUtf8String(JSON.toJSONString(data) + "\n", filePath);
+        // Build the full content in memory, write it to a temp file in the same
+        // directory, then atomically rename over the target. The previous
+        // truncate-then-append loop left the storage file partially written on a
+        // crash/disk-full, permanently losing all records after the truncation
+        // point on reload. With a temp + rename, the storage file is either the
+        // previous or the new content, never a partial write.
+        Path target = Paths.get(filePath);
+        Path temp = Paths.get(filePath + ".tmp");
+        try {
+            StringBuilder sb = new StringBuilder();
+            if (dataList != null) {
+                for (T data : dataList) {
+                    sb.append(JSON.toJSONString(data)).append('\n');
+                }
+            }
+            Files.write(temp, sb.toString().getBytes(StandardCharsets.UTF_8));
+            try {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException notAtomic) {
+                // Same-directory temp is normally on the same filesystem, but if the
+                // platform/filesystem does not support an atomic move, fall back to a
+                // best-effort replace (still a single replace, not a truncate+append).
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(temp);
+            } catch (IOException ignore) {
+                // best-effort cleanup
+            }
+            throw new RuntimeException(e);
         }
     }
 
