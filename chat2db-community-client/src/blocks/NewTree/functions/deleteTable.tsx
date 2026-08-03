@@ -5,6 +5,7 @@ import { Button, Checkbox } from 'antd';
 import { staticMessage } from '@chat2db/ui';
 import { openModal } from '@/store/common/components';
 import styles from './deleteTable.less';
+import { getDeleteTableErrorMessage } from './deleteTableError';
 import i18n from '@/i18n';
 
 export const deleteTable = (treeNodeData, loadData) => {
@@ -26,14 +27,15 @@ export const DeleteModalContent = (params: { treeNodeData: any; openModal: any; 
       schemaName: treeNodeData.extraParams.schemaName,
       tableName: treeNodeData.originalTitle,
     };
-    mysqlService.deleteTable(p).then(() => {
-      loadData();
-      openModal(false);
-    }).catch((error) => {
-      // Surface the failure so the modal is not stuck open with no feedback;
-      // keep the modal open so the user can cancel or retry.
-      staticMessage.error(error?.message || i18n('common.text.failure'));
-    });
+    mysqlService
+      .deleteTable(p)
+      .then(() => {
+        loadData();
+        openModal(false);
+      })
+      .catch((error) => {
+        staticMessage.error(getDeleteTableErrorMessage(error, i18n('common.text.failure')));
+      });
   };
 
   return (
