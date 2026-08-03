@@ -3,39 +3,58 @@ package ai.chat2db.plugin.snowflake.enums.type;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class SnowflakeColumnTypeEnumDecimalTest {
 
-    private TableColumn column(String type, Integer size, Integer digits) {
-        TableColumn c = new TableColumn();
-        c.setColumnType(type);
-        c.setColumnSize(size);
-        c.setDecimalDigits(digits);
-        return c;
+    private String ddl(SnowflakeColumnTypeEnum type, Integer size, Integer digits) {
+        TableColumn column = new TableColumn();
+        column.setName("amount");
+        column.setColumnType(type.getColumnType().getTypeName());
+        column.setColumnSize(size);
+        column.setDecimalDigits(digits);
+        column.setNullable(1);
+        return type.buildCreateColumnSql(column).trim().replaceAll("\\s+", " ");
     }
 
     @Test
-    void numberWithPrecisionOnly() {
-        String result = SnowflakeColumnTypeEnum.NUMBER.buildCreateColumnSql(column("NUMBER", 10, null));
-        assertTrue(result.contains("NUMBER(10"), () -> "Expected NUMBER(10): " + result);
+    void fixedPointTypesSupportPrecisionOnly() {
+        assertEquals("\"amount\" NUMBER(10)", ddl(SnowflakeColumnTypeEnum.NUMBER, 10, null));
+        assertEquals("\"amount\" DECIMAL(10)", ddl(SnowflakeColumnTypeEnum.DECIMAL, 10, null));
+        assertEquals("\"amount\" NUMERIC(10)", ddl(SnowflakeColumnTypeEnum.NUMERIC, 10, null));
     }
 
     @Test
-    void numberWithPrecisionAndScale() {
-        String result = SnowflakeColumnTypeEnum.NUMBER.buildCreateColumnSql(column("NUMBER", 10, 2));
-        assertTrue(result.contains("NUMBER(10,2)"), () -> "Expected NUMBER(10,2): " + result);
+    void fixedPointTypesSupportPrecisionAndScale() {
+        assertEquals("\"amount\" NUMBER(10,2)", ddl(SnowflakeColumnTypeEnum.NUMBER, 10, 2));
+        assertEquals("\"amount\" DECIMAL(10,2)", ddl(SnowflakeColumnTypeEnum.DECIMAL, 10, 2));
+        assertEquals("\"amount\" NUMERIC(10,2)", ddl(SnowflakeColumnTypeEnum.NUMERIC, 10, 2));
     }
 
     @Test
-    void decimalWithPrecisionOnly() {
-        String result = SnowflakeColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", 15, null));
-        assertTrue(result.contains("DECIMAL(15"), () -> "Expected DECIMAL(15): " + result);
+    void fixedPointTypesWithoutPrecisionRemainBare() {
+        assertEquals("\"amount\" NUMBER", ddl(SnowflakeColumnTypeEnum.NUMBER, null, null));
+        assertEquals("\"amount\" DECIMAL", ddl(SnowflakeColumnTypeEnum.DECIMAL, null, null));
+        assertEquals("\"amount\" NUMERIC", ddl(SnowflakeColumnTypeEnum.NUMERIC, null, null));
     }
 
     @Test
-    void decimalWithBothNull() {
-        String result = SnowflakeColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", null, null));
-        assertTrue(result.contains("DECIMAL"), () -> "Expected DECIMAL: " + result);
+    void integerAndFloatingAliasesIgnorePrecisionAndScale() {
+        for (SnowflakeColumnTypeEnum type : List.of(
+            SnowflakeColumnTypeEnum.INT,
+            SnowflakeColumnTypeEnum.INTEGER,
+            SnowflakeColumnTypeEnum.BIGINT,
+            SnowflakeColumnTypeEnum.SMALLINT,
+            SnowflakeColumnTypeEnum.TINYINT,
+            SnowflakeColumnTypeEnum.BYTEINT,
+            SnowflakeColumnTypeEnum.FLOAT,
+            SnowflakeColumnTypeEnum.DOUBLE
+        )) {
+            String expected = "\"amount\" " + type.getColumnType().getTypeName();
+            assertEquals(expected, ddl(type, 10, null));
+            assertEquals(expected, ddl(type, 10, 2));
+        }
     }
 }
