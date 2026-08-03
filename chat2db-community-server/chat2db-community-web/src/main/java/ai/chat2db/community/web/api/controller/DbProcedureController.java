@@ -38,7 +38,8 @@ public class DbProcedureController {
     public WebPageResult<Procedure> list(@Valid ProcedurePageRequest request) {
         List<Procedure> procedures = procedureService.procedures(request.getDatabaseName(),
             request.getSchemaName());
-        return WebPageResult.of(procedures, Long.valueOf(procedures.size()), 1, procedures.size());
+        int size = procedures == null ? 0 : procedures.size();
+        return WebPageResult.of(procedures, Long.valueOf(size), 1, size);
     }
 
     /**
