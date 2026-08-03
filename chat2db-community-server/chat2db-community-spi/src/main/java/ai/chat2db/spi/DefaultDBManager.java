@@ -232,12 +232,23 @@ public class DefaultDBManager implements IDbManager {
     }
 
     private void exportTables(Connection connection, String databaseName, String schemaName, AsyncContext asyncContext) throws SQLException {
-        asyncContext.write(SQL_SET_FOREIGN_KEY_CHECKS_DISABLED);
+        // SET FOREIGN_KEY_CHECKS is MySQL syntax; emit only for the MySQL-protocol family
+        // so the exported script does not start/end with invalid SQL on other dialects.
+        boolean foreignKeyChecks = supportsForeignKeyChecks(Chat2DBContext.getConnectInfo().getDbType());
+        if (foreignKeyChecks) {
+            asyncContext.write(SQL_SET_FOREIGN_KEY_CHECKS_DISABLED);
+        }
         List<Table> tables = Chat2DBContext.getDbMetaData().tables(connection, new TablesRequest(databaseName, schemaName, null));
         for (Table table : tables) {
             exportTable(connection, databaseName, schemaName, table.getName(), asyncContext);
         }
-        asyncContext.write(SQL_SET_FOREIGN_KEY_CHECKS_ENABLED);
+        if (foreignKeyChecks) {
+            asyncContext.write(SQL_SET_FOREIGN_KEY_CHECKS_ENABLED);
+        }
+    }
+
+    private static boolean supportsForeignKeyChecks(String dbType) {
+        return StringUtils.equalsAnyIgnoreCase(dbType, "MYSQL", "MARIADB", "TIDB", "STARROCKS", "DORIS", "OCEANBASE");
     }
 
     @Override
