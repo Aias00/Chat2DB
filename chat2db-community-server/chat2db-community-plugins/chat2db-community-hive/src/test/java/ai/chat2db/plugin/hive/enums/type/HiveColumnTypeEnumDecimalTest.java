@@ -3,39 +3,42 @@ package ai.chat2db.plugin.hive.enums.type;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class HiveColumnTypeEnumDecimalTest {
 
-    private TableColumn column(String type, Integer size, Integer digits) {
-        TableColumn c = new TableColumn();
-        c.setColumnType(type);
-        c.setColumnSize(size);
-        c.setDecimalDigits(digits);
-        return c;
+    private String ddl(HiveColumnTypeEnum type, Integer size, Integer digits) {
+        TableColumn column = new TableColumn();
+        column.setName("amount");
+        column.setColumnType(type.getColumnType().getTypeName());
+        column.setColumnSize(size);
+        column.setDecimalDigits(digits);
+        column.setNullable(1);
+        return type.buildCreateColumnSql(column).trim().replaceAll("\\s+", " ");
     }
 
     @Test
     void decimalWithPrecisionOnly() {
-        String result = HiveColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", 10, null));
-        assertTrue(result.contains("DECIMAL(10"), () -> "Expected DECIMAL(10): " + result);
+        assertEquals("`amount` DECIMAL(10)", ddl(HiveColumnTypeEnum.DECIMAL, 10, null));
     }
 
     @Test
     void decimalWithPrecisionAndScale() {
-        String result = HiveColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", 10, 2));
-        assertTrue(result.contains("DECIMAL(10,2)"), () -> "Expected DECIMAL(10,2): " + result);
+        assertEquals("`amount` DECIMAL(10,2)", ddl(HiveColumnTypeEnum.DECIMAL, 10, 2));
     }
 
     @Test
     void decimalWithBothNull() {
-        String result = HiveColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", null, null));
-        assertTrue(result.contains("DECIMAL"), () -> "Expected DECIMAL: " + result);
+        assertEquals("`amount` DECIMAL", ddl(HiveColumnTypeEnum.DECIMAL, null, null));
     }
 
     @Test
-    void floatWithPrecisionOnly() {
-        String result = HiveColumnTypeEnum.FLOAT.buildCreateColumnSql(column("FLOAT", 10, null));
-        assertTrue(result.contains("FLOAT"), () -> "Expected FLOAT: " + result);
+    void nonDecimalNumericTypesIgnorePrecisionAndScale() {
+        assertEquals("`amount` FLOAT", ddl(HiveColumnTypeEnum.FLOAT, 10, null));
+        assertEquals("`amount` FLOAT", ddl(HiveColumnTypeEnum.FLOAT, 10, 2));
+        assertEquals("`amount` DOUBLE", ddl(HiveColumnTypeEnum.DOUBLE, 10, null));
+        assertEquals("`amount` DOUBLE", ddl(HiveColumnTypeEnum.DOUBLE, 10, 2));
+        assertEquals("`amount` TINYINT", ddl(HiveColumnTypeEnum.TINYINT, 10, null));
+        assertEquals("`amount` TINYINT", ddl(HiveColumnTypeEnum.TINYINT, 10, 2));
     }
 }
