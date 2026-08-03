@@ -46,6 +46,11 @@ class HTTPSRequestClass {
     callbacks: SSERequestCallbacks<Output>,
     transformStream?: SSEStreamProps<Output>['transformStream'],
   ) => {
+    // The instance is a per-baseURL singleton, so consumers sharing the same
+    // baseURL reuse it. Abort any in-flight stream before replacing the
+    // controller, otherwise the previous stream's AbortController is orphaned
+    // (stop() only touches the latest) and keeps consuming the fetch.
+    this.abortController?.abort();
     this.abortController = new AbortController();
     const requestInit = {
       method: 'POST',
