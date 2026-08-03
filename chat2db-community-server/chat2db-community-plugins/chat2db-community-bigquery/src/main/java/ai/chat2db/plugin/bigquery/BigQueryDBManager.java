@@ -10,15 +10,27 @@ import org.apache.commons.lang3.StringUtils;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 public class BigQueryDBManager extends DefaultDBManager implements IDbManager {
+
+    /**
+     * Keys this manager injects into extendInfo. A reconnect reuses the same
+     * ConnectInfo instance, so these must be stripped first to avoid duplicates.
+     */
+    private static final Set<String> MANAGED_EXTEND_INFO_KEYS =
+            Set.of("ProjectId", "OAuthServiceAcctEmail", "OAuthType", "OAuthPvtKeyPath");
 
     @Override
     public Connection getConnection(ConnectInfo connectInfo) {
         List<KeyValue> keyValues = connectInfo.getExtendInfo();
         if(keyValues == null){
             keyValues =new ArrayList<>();
+        } else {
+            // Reconnect reuses the same ConnectInfo instance; strip previously injected
+            // managed keys so they don't accumulate on each reconnect.
+            keyValues.removeIf(kv -> MANAGED_EXTEND_INFO_KEYS.contains(kv.getKey()));
         }
         if(StringUtils.isNotBlank(connectInfo.getProject())){
             KeyValue keyValue = new KeyValue();
