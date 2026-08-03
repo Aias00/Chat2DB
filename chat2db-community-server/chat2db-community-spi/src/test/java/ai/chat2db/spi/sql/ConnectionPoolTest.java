@@ -31,7 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ConnectionPoolTest {
 
     @Test
-    void cleanupThreadShouldBeNamedDaemon() {
+    void cleanupThreadShouldBeNamedDaemon() throws ClassNotFoundException {
+        Class.forName(ConnectionPool.class.getName());
+
         Thread cleanupThread = Thread.getAllStackTraces().keySet().stream()
                 .filter(thread -> "chat2db-conn-pool-cleanup".equals(thread.getName()))
                 .findFirst()
