@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
@@ -120,37 +119,42 @@ public class SmallDataStorage<T> implements IWorkspaceLocalStorage<T> {
 
     protected synchronized void saveDataList() {
         List<T> dataList = getDataList();
-        // Build the full content in memory, write it to a temp file in the same
-        // directory, then atomically rename over the target. The previous
-        // truncate-then-append loop left the storage file partially written on a
-        // crash/disk-full, permanently losing all records after the truncation
-        // point on reload. With a temp + rename, the storage file is either the
-        // previous or the new content, never a partial write.
-        Path target = Paths.get(filePath);
-        Path temp = Paths.get(filePath + ".tmp");
+        StringBuilder content = new StringBuilder();
+        for (T data : dataList) {
+            content.append(JSON.toJSONString(data)).append('\n');
+        }
+
+        Path target = Path.of(filePath).toAbsolutePath();
+        Path parent = target.getParent();
+        Path temp = null;
         try {
-            StringBuilder sb = new StringBuilder();
-            if (dataList != null) {
-                for (T data : dataList) {
-                    sb.append(JSON.toJSONString(data)).append('\n');
-                }
-            }
-            Files.write(temp, sb.toString().getBytes(StandardCharsets.UTF_8));
-            try {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException notAtomic) {
-                // Same-directory temp is normally on the same filesystem, but if the
-                // platform/filesystem does not support an atomic move, fall back to a
-                // best-effort replace (still a single replace, not a truncate+append).
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
+            Files.createDirectories(parent);
+            temp = Files.createTempFile(parent, target.getFileName() + ".", ".tmp");
+            Files.writeString(temp, content, StandardCharsets.UTF_8);
+            replaceStorageFile(temp, target);
         } catch (IOException e) {
-            try {
-                Files.deleteIfExists(temp);
-            } catch (IOException ignore) {
-                // best-effort cleanup
-            }
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to persist storage file: " + target, e);
+        } finally {
+            deleteTempFile(temp);
+        }
+    }
+
+    protected void replaceStorageFile(Path temp, Path target) throws IOException {
+        try {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException notAtomic) {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void deleteTempFile(Path temp) {
+        if (temp == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(temp);
+        } catch (IOException e) {
+            log.warn("Failed to clean up temporary storage file: {}", temp, e);
         }
     }
 
