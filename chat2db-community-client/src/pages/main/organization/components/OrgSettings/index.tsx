@@ -44,7 +44,7 @@ function OrgSetting() {
   // ("Rendered more hooks than during the previous render") when curOrg
   // transitioned from null to populated. Guard inside the hooks instead.
   const isOwner = useMemo(
-    () => curOrg?.roleCodes?.find((v) => v === OrgUserRoleCode.SUPER_ADMIN),
+    () => curOrg?.roleCodes?.includes(OrgUserRoleCode.SUPER_ADMIN) ?? false,
     [curOrg],
   );
 
