@@ -835,6 +835,19 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         long startedAtNanos = System.nanoTime();
         int pageNo = Optional.ofNullable(param.getPageNo()).orElse(1);
         int pageSize = Optional.ofNullable(param.getPageSize()).orElse(IEasyToolsConstant.MAX_PAGE_SIZE);
+        // Clamp client-controlled pageNo/pageSize so (pageNo - 1) * pageSize cannot
+        // overflow int (which previously made setMaxRows throw on a negative, or
+        // silently cap to first-page data on a wrapped small positive).
+        if (pageNo < 1) {
+            pageNo = 1;
+        }
+        if (pageSize < 1 || pageSize > IEasyToolsConstant.MAX_PAGE_SIZE) {
+            pageSize = IEasyToolsConstant.MAX_PAGE_SIZE;
+        }
+        long maxPageNo = (long) Integer.MAX_VALUE / pageSize;
+        if (pageNo > maxPageNo) {
+            pageNo = (int) maxPageNo;
+        }
         Integer offset = (pageNo - 1) * pageSize;
         Integer count = pageSize;
         SqlTypeEnum sqlType = getSqlType(dbType, originalSql);
@@ -912,6 +925,19 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         long startedAtNanos = System.nanoTime();
         int pageNo = Optional.ofNullable(param.getPageNo()).orElse(1);
         int pageSize = Optional.ofNullable(param.getPageSize()).orElse(IEasyToolsConstant.MAX_PAGE_SIZE);
+        // Clamp client-controlled pageNo/pageSize so (pageNo - 1) * pageSize cannot
+        // overflow int (which previously made setMaxRows throw on a negative, or
+        // silently cap to first-page data on a wrapped small positive).
+        if (pageNo < 1) {
+            pageNo = 1;
+        }
+        if (pageSize < 1 || pageSize > IEasyToolsConstant.MAX_PAGE_SIZE) {
+            pageSize = IEasyToolsConstant.MAX_PAGE_SIZE;
+        }
+        long maxPageNo = (long) Integer.MAX_VALUE / pageSize;
+        if (pageNo > maxPageNo) {
+            pageNo = (int) maxPageNo;
+        }
         Integer offset = (pageNo - 1) * pageSize;
         Integer count = pageSize;
         SqlTypeEnum sqlType = getSqlType(dbType, originalSql);
