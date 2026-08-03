@@ -38,7 +38,10 @@ public class DbFunctionController {
     public WebPageResult<Function> list(@Valid FunctionPageRequest request) {
         List<Function> functions = functionService.functions(request.getDatabaseName(),
             request.getSchemaName());
-        int size = functions == null ? 0 : functions.size();
+        if (functions == null) {
+            functions = List.of();
+        }
+        int size = functions.size();
         return WebPageResult.of(functions, Long.valueOf(size), 1, size);
     }
 

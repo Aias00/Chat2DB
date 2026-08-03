@@ -53,7 +53,10 @@ public class DbViewController {
     public WebPageResult<TableResponse> list(@Valid TableBriefQueryRequest request) {
         List<Table> tableDTOPageResult = viewService.views(request.getDatabaseName(), request.getSchemaName());
         List<TableResponse> tableResponses = dbWebConverter.tableDto2response(tableDTOPageResult);
-        int size = tableResponses == null ? 0 : tableResponses.size();
+        if (tableResponses == null) {
+            tableResponses = List.of();
+        }
+        int size = tableResponses.size();
         return WebPageResult.of(tableResponses, Long.valueOf(size), 1, size);
     }
 
