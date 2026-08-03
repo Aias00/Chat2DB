@@ -29,6 +29,10 @@ const tabs: IWorkspaceTab[] = [
   },
 ];
 
+assert.equal(getPersistableWorkspaceTabList(undefined), null, 'undefined tab lists should normalize to null');
+assert.equal(getPersistableWorkspaceTabList(null), null, 'null tab lists should remain null');
+assert.deepEqual(getPersistableWorkspaceTabList([]), [], 'empty tab lists should remain empty');
+
 assert.deepEqual(
   getPersistableWorkspaceTabList(tabs)?.map((tab) => tab.id),
   ['markdown'],
