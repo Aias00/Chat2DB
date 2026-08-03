@@ -24,14 +24,17 @@ public class BigQueryDBManager extends DefaultDBManager implements IDbManager {
 
     @Override
     public Connection getConnection(ConnectInfo connectInfo) {
-        List<KeyValue> keyValues = connectInfo.getExtendInfo();
-        if(keyValues == null){
-            keyValues =new ArrayList<>();
-        } else {
-            // Reconnect reuses the same ConnectInfo instance; strip previously injected
-            // managed keys so they don't accumulate on each reconnect.
-            keyValues.removeIf(kv -> MANAGED_EXTEND_INFO_KEYS.contains(kv.getKey()));
-        }
+        List<KeyValue> keyValues = prepareExtendInfo(connectInfo);
+        connectInfo.setExtendInfo(keyValues);
+        return super.getConnection(connectInfo);
+    }
+
+    static List<KeyValue> prepareExtendInfo(ConnectInfo connectInfo) {
+        List<KeyValue> keyValues = connectInfo.getExtendInfo() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(connectInfo.getExtendInfo());
+        keyValues.removeIf(kv -> kv != null && kv.getKey() != null
+                && MANAGED_EXTEND_INFO_KEYS.contains(kv.getKey()));
         if(StringUtils.isNotBlank(connectInfo.getProject())){
             KeyValue keyValue = new KeyValue();
             keyValue.setKey("ProjectId");
@@ -55,9 +58,7 @@ public class BigQueryDBManager extends DefaultDBManager implements IDbManager {
             keyValue1.setValue(connectInfo.getKeyfile());
             keyValues.add(keyValue1);
         }
-        connectInfo.setExtendInfo(keyValues);
-        Connection connection = super.getConnection(connectInfo);
-        return connection;
+        return keyValues;
     }
 
 }
