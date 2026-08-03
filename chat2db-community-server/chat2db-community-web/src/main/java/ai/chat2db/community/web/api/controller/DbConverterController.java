@@ -52,7 +52,11 @@ public class DbConverterController {
     public DataResult<UploadResponse> ncxUploadFile(@RequestParam("file") MultipartFile file) {
         log.info("Start uploading NCX file");
         File temp = uploadFileService.transferToTempFile(file, ConfigFileTypeEnum.NCX);
-        return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.ncxUploadFile(temp)));
+        try {
+            return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.ncxUploadFile(temp)));
+        } finally {
+            deleteTempFile(temp);
+        }
     }
 
     /**
@@ -67,7 +71,11 @@ public class DbConverterController {
     public DataResult<UploadResponse> upload(@RequestParam("file") MultipartFile file) {
         ConfigFileTypeEnum fileType = ConfigFileTypeEnum.fromExtension(uploadFileService.extension(file));
         File temp = uploadFileService.transferToTempFileOrThrow(file);
-        return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.uploadFile(temp, fileType)));
+        try {
+            return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.uploadFile(temp, fileType)));
+        } finally {
+            deleteTempFile(temp);
+        }
     }
 
     /**
@@ -82,7 +90,11 @@ public class DbConverterController {
     @PostMapping("/dbp/upload")
     public DataResult<UploadResponse> edbpUploadFile(@RequestParam("file") MultipartFile file) {
         File temp = uploadFileService.transferToTempFile(file, ConfigFileTypeEnum.DBP);
-        return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.dbpUploadFile(temp)));
+        try {
+            return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.dbpUploadFile(temp)));
+        } finally {
+            deleteTempFile(temp);
+        }
     }
 
     /**
@@ -112,7 +124,21 @@ public class DbConverterController {
     @PostMapping("/chat2db/upload")
     public DataResult<UploadResponse> chat2dbUploadFile(@RequestParam("file") MultipartFile file) {
         File temp = uploadFileService.transferToTempFile(file, ConfigFileTypeEnum.JSON);
-        return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.chat2dbUploadFile(temp)));
+        try {
+            return DataResult.of(converterWebConverter.ncxImportResult2response(ncxImportService.chat2dbUploadFile(temp)));
+        } finally {
+            deleteTempFile(temp);
+        }
+    }
+
+    /**
+     * Best-effort cleanup of a temp file produced by transferToTempFile.
+     * Never throws so it does not mask the primary result.
+     */
+    private void deleteTempFile(File temp) {
+        if (temp != null && !temp.delete()) {
+            log.warn("Failed to delete temp file: {}", temp.getAbsolutePath());
+        }
     }
 
 }
