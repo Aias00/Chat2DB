@@ -88,8 +88,10 @@ public class MongodbMetaData extends DefaultMetaService implements IDbMetaData {
             while (resultSet.next()) {
                 Object o = resultSet.getObject(1);
                 LinkedHashMap<String, Object> map = DocumentConverter.object2map(o);
-                Map<String, Object> objectMap = map.entrySet().stream()
-                    .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+                // Use a HashMap copy (not Collectors.toMap) so null-valued document
+                // fields do not trigger Map.merge's NullPointerException; MongoDB
+                // element documents commonly contain null values (e.g. unset "types").
+                Map<String, Object> objectMap = new HashMap<>(map);
                 TableColumn tableColumn = new TableColumn();
                 Object columName = objectMap.get("key");
                 if (Objects.nonNull(columName)) {
@@ -112,8 +114,10 @@ public class MongodbMetaData extends DefaultMetaService implements IDbMetaData {
             while (resultSet.next()) {
                 Object o = resultSet.getObject(1);
                 LinkedHashMap<String, Object> map = DocumentConverter.object2map(o);
-                Map<String, Object> objectMap = map.entrySet().stream()
-                    .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+                // Use a HashMap copy (not Collectors.toMap) so null-valued document
+                // fields do not trigger Map.merge's NullPointerException; MongoDB
+                // element documents commonly contain null values (e.g. unset "types").
+                Map<String, Object> objectMap = new HashMap<>(map);
                 Object indexName = objectMap.get("name");
                 TableIndex tableIndex = new TableIndex();
                 if (Objects.nonNull(indexName)) {
