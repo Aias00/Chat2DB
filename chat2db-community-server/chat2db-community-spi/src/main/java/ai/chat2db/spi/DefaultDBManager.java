@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import ai.chat2db.community.domain.api.config.DriverConfig;
+import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
 import ai.chat2db.community.domain.api.model.account.*;
 import ai.chat2db.community.domain.api.model.async.*;
 import ai.chat2db.community.domain.api.config.*;
@@ -232,9 +233,8 @@ public class DefaultDBManager implements IDbManager {
     }
 
     private void exportTables(Connection connection, String databaseName, String schemaName, AsyncContext asyncContext) throws SQLException {
-        // SET FOREIGN_KEY_CHECKS is MySQL syntax; emit only for the MySQL-protocol family
-        // so the exported script does not start/end with invalid SQL on other dialects.
-        boolean foreignKeyChecks = supportsForeignKeyChecks(Chat2DBContext.getConnectInfo().getDbType());
+        DatabaseTypeEnum databaseType = DatabaseTypeEnum.from(Chat2DBContext.getConnectInfo().getDbType());
+        boolean foreignKeyChecks = databaseType != null && databaseType.isMysqlProtocolFamily();
         if (foreignKeyChecks) {
             asyncContext.write(SQL_SET_FOREIGN_KEY_CHECKS_DISABLED);
         }
@@ -245,10 +245,6 @@ public class DefaultDBManager implements IDbManager {
         if (foreignKeyChecks) {
             asyncContext.write(SQL_SET_FOREIGN_KEY_CHECKS_ENABLED);
         }
-    }
-
-    private static boolean supportsForeignKeyChecks(String dbType) {
-        return StringUtils.equalsAnyIgnoreCase(dbType, "MYSQL", "MARIADB", "TIDB", "STARROCKS", "DORIS", "OCEANBASE");
     }
 
     @Override
