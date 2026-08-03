@@ -415,10 +415,16 @@ export const createTreeAction: StateCreator<TreeStore, [['zustand/devtools', nev
     // If it is a data source under group
     if (parentNode) {
       const index = parentNode.children?.findIndex((item) => item.key === `dataSource_${dataSourceDetails.id}`);
-      parentNode.children?.splice(index!, 1, newTreeNode);
+      // findIndex returns -1 when the node was removed/moved since the modal opened;
+      // splice(-1, 1, ...) would replace the last child. Only splice when found.
+      if (index !== undefined && index >= 0) {
+        parentNode.children?.splice(index, 1, newTreeNode);
+      }
     } else {
       const index = newTreeData?.findIndex((item) => item.key === `dataSource_${dataSourceDetails.id}`);
-      newTreeData?.splice(index!, 1, newTreeNode);
+      if (index !== undefined && index >= 0) {
+        newTreeData?.splice(index, 1, newTreeNode);
+      }
     }
     // If it was originally expanded and needs to be collapsed
     set({
