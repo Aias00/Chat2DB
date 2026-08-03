@@ -3,11 +3,10 @@ import { IWorkspaceTab } from '@/typings/workspace';
 
 /**
  * Maximum number of workspace tabs persisted to localStorage. The in-memory
- * list is unaffected; only what is persisted is capped, so localStorage cannot
- * grow unbounded and overflow quota (which would throw QuotaExceededError and
- * corrupt unrelated persisted keys). On reload, tabs beyond this cap simply do
- * not restore — graceful degradation versus quota corruption. The most recent
- * tabs are kept.
+ * list is unaffected; capping the persisted count limits storage growth and
+ * reduces quota risk, but does not bound the size of an individual tab payload.
+ * On reload, tabs beyond this cap simply do not restore. The most recent tabs
+ * are kept.
  */
 const MAX_PERSISTED_TABS = 100;
 
