@@ -325,7 +325,7 @@ public class DbSqlParserServiceImpl implements IDbSqlParserService {
                             new TablesRequest(databaseName, schemaName, null));
                     return new ArrayList<>(tables);
                 });
-                tableMap = allTables.stream().collect(Collectors.toMap(Table::getName, table -> table));
+                tableMap = allTables.stream().collect(Collectors.toMap(Table::getName, table -> table, (a, b) -> a));
             }
 
             for (Statement statement : statements) {
