@@ -410,9 +410,9 @@ public enum PostgreSQLColumnTypeEnum implements IColumnBuilder {
                 return columnType;
             }
             if (column.getDecimalDigits() == null) {
-                return StringUtils.join(columnType, "(", column.getColumnSize() + ")");
+                return StringUtils.join(columnType, "(", column.getColumnSize(), ")");
             }
-            return StringUtils.join(columnType, "(", column.getColumnSize() + "," + column.getDecimalDigits() + ")");
+            return StringUtils.join(columnType, "(", column.getColumnSize(), ",", column.getDecimalDigits(), ")");
         }
         return columnType;
     }
