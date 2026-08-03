@@ -3,14 +3,25 @@ package ai.chat2db.community.storage.small;
 import ai.chat2db.community.domain.api.model.er.ERPosition;
 import cn.hutool.core.util.ObjectUtil;
 
+import java.io.File;
 import java.util.List;
 
 public class ERPositionStorage extends SmallDataStorage<ERPosition> {
 
-    public static final ERPositionStorage INSTANCE = new ERPositionStorage();
+    private static class Holder {
+        private static final ERPositionStorage INSTANCE = new ERPositionStorage();
+    }
+
+    public static ERPositionStorage getInstance() {
+        return Holder.INSTANCE;
+    }
 
     protected ERPositionStorage() {
         super("er_position", ERPosition.class);
+    }
+
+    ERPositionStorage(File storageFile) {
+        super(storageFile, ERPosition.class);
     }
 
     public String getPosition(Long dataSourceId, String databaseName, String schemaName) {

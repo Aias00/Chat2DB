@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
-import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -20,13 +19,12 @@ class ERPositionStorageTest {
     @TempDir
     File tempDir;
 
-    private ERPositionStorage createStorage() throws Exception {
-        ERPositionStorage storage = new ERPositionStorage();
-        // Redirect the file path to temp dir
-        Field filePathField = SmallDataStorage.class.getDeclaredField("filePath");
-        filePathField.setAccessible(true);
-        filePathField.set(storage, new File(tempDir, "er_position.json").getAbsolutePath());
-        return storage;
+    private File storageFile() {
+        return new File(tempDir, "er_position.json");
+    }
+
+    private ERPositionStorage createStorage() {
+        return new ERPositionStorage(storageFile());
     }
 
     private ERPosition pos(Long dataSourceId, String db, String schema, String position) {
@@ -48,13 +46,14 @@ class ERPositionStorageTest {
     }
 
     @Test
-    void savePositionReplacesExistingPosition() throws Exception {
+    void savePositionReplacesExistingPositionAndPersistsIt() {
         ERPositionStorage storage = createStorage();
         storage.savePosition(pos(1L, "db1", "schema1", "pos1"));
         storage.savePosition(pos(1L, "db1", "schema1", "pos2"));
 
-        assertEquals("pos2", storage.getPosition(1L, "db1", "schema1"));
-        assertEquals(1, storage.getDataList().size(), "Should not duplicate records");
+        ERPositionStorage reloaded = createStorage();
+        assertEquals("pos2", reloaded.getPosition(1L, "db1", "schema1"));
+        assertEquals(1, reloaded.getDataList().size(), "Should not duplicate records");
     }
 
     @Test
