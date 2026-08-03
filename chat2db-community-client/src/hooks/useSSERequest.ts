@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import sseRequest, { AnyObject, SSEOutput, SSERequestOptions, SSERequestParams, SSERequestStatus } from '@/components/SSERequest';
 import useSyncState from '@/hooks/useSyncState';
 import { AnswerPartsType } from '@/constants/chat';
@@ -46,6 +46,14 @@ const useSSERequest = <T = string>(
     () => sseRequest(options),
     [options.baseURL, options.model, options.dangerouslyApiKey, options.lang],
   );
+
+  // Stop the in-flight SSE stream on unmount so the fetch reader and onUpdate
+  // callbacks do not outlive the component (leaked fetch + setState-after-unmount).
+  useEffect(() => {
+    return () => {
+      instance.stop();
+    };
+  }, [instance]);
 
   const request = useCallback(
     async (params: SSERequestParams & AnyObject) => {
