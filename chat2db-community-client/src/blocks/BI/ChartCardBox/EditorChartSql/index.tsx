@@ -73,7 +73,13 @@ const EditorChartSql = forwardRef((props: IProps, ref: ForwardedRef<EditorChartS
       data,
     } = params;
 
-    const { dataList, headerList } = data[0];
+    // The web execution path constructs data = [] for non-SELECT statements
+    // (DDL/INSERT/UPDATE); data[0] is then undefined and the destructuring throws.
+    const first = data?.[0];
+    if (!first) {
+      return;
+    }
+    const { dataList, headerList } = first;
 
     setDatabaseInfoAndMetaData({
       databaseInfo: { dataSourceId, dataSourceName, databaseType, databaseName, schemaName, sql },
