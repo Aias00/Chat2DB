@@ -167,12 +167,10 @@ export const createCommonAction: StateCreator<ChatStore, [['zustand/devtools', n
             return res;
           }
         })
-        .catch(() => {
-          // Restore the slot to the passed ChatVO on fetch failure so it does
-          // not keep the wrong shape / undefined fields read by subscribers.
-          set({ currentChat: { ...get().currentChat, [page]: chat[page] } });
-          get().initChatDetails([]);
-        });
+        // The optimistic state above already contains the correctly shaped ChatVO,
+        // and resetChatDetails cleared the previous details. Do not write state here:
+        // a newer chat may have been selected while this request was in flight.
+        .catch(() => undefined);
     } else {
       set({ currentChat: { ...currentChat, [page]: chat[page] } });
       get().initChatDetails([]);
