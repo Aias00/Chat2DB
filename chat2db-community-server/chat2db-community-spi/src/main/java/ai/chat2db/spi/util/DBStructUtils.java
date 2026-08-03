@@ -142,7 +142,10 @@ public class DBStructUtils {
     }
 
     private static String generateTableCommentSQL(String tableName, String comment) {
-        return "COMMENT ON TABLE " + tableName + " IS '" + (comment == null ? "" : comment.replace("'", "''")) + "';";
+        if (comment == null) {
+            return "COMMENT ON TABLE " + tableName + " IS NULL;";
+        }
+        return "COMMENT ON TABLE " + tableName + " IS '" + comment.replace("'", "''") + "';";
     }
 
 }
