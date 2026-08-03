@@ -3,41 +3,42 @@ package ai.chat2db.plugin.mysql.enums.type;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MysqlColumnTypeEnumDecimalTest {
 
-    private TableColumn column(String type, Integer size, Integer digits) {
-        TableColumn c = new TableColumn();
-        c.setColumnType(type);
-        c.setColumnSize(size);
-        c.setDecimalDigits(digits);
-        return c;
+    private String ddl(MysqlColumnTypeEnum type, Integer size, Integer digits) {
+        TableColumn column = new TableColumn();
+        column.setName("amount");
+        column.setColumnType(type.getColumnType().getTypeName());
+        column.setColumnSize(size);
+        column.setDecimalDigits(digits);
+        column.setNullable(1);
+        return type.buildCreateColumnSql(column).trim().replaceAll("\\s+", " ");
     }
 
     @Test
     void decimalWithPrecisionOnly() {
-        String result = MysqlColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", 15, null));
-        assertTrue(result.contains("DECIMAL(15"), () -> "Expected DECIMAL(15): " + result);
+        assertEquals("`amount` DECIMAL(15) NULL", ddl(MysqlColumnTypeEnum.DECIMAL, 15, null));
+        assertEquals("`amount` DECIMAL(15) UNSIGNED NULL", ddl(MysqlColumnTypeEnum.DECIMAL_UNSIGNED, 15, null));
     }
 
     @Test
     void decimalWithPrecisionAndScale() {
-        String result = MysqlColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", 15, 2));
-        assertTrue(result.contains("DECIMAL(15,2)"), () -> "Expected DECIMAL(15,2): " + result);
+        assertEquals("`amount` DECIMAL(15,2) NULL", ddl(MysqlColumnTypeEnum.DECIMAL, 15, 2));
+        assertEquals("`amount` DECIMAL(15,2) UNSIGNED NULL", ddl(MysqlColumnTypeEnum.DECIMAL_UNSIGNED, 15, 2));
     }
 
     @Test
     void decimalWithBothNull() {
-        String result = MysqlColumnTypeEnum.DECIMAL.buildCreateColumnSql(column("DECIMAL", null, null));
-        assertTrue(result.contains("DECIMAL"), () -> "Expected DECIMAL: " + result);
-        assertFalse(result.contains("("), () -> "Should not have size: " + result);
+        assertEquals("`amount` DECIMAL NULL", ddl(MysqlColumnTypeEnum.DECIMAL, null, null));
     }
 
     @Test
-    void floatWithPrecisionOnly() {
-        String result = MysqlColumnTypeEnum.FLOAT.buildCreateColumnSql(column("FLOAT", 10, null));
-        assertTrue(result.contains("FLOAT"), () -> "Expected FLOAT: " + result);
+    void floatingPointTypesDoNotGainPrecisionOnlySyntax() {
+        assertEquals("`amount` FLOAT NULL", ddl(MysqlColumnTypeEnum.FLOAT, 10, null));
+        assertEquals("`amount` DOUBLE NULL", ddl(MysqlColumnTypeEnum.DOUBLE, 10, null));
+        assertEquals("`amount` FLOAT UNSIGNED NULL", ddl(MysqlColumnTypeEnum.FLOAT_UNSIGNED, 10, null));
+        assertEquals("`amount` DOUBLE UNSIGNED NULL", ddl(MysqlColumnTypeEnum.DOUBLE_UNSIGNED, 10, null));
     }
 }
