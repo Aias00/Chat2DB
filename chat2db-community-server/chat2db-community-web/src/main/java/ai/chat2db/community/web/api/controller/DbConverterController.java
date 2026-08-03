@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 
 /**
  * DbConverterController
@@ -136,8 +138,13 @@ public class DbConverterController {
      * Never throws so it does not mask the primary result.
      */
     private void deleteTempFile(File temp) {
-        if (temp != null && !temp.delete()) {
-            log.warn("Failed to delete temp file: {}", temp.getAbsolutePath());
+        if (temp == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(temp.toPath());
+        } catch (IOException e) {
+            log.warn("Failed to delete temp file: {}", temp.getAbsolutePath(), e);
         }
     }
 
