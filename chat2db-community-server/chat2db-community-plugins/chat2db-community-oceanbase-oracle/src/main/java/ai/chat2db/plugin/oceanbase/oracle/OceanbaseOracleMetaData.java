@@ -2,7 +2,6 @@ package ai.chat2db.plugin.oceanbase.oracle;
 
 import ai.chat2db.plugin.oceanbase.oracle.identifier.OceanbaseOracleIdentifierProcessor;
 import ai.chat2db.plugin.oracle.OracleMetaData;
-import ai.chat2db.community.tools.util.EasyStringUtils;
 import ai.chat2db.spi.IDbMetaData;
 import ai.chat2db.spi.DefaultSQLExecutor;
 import ai.chat2db.spi.ISQLIdentifierProcessor;
@@ -49,7 +48,7 @@ public class OceanbaseOracleMetaData extends OracleMetaData implements IDbMetaDa
                     ddlBuilder.append("\nCOMMENT ON TABLE ")
                             .append(OceanbaseOracleIdentifierProcessor.INSTANCE.quoteIdentifierAlways(tableName))
                             .append(" IS ")
-                            .append(EasyStringUtils.escapeAndQuoteString(tableComment)).append(";");
+                            .append(OceanbaseOracleIdentifierProcessor.INSTANCE.quoteStringLiteral(tableComment)).append(";");
                 }
             }
         });
@@ -61,7 +60,7 @@ public class OceanbaseOracleMetaData extends OracleMetaData implements IDbMetaDa
                     ddlBuilder.append("\nCOMMENT ON COLUMN ")
                             .append(OceanbaseOracleIdentifierProcessor.INSTANCE.quoteIdentifierAlways(tableName)).append(".")
                             .append(OceanbaseOracleIdentifierProcessor.INSTANCE.quoteIdentifierAlways(columnName)).append(" IS ")
-                            .append(EasyStringUtils.escapeAndQuoteString(columnComment)).append(";");
+                            .append(OceanbaseOracleIdentifierProcessor.INSTANCE.quoteStringLiteral(columnComment)).append(";");
                 }
             }
         });
