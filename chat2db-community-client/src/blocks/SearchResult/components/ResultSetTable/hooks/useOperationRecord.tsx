@@ -449,13 +449,13 @@ const useOperationRecord: IUseOperationRecord = ({ tableInstance, theme }) => {
       );
     });
 
-    findRowNumbersByIds(tableInstance, createRowRecordList).map((row) => {
+    findRowNumbersByIds(tableInstance, createRowRecordList).forEach((row) => {
       tableInstance?.arrangeCustomCellStyle(
         { range: { start: { row, col: 0 }, end: { row, col: columns.length } } },
         'custom-create-cell',
       );
     });
-    findRowNumbersByIds(tableInstance, deleteRowRecordList)?.map((row) => {
+    findRowNumbersByIds(tableInstance, deleteRowRecordList)?.forEach((row) => {
       tableInstance?.arrangeCustomCellStyle(
         { range: { start: { row, col: 0 }, end: { row, col: columns.length } } },
         'custom-delete-cell',
