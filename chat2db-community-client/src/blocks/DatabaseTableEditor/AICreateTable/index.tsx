@@ -36,7 +36,7 @@ const AICreateTable = forwardRef((props: IProps, ref: ForwardedRef<IAICreateTabl
   const draggableResizableModalRef = useRef<DraggableResizableModalRef>(null);
   const [chatInputValue, setChatInputValue] = useState('');
   const [content, setContent] = useState('');
-  const { status, request } = useSSERequest(
+  const { status, request, stop: stopAiStream } = useSSERequest(
     {
       baseURL: '/api/v2/ai/chat',
     },
@@ -68,7 +68,11 @@ const AICreateTable = forwardRef((props: IProps, ref: ForwardedRef<IAICreateTabl
     }
   }, [status]);
 
-  const closeEventSource = () => {};
+  const closeEventSource = () => {
+    // Abort the in-flight AI stream so closing the modal mid-generation
+    // stops the fetch reader and downstream callbacks (stale refs).
+    stopAiStream();
+  };
 
   useEffect(() => {
     if (!content) {
