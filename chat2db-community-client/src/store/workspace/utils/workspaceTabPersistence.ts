@@ -23,29 +23,26 @@ export function getPersistableWorkspaceTabList(workspaceTabList?: IWorkspaceTab[
   const persistableTabs = workspaceTabList.filter(
     (tab) => tab.type !== WorkspaceTabType.Terminal && !tab.uniqueData?.filePreviewMimeType,
   );
+  const cappedTabs = capPersistedTabs(persistableTabs);
 
   try {
-    return capPersistedTabs(
-      JSON.parse(
-        JSON.stringify(persistableTabs, (_key, value) => {
-          if (typeof value === 'function') {
-            return undefined;
-          }
-          return value;
-        }),
-      ) as IWorkspaceTab[],
-    );
+    return JSON.parse(
+      JSON.stringify(cappedTabs, (_key, value) => {
+        if (typeof value === 'function') {
+          return undefined;
+        }
+        return value;
+      }),
+    ) as IWorkspaceTab[];
   } catch {
-    return capPersistedTabs(
-      persistableTabs.map((tab) => ({
-        id: tab.id,
-        type: tab.type,
-        title: tab.title,
-        uniqueData: tab.uniqueData
-          ? Object.fromEntries(Object.entries(tab.uniqueData).filter(([, value]) => typeof value !== 'function'))
-          : undefined,
-      })),
-    );
+    return cappedTabs.map((tab) => ({
+      id: tab.id,
+      type: tab.type,
+      title: tab.title,
+      uniqueData: tab.uniqueData
+        ? Object.fromEntries(Object.entries(tab.uniqueData).filter(([, value]) => typeof value !== 'function'))
+        : undefined,
+    }));
   }
 }
 
