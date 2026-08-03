@@ -19,8 +19,6 @@ import org.apache.commons.lang3.StringUtils;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
-import java.util.Map.Entry;
-import java.util.stream.Collectors;
 
 import static ai.chat2db.plugin.mongodb.constant.MongodbMetaDataConstants.*;
 @Slf4j
@@ -87,11 +85,7 @@ public class MongodbMetaData extends DefaultMetaService implements IDbMetaData {
         return (List) DefaultSQLExecutor.getInstance().execute(connection, sql, (resultSet) -> {
             while (resultSet.next()) {
                 Object o = resultSet.getObject(1);
-                LinkedHashMap<String, Object> map = DocumentConverter.object2map(o);
-                // Use a HashMap copy (not Collectors.toMap) so null-valued document
-                // fields do not trigger Map.merge's NullPointerException; MongoDB
-                // element documents commonly contain null values (e.g. unset "types").
-                Map<String, Object> objectMap = new HashMap<>(map);
+                Map<String, Object> objectMap = copyDocumentMap(DocumentConverter.object2map(o));
                 TableColumn tableColumn = new TableColumn();
                 Object columName = objectMap.get("key");
                 if (Objects.nonNull(columName)) {
@@ -113,11 +107,7 @@ public class MongodbMetaData extends DefaultMetaService implements IDbMetaData {
         DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
             while (resultSet.next()) {
                 Object o = resultSet.getObject(1);
-                LinkedHashMap<String, Object> map = DocumentConverter.object2map(o);
-                // Use a HashMap copy (not Collectors.toMap) so null-valued document
-                // fields do not trigger Map.merge's NullPointerException; MongoDB
-                // element documents commonly contain null values (e.g. unset "types").
-                Map<String, Object> objectMap = new HashMap<>(map);
+                Map<String, Object> objectMap = copyDocumentMap(DocumentConverter.object2map(o));
                 Object indexName = objectMap.get("name");
                 TableIndex tableIndex = new TableIndex();
                 if (Objects.nonNull(indexName)) {
@@ -138,6 +128,10 @@ public class MongodbMetaData extends DefaultMetaService implements IDbMetaData {
     @Override
     public ISqlBuilder getSqlBuilder() {
         return MongodbSqlBuilder.getInstance();
+    }
+
+    static Map<String, Object> copyDocumentMap(Map<String, Object> map) {
+        return new HashMap<>(map);
     }
 
     private void executeUse(String schemaName) {
