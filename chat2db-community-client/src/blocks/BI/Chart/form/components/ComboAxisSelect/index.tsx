@@ -10,6 +10,7 @@ import { IComboYAxisDataItem } from '@/blocks/BI/Chart/typings';
 import { ChartType } from '@/blocks/BI/Chart/constants';
 import { useUpdateEffect } from 'ahooks';
 import i18n from '@/i18n';
+import { filterComboAxisActions } from './filterComboAxisActions';
 
 interface IProps {
   value?: IComboYAxisDataItem[];
@@ -148,13 +149,7 @@ const ComboAxisSelectItem = (props: IItemProps) => {
         },
       },
     ];
-    // Filter by action key instead of splicing by index, so the result
-    // is correct regardless of whether both isFirst and isLast are true.
-    return allActions.filter((action) => {
-      if (isFirst && action.key === 'move-up') return false;
-      if (isLast && action.key === 'move-down') return false;
-      return true;
-    });
+    return filterComboAxisActions(allActions, isFirst, isLast);
   }, [isFirst, isLast]);
 
   return (

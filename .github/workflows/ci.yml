@@ -66,6 +66,9 @@ jobs:
       - name: Run database object sorting contract
         run: yarn run test:database-object-sorting
 
+      - name: Run ComboAxisSelect action filter contract
+        run: yarn run test:combo-axis-actions
+
       - name: Run Redis explorer contract
         run: yarn run test:redis-explorer
 
