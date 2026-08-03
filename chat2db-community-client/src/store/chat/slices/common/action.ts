@@ -149,7 +149,7 @@ export const createCommonAction: StateCreator<ChatStore, [['zustand/devtools', n
 
     if (chat[page]?.id) {
       const { id } = chat[page];
-      set({ currentChat: { ...currentChat, [page]: chat } });
+      set({ currentChat: { ...currentChat, [page]: chat[page] } });
       return chatService
         .getChatDetailById({
           pageSize: 5,
@@ -166,6 +166,12 @@ export const createCommonAction: StateCreator<ChatStore, [['zustand/devtools', n
             get().initChatDetails(res.chatDetails);
             return res;
           }
+        })
+        .catch(() => {
+          // Restore the slot to the passed ChatVO on fetch failure so it does
+          // not keep the wrong shape / undefined fields read by subscribers.
+          set({ currentChat: { ...get().currentChat, [page]: chat[page] } });
+          get().initChatDetails([]);
         });
     } else {
       set({ currentChat: { ...currentChat, [page]: chat[page] } });
