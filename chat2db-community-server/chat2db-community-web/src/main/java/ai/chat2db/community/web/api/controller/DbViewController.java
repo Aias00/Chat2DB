@@ -113,7 +113,7 @@ public class DbViewController {
      * @return operation result for the request.
      */
     @PostMapping("/delete")
-    public ActionResult delete(@Valid TableDeleteRequest request) {
+    public ActionResult delete(@RequestBody @Valid TableDeleteRequest request) {
         // The /delete endpoint deletes a VIEW, not a table. Build a DbViewDeleteRequest
         // (mapping tableName -> viewName, since a view's object name is carried in tableName
         // on this request type) and delegate to viewService.drop, mirroring the /drop endpoint.
