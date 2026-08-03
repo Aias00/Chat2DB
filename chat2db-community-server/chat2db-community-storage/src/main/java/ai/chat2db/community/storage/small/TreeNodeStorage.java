@@ -107,7 +107,7 @@ public class TreeNodeStorage extends SmallDataStorage<TreeNode> {
         }
     }
 
-    public ActionResult deleteNode(Node dragNode) {
+    public synchronized ActionResult deleteNode(Node dragNode) {
         List<Node> nodes = getNodes();
         removeNode(nodes, dragNode, true);
         createTree(nodes);
