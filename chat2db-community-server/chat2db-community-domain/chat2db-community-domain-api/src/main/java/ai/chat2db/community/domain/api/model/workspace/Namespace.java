@@ -1,6 +1,7 @@
 package ai.chat2db.community.domain.api.model.workspace;
 
 import ai.chat2db.community.domain.api.model.datasource.DataSource;
+import com.alibaba.fastjson2.annotation.JSONField;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.Setter;
@@ -27,6 +28,7 @@ public class Namespace {
      * mutations would write a stale snapshot back to the namespace JSON file.
      */
     @JsonIgnore
+    @JSONField(serialize = false, deserialize = false)
     private List<DataSource> dataSources;
 
 
