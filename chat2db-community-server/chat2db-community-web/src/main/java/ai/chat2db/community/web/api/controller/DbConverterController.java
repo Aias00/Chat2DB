@@ -143,7 +143,7 @@ public class DbConverterController {
         }
         try {
             Files.deleteIfExists(temp.toPath());
-        } catch (IOException e) {
+        } catch (IOException | SecurityException e) {
             log.warn("Failed to delete temp file: {}", temp.getAbsolutePath(), e);
         }
     }
