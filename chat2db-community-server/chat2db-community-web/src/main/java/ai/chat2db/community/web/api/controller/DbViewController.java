@@ -114,8 +114,15 @@ public class DbViewController {
      */
     @PostMapping("/delete")
     public ActionResult delete(@Valid TableDeleteRequest request) {
-        DbTableQueryRequest param = dbWebConverter.tableRequest2param(request);
-        tableService.dropTable(param);
+        // The /delete endpoint deletes a VIEW, not a table. Build a DbViewDeleteRequest
+        // (mapping tableName -> viewName, since a view's object name is carried in tableName
+        // on this request type) and delegate to viewService.drop, mirroring the /drop endpoint.
+        DbViewDeleteRequest param = new DbViewDeleteRequest(
+                request.getDataSourceId(),
+                request.getDatabaseName(),
+                request.getSchemaName(),
+                request.getTableName());
+        viewService.drop(param);
         return ActionResult.isSuccess();
     }
 
