@@ -151,6 +151,12 @@ const updateTreeData = (
   childCount?: number,
   clearChildCount = false,
 ): TreeNodeData[] => {
+  // getTreeData/clearTreeStore null out treeData; a refresh racing a lazy-load
+  // can pass a null origin into the setTreeData updater. Guard so it returns
+  // an empty array instead of throwing null.map (which crashes the tree view).
+  if (!Array.isArray(list)) {
+    return [];
+  }
   return (
     list.map((node) => {
       if (node.key === key) {
