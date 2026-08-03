@@ -1,4 +1,5 @@
-import { IWorkspaceTab } from '@/typings';
+import { WorkspaceTabType } from '@/constants/workspace';
+import { IWorkspaceTab } from '@/typings/workspace';
 
 /**
  * Maximum number of workspace tabs persisted to localStorage. The in-memory
@@ -19,10 +20,14 @@ export function getPersistableWorkspaceTabList(workspaceTabList?: IWorkspaceTab[
     return workspaceTabList || null;
   }
 
+  const persistableTabs = workspaceTabList.filter(
+    (tab) => tab.type !== WorkspaceTabType.Terminal && !tab.uniqueData?.filePreviewMimeType,
+  );
+
   try {
     return capPersistedTabs(
       JSON.parse(
-        JSON.stringify(workspaceTabList, (_key, value) => {
+        JSON.stringify(persistableTabs, (_key, value) => {
           if (typeof value === 'function') {
             return undefined;
           }
@@ -32,7 +37,7 @@ export function getPersistableWorkspaceTabList(workspaceTabList?: IWorkspaceTab[
     );
   } catch {
     return capPersistedTabs(
-      workspaceTabList.map((tab) => ({
+      persistableTabs.map((tab) => ({
         id: tab.id,
         type: tab.type,
         title: tab.title,
