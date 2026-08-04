@@ -20,6 +20,9 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public class JdbcJarUtils {
 
     private static final OkHttpClient async_client = new OkHttpClient.Builder()
@@ -58,21 +61,26 @@ public class JdbcJarUtils {
         async_client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
+                log.error("asyncDownload failed for: {}", call.request().url(), e);
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    throw new IOException("Unexpected code " + response);
-                }
-                try (InputStream is = response.body().byteStream();
-                     FileOutputStream fos = new FileOutputStream(outputPath)) {
-                    byte[] buffer = new byte[2048];
-                    int length;
-                    while ((length = is.read(buffer)) != -1) {
-                        fos.write(buffer, 0, length);
+                // try-with-resources on the response so it is closed on ALL paths
+                // (the !isSuccessful() throw previously leaked the connection).
+                try (response) {
+                    if (!response.isSuccessful()) {
+                        throw new IOException("Unexpected code " + response);
                     }
-                    fos.flush();
+                    try (InputStream is = response.body().byteStream();
+                         FileOutputStream fos = new FileOutputStream(outputPath)) {
+                        byte[] buffer = new byte[2048];
+                        int length;
+                        while ((length = is.read(buffer)) != -1) {
+                            fos.write(buffer, 0, length);
+                        }
+                        fos.flush();
+                    }
                 }
             }
         });
