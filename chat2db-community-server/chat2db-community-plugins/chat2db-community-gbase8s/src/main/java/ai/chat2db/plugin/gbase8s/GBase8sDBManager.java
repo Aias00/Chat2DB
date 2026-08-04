@@ -15,7 +15,7 @@ public class GBase8sDBManager extends GenericDBManager implements IDbManager {
     public Connection getConnection(ConnectInfo connectInfo) {
         String url = connectInfo.getUrl();
         String service = connectInfo.getServiceName();
-        if(StringUtils.isNotBlank(service)){
+        if(StringUtils.isNotBlank(service) && !StringUtils.contains(url, "GBASEDBTSERVER=")){
             url = url + ":" + "GBASEDBTSERVER=" + service;
         }
         connectInfo.setUrl(url);
