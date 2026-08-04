@@ -454,10 +454,14 @@ public class DbSqlParserServiceImpl implements IDbSqlParserService {
                                     List<TableColumn> tableColumnList =
                                             CacheManage.getList(tableColumnKey, TableColumn.class,
                                                     (key) -> false, (key) -> metaData.columns(Chat2DBContext.getConnection(),
-                                                            new TableMetadataRequest(databaseName, schemaName, identifierName)));
+                                                            // Load columns for the identifier's own db/schema (the values
+                                                            // used in the cache key), not the request-level db/schema, so a
+                                                            // cross-database/cross-schema table reference does not poison the
+                                                            // cache with columns from the console's db/schema.
+                                                            new TableMetadataRequest(identifierDatabase, identifierSchema, identifierName)));
 
                                     List<SimpleColumn> simpleColumns = getSimpleColumns(tableColumnList, datasourceName,
-                                            databaseName, schemaName, identifierName);
+                                            identifierDatabase, identifierSchema, identifierName);
                                     for (SimpleColumn simpleColumn : simpleColumns) {
                                         simpleColumn.setInsertText(sqlIdentifierProcessor.quoteIdentifier(simpleColumn.getColumnName()));
                                     }
