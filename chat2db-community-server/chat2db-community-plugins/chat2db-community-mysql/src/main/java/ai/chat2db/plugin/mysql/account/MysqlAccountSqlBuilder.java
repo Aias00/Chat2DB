@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -68,6 +69,45 @@ class MysqlAccountSqlBuilder {
                 requirePrivileges(command);
                 yield SQL_REVOKE + privilegeList(command.getPrivileges()) + SQLConstants.SQL_ON + scope(command) + SQL_FROM
                         + account(command);
+            }
+            case ALTER_PASSWORD_POLICY -> {
+                String policy = command.getPasswordExpirePolicy();
+                if (StringUtils.isBlank(policy)) {
+                    throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                }
+                String expireClause = switch (policy.toUpperCase(Locale.ROOT)) {
+                    case "DEFAULT" -> "PASSWORD EXPIRE DEFAULT";
+                    case "NEVER" -> "PASSWORD EXPIRE NEVER";
+                    case "IMMEDIATE" -> "PASSWORD EXPIRE";
+                    case "INTERVAL" -> {
+                        Integer days = command.getPasswordExpireDays();
+                        if (days == null || days < 0) {
+                            throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                        }
+                        yield "PASSWORD EXPIRE INTERVAL " + days + " DAY";
+                    }
+                    default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                };
+                yield SQL_ALTER_USER + account(command) + " " + expireClause;
+            }
+            case ALTER_RESOURCE_LIMITS -> {
+                StringBuilder limits = new StringBuilder();
+                if (command.getMaxQueriesPerHour() != null) {
+                    limits.append(" MAX_QUERIES_PER_HOUR ").append(command.getMaxQueriesPerHour());
+                }
+                if (command.getMaxUpdatesPerHour() != null) {
+                    limits.append(" MAX_UPDATES_PER_HOUR ").append(command.getMaxUpdatesPerHour());
+                }
+                if (command.getMaxConnectionsPerHour() != null) {
+                    limits.append(" MAX_CONNECTIONS_PER_HOUR ").append(command.getMaxConnectionsPerHour());
+                }
+                if (command.getMaxUserConnections() != null) {
+                    limits.append(" MAX_USER_CONNECTIONS ").append(command.getMaxUserConnections());
+                }
+                if (limits.isEmpty()) {
+                    throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                }
+                yield SQL_ALTER_USER + account(command) + " WITH" + limits;
             }
             default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
         };
