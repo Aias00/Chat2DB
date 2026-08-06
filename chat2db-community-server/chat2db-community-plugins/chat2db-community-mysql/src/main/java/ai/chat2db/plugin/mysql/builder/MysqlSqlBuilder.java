@@ -49,6 +49,12 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_PARTITION_S
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_RENAME;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SECURITY;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_UNDEFINED;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_CHECK;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ADD_CONSTRAINT;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_CHECK_PREFIX;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ENFORCED;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_NOT_ENFORCED;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ALTER_CHECK;
 
 
 public class MysqlSqlBuilder extends DefaultSqlBuilder {
@@ -214,28 +220,28 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                     continue;
                 }
                 if (EditStatusEnum.DELETE.name().equals(cc.getEditStatus())) {
-                    script.append(SQLConstants.TAB).append("DROP CHECK ")
+                    script.append(SQLConstants.TAB).append(SQL_DROP_CHECK)
                             .append(quoteMysqlIdentifier(cc.getName()))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.ADD.name().equals(cc.getEditStatus())) {
-                    script.append(SQLConstants.TAB).append("ADD CONSTRAINT ");
+                    script.append(SQLConstants.TAB).append(SQL_ADD_CONSTRAINT);
                     if (StringUtils.isNotBlank(cc.getName())) {
                         script.append(quoteMysqlIdentifier(cc.getName())).append(" ");
                     }
-                    script.append("CHECK (").append(cc.getExpression()).append(")");
+                    script.append(SQL_CHECK_PREFIX).append(cc.getExpression()).append(")");
                     if (Boolean.FALSE.equals(cc.getEnforced())) {
-                        script.append(" NOT ENFORCED");
+                        script.append(SQL_NOT_ENFORCED);
                     } else {
-                        script.append(" ENFORCED");
+                        script.append(SQL_ENFORCED);
                     }
                     script.append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.MODIFY.name().equals(cc.getEditStatus())) {
-                    script.append(SQLConstants.TAB).append("ALTER CHECK ")
+                    script.append(SQLConstants.TAB).append(SQL_ALTER_CHECK)
                             .append(quoteMysqlIdentifier(cc.getName()));
                     if (Boolean.FALSE.equals(cc.getEnforced())) {
-                        script.append(" NOT ENFORCED");
+                        script.append(SQL_NOT_ENFORCED);
                     } else {
-                        script.append(" ENFORCED");
+                        script.append(SQL_ENFORCED);
                     }
                     script.append(SQLConstants.COMMA_LINE_SEPARATOR);
                 }
