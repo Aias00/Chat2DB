@@ -5,6 +5,7 @@ import ai.chat2db.spi.constant.SQLConstants;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.PrivilegeScopeEnum;
+import ai.chat2db.community.domain.api.enums.plugin.PasswordExpirePolicyEnum;
 import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import ai.chat2db.plugin.mysql.enums.account.MysqlPrivilege;
 import org.apache.commons.lang3.StringUtils;
@@ -13,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -71,43 +71,39 @@ class MysqlAccountSqlBuilder {
                         + account(command);
             }
             case ALTER_PASSWORD_POLICY -> {
-                String policy = command.getPasswordExpirePolicy();
-                if (StringUtils.isBlank(policy)) {
-                    throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
-                }
-                String expireClause = switch (policy.toUpperCase(Locale.ROOT)) {
-                    case "DEFAULT" -> "PASSWORD EXPIRE DEFAULT";
-                    case "NEVER" -> "PASSWORD EXPIRE NEVER";
-                    case "IMMEDIATE" -> "PASSWORD EXPIRE";
-                    case "INTERVAL" -> {
+                PasswordExpirePolicyEnum policy = PasswordExpirePolicyEnum.from(command.getPasswordExpirePolicy());
+                String expireClause = switch (policy) {
+                    case DEFAULT -> SQL_PASSWORD_EXPIRE_DEFAULT;
+                    case NEVER -> SQL_PASSWORD_EXPIRE_NEVER;
+                    case IMMEDIATE -> SQL_PASSWORD_EXPIRE;
+                    case INTERVAL -> {
                         Integer days = command.getPasswordExpireDays();
                         if (days == null || days < 0) {
                             throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
                         }
-                        yield "PASSWORD EXPIRE INTERVAL " + days + " DAY";
+                        yield SQL_PASSWORD_EXPIRE_INTERVAL_PREFIX + days + SQL_PASSWORD_EXPIRE_INTERVAL_SUFFIX;
                     }
-                    default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
                 };
                 yield SQL_ALTER_USER + account(command) + " " + expireClause;
             }
             case ALTER_RESOURCE_LIMITS -> {
                 StringBuilder limits = new StringBuilder();
                 if (command.getMaxQueriesPerHour() != null) {
-                    limits.append(" MAX_QUERIES_PER_HOUR ").append(command.getMaxQueriesPerHour());
+                    limits.append(SQL_MAX_QUERIES_PER_HOUR).append(command.getMaxQueriesPerHour());
                 }
                 if (command.getMaxUpdatesPerHour() != null) {
-                    limits.append(" MAX_UPDATES_PER_HOUR ").append(command.getMaxUpdatesPerHour());
+                    limits.append(SQL_MAX_UPDATES_PER_HOUR).append(command.getMaxUpdatesPerHour());
                 }
                 if (command.getMaxConnectionsPerHour() != null) {
-                    limits.append(" MAX_CONNECTIONS_PER_HOUR ").append(command.getMaxConnectionsPerHour());
+                    limits.append(SQL_MAX_CONNECTIONS_PER_HOUR).append(command.getMaxConnectionsPerHour());
                 }
                 if (command.getMaxUserConnections() != null) {
-                    limits.append(" MAX_USER_CONNECTIONS ").append(command.getMaxUserConnections());
+                    limits.append(SQL_MAX_USER_CONNECTIONS).append(command.getMaxUserConnections());
                 }
                 if (limits.isEmpty()) {
                     throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
                 }
-                yield SQL_ALTER_USER + account(command) + " WITH" + limits;
+                yield SQL_ALTER_USER + account(command) + SQL_WITH_LIMITS + limits;
             }
             default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
         };
