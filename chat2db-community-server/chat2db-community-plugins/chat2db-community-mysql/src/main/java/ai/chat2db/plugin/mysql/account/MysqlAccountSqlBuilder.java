@@ -5,6 +5,7 @@ import ai.chat2db.spi.constant.SQLConstants;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.PrivilegeScopeEnum;
+import ai.chat2db.community.domain.api.enums.plugin.DefaultRoleModeEnum;
 import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import ai.chat2db.plugin.mysql.enums.account.MysqlPrivilege;
 import org.apache.commons.lang3.StringUtils;
@@ -13,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -70,37 +70,38 @@ class MysqlAccountSqlBuilder {
                 yield SQL_REVOKE + privilegeList(command.getPrivileges()) + SQLConstants.SQL_ON + scope(command) + SQL_FROM
                         + account(command);
             }
-            case CREATE_ROLE -> "CREATE ROLE " + account(command);
-            case DROP_ROLE -> "DROP ROLE IF EXISTS " + account(command);
+            case CREATE_ROLE -> SQL_CREATE_ROLE + account(command);
+            case DROP_ROLE -> SQL_DROP_ROLE_IF_EXISTS + account(command);
             case GRANT_ROLE -> {
                 String role = command.getRoleName() != null ? command.getRoleName() : command.getUser();
                 StringBuilder sb = new StringBuilder();
-                sb.append("GRANT ").append(identifier(role)).append(" TO ").append(account(command));
+                sb.append(SQL_GRANT).append(identifier(role)).append(SQLConstants.SQL_TO).append(account(command));
                 if (Boolean.TRUE.equals(command.getWithAdminOption())) {
-                    sb.append(" WITH ADMIN OPTION");
+                    sb.append(SQL_WITH_ADMIN_OPTION);
                 }
                 yield sb.toString();
             }
             case REVOKE_ROLE -> {
                 String role = command.getRoleName() != null ? command.getRoleName() : command.getUser();
-                yield "REVOKE " + identifier(role) + " FROM " + account(command);
+                yield SQL_REVOKE + identifier(role) + SQL_FROM + account(command);
             }
             case SET_DEFAULT_ROLE -> {
-                String mode = command.getDefaultRoleMode();
+                DefaultRoleModeEnum mode = DefaultRoleModeEnum.from(command.getDefaultRoleMode());
                 StringBuilder sb = new StringBuilder();
-                sb.append("SET DEFAULT ROLE ");
-                if ("ALL".equalsIgnoreCase(mode)) {
-                    sb.append("ALL");
-                } else if ("NONE".equalsIgnoreCase(mode)) {
-                    sb.append("NONE");
-                } else if (command.getRoleList() != null && !command.getRoleList().isEmpty()) {
-                    sb.append(command.getRoleList().stream()
-                            .map(MysqlAccountSqlBuilder::identifier)
-                            .collect(Collectors.joining(", ")));
-                } else {
-                    throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                sb.append(SQL_SET_DEFAULT_ROLE);
+                switch (mode) {
+                    case ALL -> sb.append(SQL_ROLE_ALL);
+                    case NONE -> sb.append(SQL_ROLE_NONE);
+                    case SELECTED -> {
+                        if (command.getRoleList() == null || command.getRoleList().isEmpty()) {
+                            throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                        }
+                        sb.append(command.getRoleList().stream()
+                                .map(MysqlAccountSqlBuilder::identifier)
+                                .collect(Collectors.joining(", ")));
+                    }
                 }
-                sb.append(" TO ").append(account(command));
+                sb.append(SQLConstants.SQL_TO).append(account(command));
                 yield sb.toString();
             }
             default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
