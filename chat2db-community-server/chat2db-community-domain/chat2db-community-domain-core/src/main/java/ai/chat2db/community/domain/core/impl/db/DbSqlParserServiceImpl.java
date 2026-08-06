@@ -397,16 +397,17 @@ public class DbSqlParserServiceImpl implements IDbSqlParserService {
                         String identifierType = identifier.getIdentifierType();
                         String identifierTable = identifier.getIdentifierTable();
                         String identifierName = identifier.getIdentifierName();
-                        String identifierDatabase = identifier.getIdentifierDatabase();
-                        if (StringUtils.isBlank(identifierDatabase)
-                                && !StringUtils.equals(IdentifierTypeEnum.DATABASE.name(), identifierType)) {
-                            identifierDatabase = databaseName;
-                        }
-                        String identifierSchema = identifier.getIdentifierSchema();
-                        if (StringUtils.isBlank(identifierSchema)
-                                && !StringUtils.equals(IdentifierTypeEnum.SCHEMA.name(), identifierType)) {
-                            identifierSchema = schemaName;
-                        }
+                        // Effectively-final so the values can be captured by the column-loader
+                        // lambda below; fall back to the console's db/schema only when the
+                        // identifier does not itself carry one.
+                        String rawIdentifierDatabase = identifier.getIdentifierDatabase();
+                        String identifierDatabase = StringUtils.isBlank(rawIdentifierDatabase)
+                                && !StringUtils.equals(IdentifierTypeEnum.DATABASE.name(), identifierType)
+                                ? databaseName : rawIdentifierDatabase;
+                        String rawIdentifierSchema = identifier.getIdentifierSchema();
+                        String identifierSchema = StringUtils.isBlank(rawIdentifierSchema)
+                                && !StringUtils.equals(IdentifierTypeEnum.SCHEMA.name(), identifierType)
+                                ? schemaName : rawIdentifierSchema;
                         String identifierAlias = identifier.getIdentifierAlias();
                         simpleIdentifier.setName(identifierName);
                         simpleIdentifier.setAlias(identifierAlias);
