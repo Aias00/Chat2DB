@@ -207,6 +207,41 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             }
         }
 
+        List<CheckConstraintInfo> checkConstraints = newTable.getCheckConstraintList();
+        if (CollectionUtils.isNotEmpty(checkConstraints)) {
+            for (CheckConstraintInfo cc : checkConstraints) {
+                if (StringUtils.isBlank(cc.getEditStatus())) {
+                    continue;
+                }
+                if (EditStatusEnum.DELETE.name().equals(cc.getEditStatus())) {
+                    script.append(SQLConstants.TAB).append("DROP CHECK ")
+                            .append(quoteMysqlIdentifier(cc.getName()))
+                            .append(SQLConstants.COMMA_LINE_SEPARATOR);
+                } else if (EditStatusEnum.ADD.name().equals(cc.getEditStatus())) {
+                    script.append(SQLConstants.TAB).append("ADD CONSTRAINT ");
+                    if (StringUtils.isNotBlank(cc.getName())) {
+                        script.append(quoteMysqlIdentifier(cc.getName())).append(" ");
+                    }
+                    script.append("CHECK (").append(cc.getExpression()).append(")");
+                    if (Boolean.FALSE.equals(cc.getEnforced())) {
+                        script.append(" NOT ENFORCED");
+                    } else {
+                        script.append(" ENFORCED");
+                    }
+                    script.append(SQLConstants.COMMA_LINE_SEPARATOR);
+                } else if (EditStatusEnum.MODIFY.name().equals(cc.getEditStatus())) {
+                    script.append(SQLConstants.TAB).append("ALTER CHECK ")
+                            .append(quoteMysqlIdentifier(cc.getName()));
+                    if (Boolean.FALSE.equals(cc.getEnforced())) {
+                        script.append(" NOT ENFORCED");
+                    } else {
+                        script.append(" ENFORCED");
+                    }
+                    script.append(SQLConstants.COMMA_LINE_SEPARATOR);
+                }
+            }
+        }
+
         if (script.length() > 2) {
             script = new StringBuilder(script.substring(0, script.length() - 2));
             script.append(SQLConstants.SEMICOLON);
