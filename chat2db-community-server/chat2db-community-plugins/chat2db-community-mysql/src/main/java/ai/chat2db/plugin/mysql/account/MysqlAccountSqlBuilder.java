@@ -78,8 +78,8 @@ class MysqlAccountSqlBuilder {
                     case IMMEDIATE -> SQL_PASSWORD_EXPIRE;
                     case INTERVAL -> {
                         Integer days = command.getPasswordExpireDays();
-                        if (days == null || days < 0) {
-                            throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+                        if (days == null || days < 1 || days > MAX_PASSWORD_EXPIRE_DAYS) {
+                            throw new BusinessException(ERROR_KEY_ACCOUNT_INVALID_EXPIRE_DAYS);
                         }
                         yield SQL_PASSWORD_EXPIRE_INTERVAL_PREFIX + days + SQL_PASSWORD_EXPIRE_INTERVAL_SUFFIX;
                     }
@@ -88,6 +88,10 @@ class MysqlAccountSqlBuilder {
             }
             case ALTER_RESOURCE_LIMITS -> {
                 StringBuilder limits = new StringBuilder();
+                requireNonNegative(command.getMaxQueriesPerHour());
+                requireNonNegative(command.getMaxUpdatesPerHour());
+                requireNonNegative(command.getMaxConnectionsPerHour());
+                requireNonNegative(command.getMaxUserConnections());
                 if (command.getMaxQueriesPerHour() != null) {
                     limits.append(SQL_MAX_QUERIES_PER_HOUR).append(command.getMaxQueriesPerHour());
                 }
@@ -107,6 +111,12 @@ class MysqlAccountSqlBuilder {
             }
             default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
         };
+    }
+
+    private static void requireNonNegative(Integer value) {
+        if (value != null && value < 0) {
+            throw new BusinessException(ERROR_KEY_ACCOUNT_INVALID_RESOURCE_LIMIT);
+        }
     }
 
     private static String passwordLiteral(AccountOperationRequest command, boolean maskSensitive) {

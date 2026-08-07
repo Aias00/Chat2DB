@@ -38,6 +38,9 @@ public final class MysqlAccountSqlBuilderConstants {
     public static final String ERROR_KEY_ACCOUNT_ACTION_REQUIRED = "mysql.account.actionRequired";
     public static final String ERROR_KEY_ACCOUNT_PASSWORD_REQUIRED = "mysql.account.passwordRequired";
     public static final String ERROR_KEY_ACCOUNT_INVALID_ACCOUNT_NAME = "mysql.account.invalidAccountName";
+    public static final String ERROR_KEY_ACCOUNT_INVALID_EXPIRE_DAYS = "mysql.account.invalidPasswordExpireDays";
+    public static final String ERROR_KEY_ACCOUNT_INVALID_RESOURCE_LIMIT = "mysql.account.invalidResourceLimit";
+    public static final int MAX_PASSWORD_EXPIRE_DAYS = 65535;
 
     public static final String SQL_PASSWORD_EXPIRE_DEFAULT = "PASSWORD EXPIRE DEFAULT";
     public static final String SQL_PASSWORD_EXPIRE_NEVER = "PASSWORD EXPIRE NEVER";
