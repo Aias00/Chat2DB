@@ -9,12 +9,12 @@ public enum DefaultRoleModeEnum {
 
     public static DefaultRoleModeEnum from(String value) {
         if (value == null) {
-            return SELECTED;
+            throw new BusinessException("mysql.account.defaultRoleModeRequired");
         }
         try {
             return valueOf(value.toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return SELECTED;
+            throw new BusinessException("mysql.account.defaultRoleModeUnsupported", null, e);
         }
     }
 }
