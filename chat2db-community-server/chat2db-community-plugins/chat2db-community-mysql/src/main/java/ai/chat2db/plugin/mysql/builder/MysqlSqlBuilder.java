@@ -8,8 +8,10 @@ import ai.chat2db.plugin.mysql.enums.MysqlViewSqlSecurityOptionEnum;
 import ai.chat2db.plugin.mysql.enums.type.MysqlColumnTypeEnum;
 import ai.chat2db.plugin.mysql.enums.type.MysqlIndexTypeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.EditStatusEnum;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.DefaultSqlBuilder;
 import ai.chat2db.spi.constant.SQLConstants;
+import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.spi.model.request.PageLimitRequest;
 import ai.chat2db.community.domain.api.model.account.*;
 import ai.chat2db.community.domain.api.model.async.*;
@@ -215,6 +217,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
         List<CheckConstraintInfo> checkConstraints = newTable.getCheckConstraintList();
         if (CollectionUtils.isNotEmpty(checkConstraints)) {
+            requireCheckConstraintSupport();
             for (CheckConstraintInfo cc : checkConstraints) {
                 if (StringUtils.isBlank(cc.getEditStatus())) {
                     continue;
@@ -256,6 +259,31 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             return StringUtils.EMPTY;
         }
 
+    }
+
+    /**
+     * CHECK constraints (ADD/DROP/ALTER CHECK) require MySQL 8.0.16+. Fail DDL generation
+     * with a clear message on older servers instead of emitting SQL that errors remotely.
+     * An unparseable version is left to the server to decide.
+     */
+    private static void requireCheckConstraintSupport() {
+        String dbVersion = Chat2DBContext.getDbVersion();
+        if (StringUtils.isBlank(dbVersion)) {
+            return;
+        }
+        String[] parts = dbVersion.trim().split("[^0-9]+");
+        if (parts.length < 2) {
+            return;
+        }
+        try {
+            int major = Integer.parseInt(parts[0]);
+            int minor = Integer.parseInt(parts[1]);
+            if (major < 8 || (major == 8 && minor < 16)) {
+                throw new BusinessException("mysql.checkConstraint.unsupportedVersion");
+            }
+        } catch (NumberFormatException e) {
+            // Unparseable version string; let the server decide.
+        }
     }
 
     private String findPrevious(TableColumn tableColumn, Table newTable) {
