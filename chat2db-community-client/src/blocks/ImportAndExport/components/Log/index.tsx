@@ -77,7 +77,8 @@ const Log = forwardRef((props: IProps, ref: ForwardedRef<LogRef>) => {
       }
       // Get task list
       getTaskList({ visible: true });
-    }).catch((error) => {
+    })
+    .catch((error) => {
       if (requestGeneration !== requestGenerationRef.current) return;
       // Surface the failure so the progress UI does not silently freeze on a
       // network error; the recursive poll is not rescheduled (avoids infinite
