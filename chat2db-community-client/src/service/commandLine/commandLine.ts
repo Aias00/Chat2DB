@@ -5,17 +5,7 @@ import { ErrorCodesWithoutToast } from '@/constants/request';
 import interceptorsResponse from '../interceptorsResponse';
 import { IErrorLevel, PermissionError } from '@/service/base';
 import { staticMessage } from '@chat2db/ui';
-
-// Mask credential-like fields in debug IPC logs only. The real request payload
-// (sent to javaQuery) is never redacted — only the logged copy is.
-const SENSITIVE_LOG_KEY = /password|passphrase|apikey|secret|token|authorization/i;
-const redactForLog = (obj: any) =>
-  JSON.stringify(obj, (key, value) => {
-    if (typeof key === 'string' && SENSITIVE_LOG_KEY.test(key)) {
-      return '***';
-    }
-    return value;
-  });
+import { redactForLog } from './redactForLog';
 
 export interface ICommandLineRequest {
   requestUrl: string;
