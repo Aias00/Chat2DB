@@ -49,12 +49,6 @@ export interface IExecuteSqlResponse {
   headerList: any[];
   dataList: any[];
 }
-export interface IConnectConsoleParams {
-  consoleId: number;
-  dataSourceId: number;
-  databaseName: string;
-}
-
 export interface IRoutineOperationParams {
   dataSourceId: number;
   databaseName?: string;
@@ -97,21 +91,12 @@ const downloadLargeCellValue = createRequest<ILargeCellDownloadRequest, string>(
   errorLevel: 'toast',
 });
 
-const connectConsole = createRequest<IConnectConsoleParams, void>('/api/connection/console/connect', { method: 'get' });
-
 //Table operations
 export interface ITableParams {
   tableName: string;
   dataSourceId: number;
   databaseName: string;
   schemaName?: string;
-}
-
-export interface IExecuteTableParams {
-  sql: string;
-  consoleId: number;
-  dataSourceId: number;
-  databaseName: string;
 }
 
 export interface IColumn {
@@ -209,7 +194,6 @@ const updateTableExample = createRequest<{ dbType: DatabaseTypeCode }, string>('
   method: 'get',
 });
 const exportCreateTableSql = createRequest<ITableParams, string>('/api/rdb/ddl/export', { method: 'get' });
-const executeTable = createRequest<IExecuteTableParams, string>('/api/rdb/ddl/execute', { method: 'post' });
 
 const getColumnList = createRequest<ITableParams, ICountedListResponse<IColumn>>('/api/rdb/ddl/column_list', {
   method: 'get',
@@ -248,11 +232,6 @@ export interface IExportParams extends IDmlResultRequest {
   exportType: ExportTypeEnum;
   exportSize: ExportSizeEnum;
 }
-/**
- * Export-Table
- */
-const exportResultTable = createRequest<IExportParams, any>('/api/rdb/dml/export', { method: 'post' });
-
 /** Get the view list */
 const getViewList = createRequest<IGetTableListParams, IPageResponse<IRoutines>>('/api/rdb/view/list', {
   method: 'get',
@@ -414,10 +393,7 @@ const executeRoutineMigration = createRequest<IRoutineMigrationParams, { success
 const executeUpdateDataSql = createRequest<
   ITableEditExecuteRequest,
   { success: boolean; message: string; sql: string }
->(
-  '/api/rdb/dml/execute_update',
-  { method: 'post', errorLevel: false },
-);
+>('/api/rdb/dml/execute_update', { method: 'post', errorLevel: false });
 
 /** Get the interface for modifying table data */
 const getExecuteUpdateSql = createRequest<any, string>('/api/rdb/dml/get_update_sql', { method: 'post' });
@@ -491,8 +467,6 @@ export default {
   getViewList,
   getTableList,
   executeSql,
-  executeTable,
-  connectConsole,
   deleteTable,
   prepareDeleteDatabase,
   executeDeleteDatabase,
@@ -510,10 +484,8 @@ export default {
   addTablePin,
   deleteTablePin,
   getDMLCount,
-  // exportResultTable
   getAllTableList,
   getAllFieldByTable,
-  exportResultTable,
   checkIsSelectSQL,
   getDataSourceList,
 };
