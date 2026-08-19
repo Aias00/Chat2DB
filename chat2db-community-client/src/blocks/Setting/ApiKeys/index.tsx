@@ -12,7 +12,8 @@ import { useGlobalStore } from '@/store/global';
 import AntdTable from '@/components/AntdTable';
 import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
-// Mask a long-lived API key for list display: prefix + middle dots + last 4.
+// Mask any API key shown in the list: short values collapse fully, longer values keep
+// a 4-character prefix and suffix around the middle dots.
 // The full value is still copied to the clipboard; only the rendered text is masked.
 const maskApiKey = (value?: string | null) => {
   if (!value) {
@@ -108,8 +109,8 @@ export default memo<IProps>((props) => {
       dataIndex: 'apiKey',
       key: 'apiKey',
       render: (data) => {
-        // Mask the displayed value (long-lived keys) so it is not persistently
-        // visible in the DOM/screen-share; the copy button still copies the full value.
+        // Mask the displayed value in the list so it is not persistently visible in the
+        // DOM or on screen-shares; the copy button still copies the full value.
         const masked = maskApiKey(data);
         return (
           <div className={styles.apiKeyBox}>
