@@ -6,6 +6,7 @@ import ai.chat2db.community.domain.api.config.TableBuilderConfig;
 import ai.chat2db.community.domain.api.model.metadata.Database;
 import ai.chat2db.community.domain.api.model.metadata.Schema;
 import ai.chat2db.community.domain.api.model.metadata.Table;
+import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.result.Header;
 import ai.chat2db.community.domain.api.model.result.ResultOperation;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
@@ -43,6 +44,22 @@ class DefaultSqlBuilderSegmentTest {
     }
 
     @Test
+    void buildPageLimitClampsInvalidBounds() {
+        assertEquals("SELECT 1\n LIMIT 1",
+                builder.dql().buildPageLimit(PageLimitRequest.builder()
+                        .sql("SELECT 1")
+                        .offset(-10)
+                        .pageSize(0)
+                        .build()));
+        assertEquals("SELECT 1\n LIMIT 5,1",
+                builder.dql().buildPageLimit(PageLimitRequest.builder()
+                        .sql("SELECT 1")
+                        .offset(5)
+                        .pageSize(-10)
+                        .build()));
+    }
+
+    @Test
     void buildsDdlThroughUnifiedSegment() {
         Table table = new Table();
         table.setName("users");
@@ -64,6 +81,23 @@ class DefaultSqlBuilderSegmentTest {
                 builder.ddl().table().buildDropTable(new DropTableRequest("app", "public", "users")));
         assertEquals("TRUNCATE TABLE app.public.users",
                 builder.ddl().table().buildTruncateTable(new TruncateTableRequest("app", "public", "users")));
+    }
+
+    @Test
+    void buildCreateTableEscapesCommentQuotesWithoutChangingBackslashes() {
+        TableColumn column = new TableColumn();
+        column.setName("name");
+        column.setTableName("users");
+        column.setColumnType("VARCHAR");
+        column.setNullable(1);
+        column.setComment("O'Brien\\docs");
+        Table table = new Table();
+        table.setName("users");
+        table.setColumnList(List.of(column));
+
+        String sql = builder.ddl().table().buildCreateTable(table, TableBuilderConfig.defaultConfig());
+
+        assertTrue(sql.contains("COMMENT ON COLUMN users.name IS 'O''Brien\\docs';"), "actual sql: <" + sql + ">");
     }
 
     @Test
@@ -92,11 +126,33 @@ class DefaultSqlBuilderSegmentTest {
         assertEquals("WHERE name IS NULL OR name IN ('Alice')", whereSql);
     }
 
+    @Test
+    void copyWhereSqlKeepsLikeAsTheDefaultStringComparison() throws Exception {
+        DefaultMetaService stringMetaService = new DefaultMetaService() {
+            @Override
+            public IValueProcessor getValueProcessor() {
+                return new DefaultValueProcessor() {
+                    @Override
+                    public boolean isStringDataType(String dataType) {
+                        return true;
+                    }
+                };
+            }
+        };
+        String whereSql = copyWhereSql(List.of(whereOperation("Alice%")), stringMetaService);
+
+        assertEquals("WHERE name LIKE 'Alice%'", whereSql);
+    }
+
     private String copyWhereSql(List<ResultOperation> operations) throws Exception {
+        return copyWhereSql(operations, new DefaultMetaService());
+    }
+
+    private String copyWhereSql(List<ResultOperation> operations, IDbMetaData metaSchema) throws Exception {
         Method method = DefaultSqlBuilder.class.getDeclaredMethod(
                 "copyWhereSql", List.class, List.class, IDbMetaData.class, String.class);
         method.setAccessible(true);
-        return (String) method.invoke(builder, operations, List.of(nameHeader()), new DefaultMetaService(), "mysql");
+        return (String) method.invoke(builder, operations, List.of(nameHeader()), metaSchema, "mysql");
     }
 
     private static ResultOperation whereOperation(String value) {
