@@ -368,7 +368,8 @@ public class RedisScriptExecutor extends DefaultSQLExecutor {
      */
     private void validateKeyType(RedisKey key, String role) {
         if (key == null) {
-            return;
+            throw new BusinessException(String.format(RedisConstants.ERROR_UNSUPPORTED_KEY_TYPE,
+                    role + "=<missing>"));
         }
         String type = key.getType();
         if (StringUtils.isBlank(type)) {
