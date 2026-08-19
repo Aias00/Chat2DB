@@ -110,7 +110,8 @@ export default memo<IProps>((props) => {
       key: 'apiKey',
       render: (data) => {
         // Mask the displayed value in the list so it is not persistently visible in the
-        // DOM or on screen-shares; the copy button still copies the full value.
+        // DOM or on screen-shares; short keys collapse to bullets, while longer keys
+        // keep a prefix/suffix. The copy button still copies the full value.
         const masked = maskApiKey(data);
         return (
           <div className={styles.apiKeyBox}>
