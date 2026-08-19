@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { redactForLog } from './logRedaction';
+import { redactForLog } from './redactForLog';
 
 {
   const input = {

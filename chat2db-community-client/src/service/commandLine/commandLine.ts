@@ -5,7 +5,7 @@ import { ErrorCodesWithoutToast } from '@/constants/request';
 import interceptorsResponse from '../interceptorsResponse';
 import { IErrorLevel, PermissionError } from '@/service/base';
 import { staticMessage } from '@chat2db/ui';
-import { redactForLog } from './logRedaction';
+import { redactForLog } from './redactForLog';
 
 export interface ICommandLineRequest {
   requestUrl: string;
