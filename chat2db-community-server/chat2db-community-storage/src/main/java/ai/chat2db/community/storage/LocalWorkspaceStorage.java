@@ -238,25 +238,10 @@ public class LocalWorkspaceStorage implements IWorkspaceStorage {
         ssl.setKeyStorePassword(encryptString(ssl.getKeyStorePassword()));
     }
 
-    /**
-     * Reconcile incoming TLS material against the previously-saved (still-encrypted) material on
-     * update, mirroring the password preserve-if-blank rule.
-     *
-     * <p>Secret fields (private key, key password, keystore bytes, keystore password): a blank
-     * incoming value keeps the previous encrypted value, so the user does not have to re-upload
-     * the key on every edit; a non-blank incoming value is encrypted and replaces it.
-     *
-     * <p>Public fields (mode, CA PEM, client cert PEM, keystore type): the incoming value always
-     * wins — an empty string clears the previous value, satisfying "replacing or deleting TLS
-     * material makes the previous material unavailable".
-     *
-     * @param incoming      the SSLInfo from the update request (secrets still cleartext)
-     * @param oldEncrypted  the previously-saved SSLInfo (secrets still encrypted), may be null
-     * @return the SSLInfo to persist, or null when neither side has TLS configured
-     */
+    /** Reconcile incoming TLS material and clear all saved material when TLS is omitted. */
     private SSLInfo mergeAndEncryptSsl(SSLInfo incoming, SSLInfo oldEncrypted) {
         if (incoming == null) {
-            return oldEncrypted;
+            return null;
         }
         if (oldEncrypted == null) {
             encryptSslSensitiveFields(incoming);
@@ -267,23 +252,11 @@ public class LocalWorkspaceStorage implements IWorkspaceStorage {
         oldEncrypted.setCaPem(incoming.getCaPem());
         oldEncrypted.setClientCertPem(incoming.getClientCertPem());
         oldEncrypted.setKeyStoreType(incoming.getKeyStoreType());
-        // Secret fields: preserve the previous encrypted value when blank, otherwise re-encrypt.
-        oldEncrypted.setClientPrivateKeyPem(
-                preserveOrEncrypt(incoming.getClientPrivateKeyPem(), oldEncrypted.getClientPrivateKeyPem()));
-        oldEncrypted.setClientKeyPassword(
-                preserveOrEncrypt(incoming.getClientKeyPassword(), oldEncrypted.getClientKeyPassword()));
-        oldEncrypted.setKeyStoreBytes(
-                preserveOrEncrypt(incoming.getKeyStoreBytes(), oldEncrypted.getKeyStoreBytes()));
-        oldEncrypted.setKeyStorePassword(
-                preserveOrEncrypt(incoming.getKeyStorePassword(), oldEncrypted.getKeyStorePassword()));
+        oldEncrypted.setClientPrivateKeyPem(encryptString(incoming.getClientPrivateKeyPem()));
+        oldEncrypted.setClientKeyPassword(encryptString(incoming.getClientKeyPassword()));
+        oldEncrypted.setKeyStoreBytes(encryptString(incoming.getKeyStoreBytes()));
+        oldEncrypted.setKeyStorePassword(encryptString(incoming.getKeyStorePassword()));
         return oldEncrypted;
-    }
-
-    private String preserveOrEncrypt(String incomingCleartext, String oldEncrypted) {
-        if (incomingCleartext == null || incomingCleartext.isEmpty()) {
-            return oldEncrypted;
-        }
-        return encryptString(incomingCleartext);
     }
 
     private int normalizePageNo(Integer pageNo) {

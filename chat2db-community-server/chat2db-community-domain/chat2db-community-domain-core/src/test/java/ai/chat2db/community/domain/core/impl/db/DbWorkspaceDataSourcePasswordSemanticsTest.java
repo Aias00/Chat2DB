@@ -107,7 +107,7 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
     }
 
     @Test
-    void preConnectTreatsWhitespaceOnlySslAsBlankAndRecovers() {
+    void preConnectPreservesExplicitBlankSslInsteadOfRecoveringSavedTls() {
         savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
         savedDataSource.setSsl(savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem"));
         DbDataSourcePreConnectRequest request = new DbDataSourcePreConnectRequest();
@@ -121,7 +121,8 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
 
         service.preConnect(request);
 
-        assertEquals(MySqlTlsMode.VERIFY_IDENTITY.name(), forwardedRequest.getSsl().getTlsMode());
+        assertSame(blank, forwardedRequest.getSsl());
+        assertEquals("   ", forwardedRequest.getSsl().getTlsMode());
     }
 
     @Test

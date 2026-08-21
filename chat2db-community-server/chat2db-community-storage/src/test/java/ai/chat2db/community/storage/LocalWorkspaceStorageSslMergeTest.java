@@ -18,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * Covers the TLS material merge/encrypt semantics in {@link LocalWorkspaceStorage}:
@@ -99,10 +98,10 @@ class LocalWorkspaceStorageSslMergeTest {
         assertNull(result.getKeyStorePassword());
     }
 
-    // ---- update: blank secret preserves previous ciphertext ---------------------------
+    // ---- update: blank secret clears previous ciphertext ------------------------------
 
     @Test
-    void updatePreservesPreviousSecretWhenIncomingBlank() throws Exception {
+    void updateClearsPreviousSecretWhenIncomingBlank() throws Exception {
         // Previously-saved row: secrets already encrypted at rest.
         String oldKeyCipher = cipher.encrypt("old-key");
         String oldKeyPassCipher = cipher.encrypt("old-keypass");
@@ -110,7 +109,7 @@ class LocalWorkspaceStorageSslMergeTest {
         String oldStorePassCipher = cipher.encrypt("old-storepass");
         SSLInfo oldEncrypted = fullSsl(oldKeyCipher, oldKeyPassCipher, oldBytesCipher, oldStorePassCipher);
 
-        // Incoming edit resubmits mode + CA but blanks the secrets (user did not re-upload).
+        // Incoming edit resubmits mode + CA and clears the secret fields.
         SSLInfo incoming = new SSLInfo();
         incoming.setTlsMode(MySqlTlsMode.REQUIRED.name());
         incoming.setCaPem("new-ca-pem");
@@ -120,13 +119,10 @@ class LocalWorkspaceStorageSslMergeTest {
         // Public fields follow the incoming value.
         assertEquals(MySqlTlsMode.REQUIRED.name(), result.getTlsMode());
         assertEquals("new-ca-pem", result.getCaPem());
-        // Secrets unchanged: the previous ciphertext is preserved verbatim (no decrypt+reencrypt).
-        assertEquals(oldKeyCipher, result.getClientPrivateKeyPem());
-        assertEquals(oldKeyPassCipher, result.getClientKeyPassword());
-        assertEquals(oldBytesCipher, result.getKeyStoreBytes());
-        assertEquals(oldStorePassCipher, result.getKeyStorePassword());
-        // And it still round-trips to the original secret.
-        assertEquals("old-key", cipher.decrypt(result.getClientPrivateKeyPem()));
+        assertNull(result.getClientPrivateKeyPem());
+        assertNull(result.getClientKeyPassword());
+        assertNull(result.getKeyStoreBytes());
+        assertNull(result.getKeyStorePassword());
     }
 
     @Test
@@ -155,7 +151,7 @@ class LocalWorkspaceStorageSslMergeTest {
         SSLInfo oldEncrypted = fullSsl(oldKeyCipher, cipher.encrypt("old-keypass"),
                 cipher.encrypt("old-bytes"), cipher.encrypt("old-storepass"));
 
-        // User cleared the CA and client cert (and switched mode down) but left secrets blank.
+        // User cleared the CA, client cert, and secret material.
         SSLInfo incoming = new SSLInfo();
         incoming.setTlsMode(MySqlTlsMode.REQUIRED.name());
         incoming.setCaPem("");
@@ -166,8 +162,7 @@ class LocalWorkspaceStorageSslMergeTest {
         assertEquals("", result.getCaPem());
         assertEquals("", result.getClientCertPem());
         assertEquals(MySqlTlsMode.REQUIRED.name(), result.getTlsMode());
-        // Secrets still preserved.
-        assertEquals(oldKeyCipher, result.getClientPrivateKeyPem());
+        assertNull(result.getClientPrivateKeyPem());
     }
 
     @Test
@@ -189,14 +184,14 @@ class LocalWorkspaceStorageSslMergeTest {
     // ---- null handling ----------------------------------------------------------------
 
     @Test
-    void incomingNullReturnsOldEncrypted() throws Exception {
+    void incomingNullClearsOldEncrypted() throws Exception {
         SSLInfo oldEncrypted = fullSsl(
                 cipher.encrypt("k"), cipher.encrypt("kp"),
                 cipher.encrypt("kb"), cipher.encrypt("sp"));
 
         SSLInfo result = (SSLInfo) invoke("mergeAndEncryptSsl", null, oldEncrypted);
 
-        assertSame(oldEncrypted, result);
+        assertNull(result);
     }
 
     @Test

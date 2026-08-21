@@ -72,42 +72,32 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
     @Override
     public WorkspaceDataSource queryDisplayDataSourceById(Long id, Boolean requestPassword) {
         WorkspaceDataSource dataSource = environmentEnricher.enrich(queryDataSourceById(id, requestPassword));
-        decryptSensitiveFields(dataSource);
+        if (Boolean.TRUE.equals(requestPassword)) {
+            decryptPassword(dataSource);
+        }
+        redactSslSecrets(dataSource);
         return dataSource;
     }
 
     @Override
     public void preConnect(DbDataSourcePreConnectRequest request) {
         WorkspaceDataSource savedDataSource = request.getId() == null ? null
-                : queryDisplayDataSourceById(request.getId(), true);
+                : queryDataSourceById(request.getId(), true);
+        decryptSensitiveFields(savedDataSource);
         if (request.getId() != null
                 && (request.getPassword() == null || request.getPassword().isEmpty())
                 && savedDataSource != null
                 && !AuthenticationTypeEnum.NONE.getCode().equals(request.getAuthenticationType())) {
             request.setPassword(savedDataSource.getPassword());
         }
-        // Recover saved TLS material when the request did not resubmit it (e.g. test-from-saved).
-        // savedDataSource.getSsl() is already decrypted by queryDisplayDataSourceById.
+        // Only an omitted TLS object reuses the saved configuration. An explicit blank object
+        // disables TLS and must not resurrect saved private material.
         if (request.getId() != null
                 && savedDataSource != null
-                && isSslEffectivelyBlank(request.getSsl())) {
+                && request.getSsl() == null) {
             request.setSsl(savedDataSource.getSsl());
         }
         dataSourceService.preConnect(request);
-    }
-
-    private boolean isSslEffectivelyBlank(SSLInfo ssl) {
-        if (ssl == null) {
-            return true;
-        }
-        return StringUtils.isBlank(ssl.getTlsMode())
-                && StringUtils.isBlank(ssl.getCaPem())
-                && StringUtils.isBlank(ssl.getClientCertPem())
-                && StringUtils.isBlank(ssl.getClientPrivateKeyPem())
-                && StringUtils.isBlank(ssl.getClientKeyPassword())
-                && StringUtils.isBlank(ssl.getKeyStoreType())
-                && StringUtils.isBlank(ssl.getKeyStoreBytes())
-                && StringUtils.isBlank(ssl.getKeyStorePassword());
     }
 
     @Override
@@ -214,6 +204,7 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
         }
         if (ConfigUtils.isCommunity()) {
             dataSource.setPassword(null);
+            redactSslSecrets(dataSource);
             dataSource.setSpaceId(null);
             return dataSource;
         }
@@ -269,6 +260,35 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
             dataSource.setUser(decryptToken(dataSource.getUser(), privateKey));
         }
         decryptSslSensitiveFields(dataSource.getSsl(), true, privateKey);
+    }
+
+    private void decryptPassword(WorkspaceDataSource dataSource) {
+        if (dataSource == null) {
+            return;
+        }
+        if ("LOCAL".equalsIgnoreCase(dataSource.getStorageType()) || ConfigUtils.isLocalPersistence()) {
+            dataSource.setPassword(decryptString(dataSource.getPassword()));
+            return;
+        }
+        Context context = ContextUtils.queryContext();
+        if (context == null || context.getOrganizationToken() == null) {
+            throw new NeedLoggedInBusinessException();
+        }
+        PrivateKey privateKey = stringToPrivateKey(context.getOrganizationToken());
+        if (StringUtils.isNotBlank(dataSource.getPassword())) {
+            dataSource.setPassword(decryptToken(dataSource.getPassword(), privateKey));
+        }
+    }
+
+    private void redactSslSecrets(WorkspaceDataSource dataSource) {
+        if (dataSource == null || dataSource.getSsl() == null) {
+            return;
+        }
+        SSLInfo ssl = dataSource.getSsl();
+        ssl.setClientPrivateKeyPem(null);
+        ssl.setClientKeyPassword(null);
+        ssl.setKeyStoreBytes(null);
+        ssl.setKeyStorePassword(null);
     }
 
     /**
