@@ -25,4 +25,9 @@ public class AccountOperationRequest {
     private Integer maxUpdatesPerHour;
     private Integer maxConnectionsPerHour;
     private Integer maxUserConnections;
+    private String roleName;
+    private String roleHost;
+    private List<String> roleList;
+    private Boolean withAdminOption;
+    private String defaultRoleMode;
 }
