@@ -175,10 +175,17 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             // MySQL column grammar: data_type [GENERATED ALWAYS] AS (expr) [VIRTUAL|STORED]
             // [NOT NULL] [UNIQUE ...] [COMMENT ...]. Generated columns cannot carry a
             // DEFAULT, AUTO_INCREMENT, or ON UPDATE clause, so those are skipped.
+            String expression = column.getGenerationExpression().trim();
+            if (expression.contains(";") || expression.contains("/*") || expression.contains("--")) {
+                throw new IllegalArgumentException("Invalid generated column expression");
+            }
             String storage = StringUtils.isBlank(column.getGeneratedColumnType())
                     ? "VIRTUAL"
                     : column.getGeneratedColumnType().toUpperCase();
-            script.append("GENERATED ALWAYS AS (").append(column.getGenerationExpression()).append(") ")
+            if (!"VIRTUAL".equals(storage) && !"STORED".equals(storage)) {
+                throw new IllegalArgumentException("Invalid generated column storage type");
+            }
+            script.append("GENERATED ALWAYS AS (").append(expression).append(") ")
                     .append(storage).append(" ");
         }
 
@@ -206,6 +213,9 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
 
     @Override
     public String buildAICreateColumnSql(TableColumn column) {
+        if (StringUtils.isNotBlank(column.getGenerationExpression())) {
+            return buildCreateColumnSql(column);
+        }
         MysqlColumnTypeEnum type = COLUMN_TYPE_MAP.get(column.getColumnType().toUpperCase());
         if (type == null) {
             return buildDefaultColumn(column,true);
