@@ -20,6 +20,7 @@ public class AccountOperationRequest {
     private String password;
     private String previewToken;
     private String roleName;
+    private String roleHost;
     private List<String> roleList;
     private Boolean withAdminOption;
     private String defaultRoleMode;

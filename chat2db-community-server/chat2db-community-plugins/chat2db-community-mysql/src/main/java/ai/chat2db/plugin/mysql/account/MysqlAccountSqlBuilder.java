@@ -73,17 +73,16 @@ class MysqlAccountSqlBuilder {
             case CREATE_ROLE -> SQL_CREATE_ROLE + account(command);
             case DROP_ROLE -> SQL_DROP_ROLE_IF_EXISTS + account(command);
             case GRANT_ROLE -> {
-                String role = command.getRoleName() != null ? command.getRoleName() : command.getUser();
+                String role = roleAccount(command);
                 StringBuilder sb = new StringBuilder();
-                sb.append(SQL_GRANT).append(identifier(role)).append(SQLConstants.SQL_TO).append(account(command));
+                sb.append(SQL_GRANT).append(role).append(SQLConstants.SQL_TO).append(account(command));
                 if (Boolean.TRUE.equals(command.getWithAdminOption())) {
                     sb.append(SQL_WITH_ADMIN_OPTION);
                 }
                 yield sb.toString();
             }
             case REVOKE_ROLE -> {
-                String role = command.getRoleName() != null ? command.getRoleName() : command.getUser();
-                yield SQL_REVOKE + identifier(role) + SQL_FROM + account(command);
+                yield SQL_REVOKE + roleAccount(command) + SQL_FROM + account(command);
             }
             case SET_DEFAULT_ROLE -> {
                 DefaultRoleModeEnum mode = DefaultRoleModeEnum.from(command.getDefaultRoleMode());
@@ -97,7 +96,7 @@ class MysqlAccountSqlBuilder {
                             throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
                         }
                         sb.append(command.getRoleList().stream()
-                                .map(MysqlAccountSqlBuilder::identifier)
+                                .map(role -> account(role, command.getRoleHost()))
                                 .collect(Collectors.joining(", ")));
                     }
                 }
@@ -210,6 +209,13 @@ class MysqlAccountSqlBuilder {
         if (command.getPrivileges() == null || command.getPrivileges().isEmpty()) {
             throw new BusinessException(ERROR_KEY_ACCOUNT_PRIVILEGE_REQUIRED);
         }
+    }
+
+    private static String roleAccount(AccountOperationRequest command) {
+        if (StringUtils.isBlank(command.getRoleName())) {
+            throw new BusinessException(ERROR_KEY_ACCOUNT_ROLE_REQUIRED);
+        }
+        return account(command.getRoleName(), command.getRoleHost());
     }
 
     private static void validateAccountPart(String value, String code) {

@@ -61,6 +61,7 @@ export interface AccountCapability {
   connectionUser?: string;
   accountListReadable: boolean;
   accountLockSupported: boolean;
+  roleManagementSupported?: boolean;
   editablePrivileges: AccountPrivilege[];
   message?: string;
 }
@@ -75,6 +76,7 @@ export interface AccountCommand extends AccountBaseParams {
   password?: string;
   previewToken?: string;
   roleName?: string;
+  roleHost?: string;
   roleList?: string[];
   withAdminOption?: boolean;
   defaultRoleMode?: string;
