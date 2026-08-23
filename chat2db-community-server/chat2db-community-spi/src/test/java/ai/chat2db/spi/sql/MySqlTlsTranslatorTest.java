@@ -6,6 +6,12 @@ import ai.chat2db.community.domain.api.model.datasource.SSLInfo;
 import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.URL;
+import java.security.KeyPairGenerator;
+import java.security.KeyStore;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -16,16 +22,36 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Covers {@link MySqlTlsTranslator}: Connector/J 8.x vs 5.1.x property sets per mode, PEM
- * {@code data:} URL construction, pre-built keystore override, blank-skipping, and the
+ * Covers {@link MySqlTlsTranslator}: Connector/J 8.x vs 5.1.x property sets per mode,
+ * driver-readable PKCS12/JKS file URL construction, pre-built keystore override, blank-skipping, and the
  * {@link MySqlTlsTranslator#hasExplicitTlsIntent(Map)} guard that protects TLS from the
  * legacy {@code useSSL=false} retry fallback.
  */
 class MySqlTlsTranslatorTest {
 
-    private static final String PEM_CA = "-----BEGIN CERTIFICATE-----\nMIIB-CA\n-----END CERTIFICATE-----\n";
-    private static final String PEM_CLIENT_CERT = "-----BEGIN CERTIFICATE-----\nMIIB-CLIENT\n-----END CERTIFICATE-----\n";
-    private static final String PEM_CLIENT_KEY = "-----BEGIN PRIVATE KEY-----\nMIIE-KEY\n-----END PRIVATE KEY-----\n";
+    private static final String PEM_CA = """
+            -----BEGIN CERTIFICATE-----
+            MIIDCTCCAfGgAwIBAgIUQvG2FafS9Aeb3j6aaNY2RSE6ZpEwDQYJKoZIhvcNAQEL
+            BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDgyMzExMzMwNVoXDTI2MDgy
+            NDExMzMwNVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+            AAOCAQ8AMIIBCgKCAQEA1Um3UHGVXhYeLLb+tktI4w1Dc1DfKoCDxfpB7uKK1AAf
+            In43TPHg7ml//RR6eJk8ZAdHnf8jmXd8HedNroC+AKG22Po/F7Yeo20GpsXHq/2A
+            rpfo9Dg8ZsOObpE20IRko/NgLwxr+XFzoWMKaOhIRxX/BQeh/MGwtR5A0l4SUU5E
+            n9cbwEC7u9cQWGU4OrN/fuo8oYOlerNYIwetaGoYPsQ5xjGiKxvvCGPzbLoCN/+i
+            qQY4mY9TDmXRr0OcByzxXgCRQhVKK+nCDthE1OWLT28uZRb4DnhK2TVwt+b3RU9E
+            GdBd3SqlUdLoBNSkgZNsGdpjsVYohWYSbVZJdSMU2QIDAQABo1MwUTAdBgNVHQ4E
+            FgQUpOJO/yt4e1/Bxahb3kEOunTw9WAwHwYDVR0jBBgwFoAUpOJO/yt4e1/Bxahb
+            3kEOunTw9WAwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAJYtf
+            /EK0qrciZMZvQypBSnA/YHLCnRtgnHy+aSsAtxtLOSp2MWJ0oOtSghIePNNISipv
+            WaGgs+aM7QF87Qj5VOQKtE9rkpExa6lilzEli2/F6rsT9Icf6d6PnMz8RUQ5x6UJ
+            i3gFlE8W+W7TxIcuVDdO4gL9/Qwt1W6N5MgHgT0Nbikf+OcYHnFnHMF3ynm7eiS/
+            geemx1osmqj4ZsbJD4JySntpdy2kO64VSO3RH3bKfmVqtUSRRIGqooQIsV6mk0ML
+            xbVk7AferuvX5Ysf/gkjt/pG/KRgGOLQfavb+eSCpYSCOOH76ixoMjyWN2jxBiV9
+            5Tox458l5JNIDOMfAA==
+            -----END CERTIFICATE-----
+            """;
+    private static final String PEM_CLIENT_CERT = PEM_CA;
+    private static final String PEM_CLIENT_KEY = generatedPrivateKeyPem();
 
     private static DriverConfig connectorJ8() {
         DriverConfig cfg = new DriverConfig();
@@ -110,9 +136,11 @@ class MySqlTlsTranslatorTest {
         ssl.setCaPem(PEM_CA);
         Map<String, Object> p = new HashMap<>();
         MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
-        assertEquals("PEM", p.get("trustCertificateKeyStoreType"));
+        assertEquals("PKCS12", p.get("trustCertificateKeyStoreType"));
         String url = (String) p.get("trustCertificateKeyStoreUrl");
-        assertTrue(url.startsWith("data:application/x-pem-file;base64,"), url);
+        assertTrue(url.startsWith("file:"), url);
+        assertLoadableKeyStore(url, "PKCS12", "");
+        assertEquals("", p.get("trustCertificateKeyStorePassword"));
         assertFalse(p.containsKey("clientCertificateKeyStoreUrl"));
     }
 
@@ -124,12 +152,11 @@ class MySqlTlsTranslatorTest {
         ssl.setClientKeyPassword("keypass");
         Map<String, Object> p = new HashMap<>();
         MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
-        assertEquals("PEM", p.get("clientCertificateKeyStoreType"));
+        assertEquals("PKCS12", p.get("clientCertificateKeyStoreType"));
         String url = (String) p.get("clientCertificateKeyStoreUrl");
-        assertTrue(url.startsWith("data:application/x-pem-file;base64,"), url);
-        // cert + key are concatenated before encoding.
-        assertTrue(url.length() > pemDataUrl(PEM_CLIENT_CERT).length());
-        assertEquals("keypass", p.get("clientCertificateKeyStorePassword"));
+        assertTrue(url.startsWith("file:"), url);
+        assertLoadableKeyStore(url, "PKCS12", "");
+        assertEquals("", p.get("clientCertificateKeyStorePassword"));
     }
 
     @Test
@@ -151,34 +178,33 @@ class MySqlTlsTranslatorTest {
         ssl.setClientCertPem(PEM_CLIENT_CERT);
         ssl.setClientPrivateKeyPem(PEM_CLIENT_KEY);
         ssl.setKeyStoreType("PKCS12");
-        ssl.setKeyStoreBytes("AAABAA=="); // already base64 keystore content
+        ssl.setKeyStoreBytes(base64KeyStore("PKCS12", "storepass"));
         ssl.setKeyStorePassword("storepass");
         Map<String, Object> p = new HashMap<>();
         MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
         // The keystore is the client identity; CA PEM stays in the trust store.
-        assertEquals("PEM", p.get("trustCertificateKeyStoreType"));
+        assertEquals("PKCS12", p.get("trustCertificateKeyStoreType"));
         assertEquals("PKCS12", p.get("clientCertificateKeyStoreType"));
-        assertTrue(((String) p.get("trustCertificateKeyStoreUrl"))
-                .startsWith("data:application/x-pem-file;base64,"));
-        assertEquals("data:application/octet-stream;base64,AAABAA==",
-                p.get("clientCertificateKeyStoreUrl"));
+        assertLoadableKeyStore((String) p.get("trustCertificateKeyStoreUrl"), "PKCS12", "");
+        assertLoadableKeyStore((String) p.get("clientCertificateKeyStoreUrl"), "PKCS12", "storepass");
         assertEquals("storepass", p.get("clientCertificateKeyStorePassword"));
-        assertFalse(p.containsKey("trustCertificateKeyStorePassword"));
+        assertEquals("", p.get("trustCertificateKeyStorePassword"));
     }
 
     @Test
     void keystoreDefaultsToPkcs12WhenTypeBlank() {
         SSLInfo ssl = ssl(MySqlTlsMode.REQUIRED);
-        ssl.setKeyStoreBytes("AAABAA==");
+        ssl.setKeyStoreBytes(base64KeyStore("PKCS12", null));
         Map<String, Object> p = new HashMap<>();
         MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
         assertEquals("PKCS12", p.get("clientCertificateKeyStoreType"));
+        assertLoadableKeyStore((String) p.get("clientCertificateKeyStoreUrl"), "PKCS12", null);
     }
 
     @Test
     void blankKeystorePasswordIsOmitted() {
         SSLInfo ssl = ssl(MySqlTlsMode.REQUIRED);
-        ssl.setKeyStoreBytes("AAABAA==");
+        ssl.setKeyStoreBytes(base64KeyStore("PKCS12", null));
         // password blank
         Map<String, Object> p = new HashMap<>();
         MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
@@ -272,14 +298,14 @@ class MySqlTlsTranslatorTest {
     @Test
     void intentTrueForTrustCertificatePrefix() {
         Map<String, Object> p = new HashMap<>();
-        p.put("trustCertificateKeyStoreUrl", "data:...");
+        p.put("trustCertificateKeyStoreUrl", "file:/tmp/store.p12");
         assertTrue(MySqlTlsTranslator.hasExplicitTlsIntent(p));
     }
 
     @Test
     void intentTrueForClientCertificatePrefix() {
         Map<String, Object> p = new HashMap<>();
-        p.put("clientCertificateKeyStoreType", "PEM");
+        p.put("clientCertificateKeyStoreType", "PKCS12");
         assertTrue(MySqlTlsTranslator.hasExplicitTlsIntent(p));
     }
 
@@ -306,8 +332,41 @@ class MySqlTlsTranslatorTest {
 
     // ---- helpers ------------------------------------------------------------------------
 
-    private static String pemDataUrl(String pem) {
-        return "data:application/x-pem-file;base64," + java.util.Base64.getEncoder()
-                .encodeToString(pem.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    private static String base64KeyStore(String type, String password) {
+        try {
+            KeyStore keyStore = KeyStore.getInstance(type);
+            keyStore.load(null, password == null ? null : password.toCharArray());
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            keyStore.store(outputStream, password == null ? null : password.toCharArray());
+            return Base64.getEncoder().encodeToString(outputStream.toByteArray());
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static String generatedPrivateKeyPem() {
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(2048);
+            String base64 = Base64.getMimeEncoder(64, "\n".getBytes())
+                    .encodeToString(generator.generateKeyPair().getPrivate().getEncoded());
+            return pemBoundary("BEGIN") + base64 + "\n" + pemBoundary("END");
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static String pemBoundary(String marker) {
+        return "-----" + marker + " PRIVATE KEY-----\n";
+    }
+
+    private static void assertLoadableKeyStore(String url, String type, String password) {
+        try (InputStream inputStream = new URL(url).openStream()) {
+            KeyStore keyStore = KeyStore.getInstance(type);
+            keyStore.load(inputStream, password == null ? null : password.toCharArray());
+            assertTrue(keyStore.size() >= 0);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
     }
 }
