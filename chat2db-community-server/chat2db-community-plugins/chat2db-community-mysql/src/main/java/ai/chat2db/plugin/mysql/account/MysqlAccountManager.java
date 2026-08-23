@@ -134,9 +134,26 @@ public class MysqlAccountManager implements IAccountManager {
                     account.setLocked(StringUtils.isBlank(accountLocked) ? null : VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(accountLocked));
                 }
                 account.setDisplayName(account.getUser() + ACCOUNT_DISPLAY_NAME_SEPARATOR + account.getHost());
+                account.setDefaultRoles(queryDefaultRoles(connection, account.getUser(), account.getHost()));
                 accounts.add(account);
             }
             return accounts;
+        }
+    }
+
+    private List<String> queryDefaultRoles(Connection connection, String user, String host) {
+        try (PreparedStatement statement = connection.prepareStatement(SQL_SELECT_DEFAULT_ROLES)) {
+            statement.setString(1, user);
+            statement.setString(2, host);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<String> roles = new ArrayList<>();
+                while (resultSet.next()) {
+                    roles.add(resultSet.getString(1) + ACCOUNT_DISPLAY_NAME_SEPARATOR + resultSet.getString(2));
+                }
+                return roles;
+            }
+        } catch (SQLException e) {
+            return List.of();
         }
     }
 

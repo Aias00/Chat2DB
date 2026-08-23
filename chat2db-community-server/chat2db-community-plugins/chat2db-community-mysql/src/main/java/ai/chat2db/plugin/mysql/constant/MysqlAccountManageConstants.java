@@ -14,6 +14,7 @@ public final class MysqlAccountManageConstants {
     public static final String FIELD_USER = "User";
     public static final String MESSAGE_OK = "OK";
     public static final String SQL_SELECT_CURRENT_USER = "SELECT CURRENT_USER()";
+    public static final String SQL_SELECT_DEFAULT_ROLES = "SELECT DEFAULT_ROLE_USER, DEFAULT_ROLE_HOST FROM mysql.default_roles WHERE USER = ? AND HOST = ? ORDER BY DEFAULT_ROLE_USER, DEFAULT_ROLE_HOST";
     public static final String SQL_SELECT_MYSQL_USERS = "SELECT User, Host, plugin FROM mysql.user ORDER BY User, Host";
     public static final String SQL_SELECT_MYSQL_USERS_WITH_LOCK = "SELECT User, Host, plugin, account_locked FROM mysql.user ORDER BY User, Host";
     public static final String VALUE_ACCOUNT_LOCKED_YES = "Y";

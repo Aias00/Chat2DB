@@ -51,6 +51,8 @@ export interface Account {
   displayName: string;
   authenticationPlugin?: string;
   locked?: boolean;
+  role?: boolean;
+  defaultRoles?: string[];
 }
 
 export interface AccountCapability {
