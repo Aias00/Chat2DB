@@ -27,12 +27,17 @@ const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
     }])}
     >Add constraint</Button>
     <Table rowKey={(item) => item.name} pagination={false} dataSource={constraints} columns={[
-      { title: 'Name', dataIndex: 'name', render: (value, _, index) => <Input value={value} onChange={(event) => update(index, 'name', event.target.value)} /> },
-      { title: 'Expression', dataIndex: 'expression', render: (value, _, index) => <Input value={value} onChange={(event) => update(index, 'expression', event.target.value)} /> },
-      { title: '', render: (_, item, index) => <Button danger onClick={() => setConstraints((current) => item.editStatus === EditColumnOperationType.Add
-        ? current.filter((_, itemIndex) => itemIndex !== index)
-        : current.map((entry, itemIndex) => itemIndex === index ? { ...entry, editStatus: EditColumnOperationType.Delete } : entry))}
-                                               >Delete</Button> },
+      { title: 'Name', dataIndex: 'name', render: (value, record, index) => <Input value={value} onChange={(event) => update(index, 'name', event.target.value)} /> },
+      { title: 'Expression', dataIndex: 'expression', render: (value, record, index) => <Input value={value} onChange={(event) => update(index, 'expression', event.target.value)} /> },
+      { title: '', render: (value, item, index) => <Button danger onClick={() => setConstraints((current) => item.editStatus === EditColumnOperationType.Add
+        ? current.filter((entry, itemIndex) => itemIndex !== index)
+        : current.map((entry, itemIndex) => {
+          if (itemIndex !== index) {
+            return entry;
+          }
+          return { ...entry, editStatus: EditColumnOperationType.Delete };
+        }))}
+                                                   >Delete</Button> },
     ]}
     />
   </>;
