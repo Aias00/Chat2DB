@@ -445,16 +445,17 @@ export interface IImportPreview {
   previewRows: number;
 }
 
-export interface IImportExecuteResult {
-  totalRows: number;
-  successCount: number;
-  failedCount: number;
-  skippedCount: number;
-  errors: { row: number; column: string | null; message: string }[];
+export interface IImportTaskSubmitResult {
+  taskId: number;
 }
 
+const uploadImportFile = createRequest<{ file: File }, string>('/api/rdb/import_preview/upload', {
+  method: 'post',
+  contentType: 'formData',
+});
+
 const getImportPreview = createRequest<
-  { dataSourceId: number; databaseName: string; tableName: string; filePath: string },
+  { dataSourceId: number; databaseName: string; tableName: string; fileId: string },
   IImportPreview
 >('/api/rdb/import_preview/preview', { method: 'post' });
 
@@ -463,11 +464,11 @@ const executeImportWithMapping = createRequest<
     dataSourceId: number;
     databaseName: string;
     tableName: string;
-    filePath: string;
+    fileId: string;
     mappings: { sourceColumn: string | null; targetColumn: string }[];
     unmappedTarget: 'DEFAULT' | 'NULL';
   },
-  IImportExecuteResult
+  IImportTaskSubmitResult
 >('/api/rdb/import_preview/execute', { method: 'post' });
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
 
@@ -529,5 +530,6 @@ export default {
   checkIsSelectSQL,
   getImportPreview,
   executeImportWithMapping,
+  uploadImportFile,
   getDataSourceList,
 };

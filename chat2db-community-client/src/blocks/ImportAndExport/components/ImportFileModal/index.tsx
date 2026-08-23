@@ -12,17 +12,23 @@ import { ImportExportTaskDetails } from '@/typings/importExport';
 import ImportMappingContent from '@/blocks/ImportAndExport/components/ImportMappingContent';
 import jcefApi from '@/jcef';
 import { isDesktop } from '@/utils/env';
+import type { FileUrl } from '@/components/UploadLocalFile';
 
 interface IProps {
   className?: string;
 }
+
+const isPreviewFile = (file?: FileUrl) => {
+  const name = file?.file?.name?.toLowerCase();
+  return name?.endsWith('.csv') || name?.endsWith('.xls') || name?.endsWith('.xlsx');
+};
 
 export default memo<IProps>((_props) => {
   const [isReady, setIsReady] = useState(false);
   const importExportFileRef = useRef<ImportExportFileRef>(null);
   const [taskId, setTaskId] = useState<number>();
   const [taskDetails, setTaskDetails] = useState<ImportExportTaskDetails>();
-  const [importFilePath, setImportFilePath] = useState<string>('');
+  const [importFile, setImportFile] = useState<FileUrl>();
 
   const { importExportDataBoundInfo, setImportExportDataBoundInfo, getTaskList } = useImportExportStore((state) => {
     return {
@@ -36,6 +42,7 @@ export default memo<IProps>((_props) => {
     if (!importExportDataBoundInfo) {
       setTaskId(undefined);
       setTaskDetails(undefined);
+      setImportFile(undefined);
     }
   }, [importExportDataBoundInfo]);
 
@@ -50,8 +57,8 @@ export default memo<IProps>((_props) => {
     });
   };
 
-  const handleImportFileChange = (filePath: string) => {
-    setImportFilePath(filePath);
+  const handleImportFileChange = (file: FileUrl) => {
+    setImportFile(file);
   };
 
   const renderFooter = () => {
@@ -127,7 +134,7 @@ export default memo<IProps>((_props) => {
       headerIconCode={importExportDataBoundInfo?.type === ImportExportType.IMPORT ? 'icon-upload' : 'icon-download'}
       headerBorder
       destroyOnClose
-      footer={taskId ? logRenderFooter() : renderFooter()}
+      footer={taskId ? logRenderFooter() : !isDesktop && isPreviewFile(importFile) ? null : renderFooter()}
       maskClosable={false}
       onCancel={() => {
         setImportExportDataBoundInfo(null);
@@ -135,13 +142,14 @@ export default memo<IProps>((_props) => {
     >
       {taskId ? (
         <Log onTaskChange={handleTaskChange} taskId={taskId} />
-      ) : importExportDataBoundInfo?.type === ImportExportType.IMPORT && importFilePath ? (
+      ) : importExportDataBoundInfo?.type === ImportExportType.IMPORT && !isDesktop && isPreviewFile(importFile) ? (
         <ImportMappingContent
           dataSourceId={importExportDataBoundInfo.dataSourceId}
           databaseName={importExportDataBoundInfo.databaseName}
           tableName={importExportDataBoundInfo.tableName || ''}
-          filePath={importFilePath}
+          file={importFile.file!}
           onDone={() => {
+            getTaskList();
             setImportExportDataBoundInfo(null);
           }}
         />

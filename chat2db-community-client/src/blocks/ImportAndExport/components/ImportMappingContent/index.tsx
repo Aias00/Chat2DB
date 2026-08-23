@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Modal, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
-import sqlService, { IImportPreview, IImportExecuteResult } from '@/service/sql';
+import sqlService, { IImportPreview } from '@/service/sql';
 
 interface IProps {
   dataSourceId: number;
   databaseName: string;
   tableName: string;
-  filePath: string;
+  file: File;
   onDone: () => void;
 }
 
@@ -20,21 +20,20 @@ const SKIP = '__skip__';
  * unmapped target columns are filled (DEFAULT or NULL), executes the import, and reports
  * row-level errors. Preview and execution share the backend parser.
  */
-const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath, onDone }: IProps) => {
+const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onDone }: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
+  const [fileId, setFileId] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [unmappedTarget, setUnmappedTarget] = useState<'DEFAULT' | 'NULL'>('DEFAULT');
   const [executing, setExecuting] = useState(false);
-  const [result, setResult] = useState<IImportExecuteResult | null>(null);
 
-  const load = useCallback(() => {
+  const load = useCallback((stagedFileId: string) => {
     setLoading(true);
     setError(null);
-    setResult(null);
     sqlService
-      .getImportPreview({ dataSourceId, databaseName, tableName, filePath })
+      .getImportPreview({ dataSourceId, databaseName, tableName, fileId: stagedFileId })
       .then((data) => {
         setPreview(data);
         const auto: Record<string, string> = {};
@@ -47,11 +46,22 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, [dataSourceId, databaseName, tableName, filePath]);
+  }, [dataSourceId, databaseName, tableName]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setLoading(true);
+    setError(null);
+    sqlService
+      .uploadImportFile({ file })
+      .then((id) => {
+        setFileId(id);
+        load(id);
+      })
+      .catch((e) => {
+        setError(e?.message || i18n('common.text.failure'));
+        setLoading(false);
+      });
+  }, [file, load]);
 
   const targetOptions = useMemo(() => {
     if (!preview) {
@@ -112,18 +122,21 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
     }
     setExecuting(true);
     setError(null);
+    if (!fileId) {
+      return;
+    }
     sqlService
       .executeImportWithMapping({
         dataSourceId,
         databaseName,
         tableName,
-        filePath,
+        fileId,
         mappings: Object.entries(mapping)
           .filter(([, target]) => target && target !== SKIP)
           .map(([source, target]) => ({ sourceColumn: source, targetColumn: target })),
         unmappedTarget,
       })
-      .then(setResult)
+      .then(onDone)
       .catch((e) => setError(e?.message || i18n('common.text.failure')))
       .finally(() => setExecuting(false));
   };
@@ -131,33 +144,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
   return (
     <div>
       {error && <div style={{ color: 'var(--text-color-danger)', marginBottom: 8 }}>{error}</div>}
-      {result && (
-        <div style={{ marginBottom: 8 }}>
-          <span>
-            {i18n('workspace.importExport.importSummary', result.totalRows, result.successCount, result.failedCount)}
-          </span>
-          {result.failedCount > 0 && (
-            <Table
-              size="small"
-              style={{ marginTop: 8 }}
-              rowKey={(r) => `${r.row}-${r.column ?? ''}`}
-              pagination={{ pageSize: 5 }}
-              columns={[
-                { title: i18n('workspace.importExport.errorRow'), dataIndex: 'row', width: 80 },
-                { title: i18n('workspace.importExport.errorColumn'), dataIndex: 'column', width: 160 },
-                { title: i18n('workspace.importExport.errorMessage'), dataIndex: 'message' },
-              ]}
-              dataSource={result.errors}
-            />
-          )}
-          <div style={{ marginTop: 8 }}>
-            <Button type="primary" onClick={onDone}>
-              {i18n('common.button.close')}
-            </Button>
-          </div>
-        </div>
-      )}
-      {!result && preview && (
+      {preview && (
         <>
           <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span>{i18n('workspace.importExport.previewHint', preview.previewRows)}</span>
@@ -175,7 +162,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
                 {i18n('workspace.importExport.requiredUnmapped')}: {blockedColumns.map((c) => c.name).join(', ')}
               </span>
             )}
-            <Button size="small" onClick={load} loading={loading}>
+            <Button size="small" onClick={() => fileId && load(fileId)} loading={loading}>
               {i18n('common.button.refresh')}
             </Button>
           </div>

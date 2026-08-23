@@ -54,11 +54,19 @@ public abstract class BaseExcelImporter extends BaseImporter {
 
         private Map<String, Integer> headMap;
 
+        private Map<String, Integer> mappedHeadMap;
+
         private List<TableColumn> tableColumns;
 
         private List<String> tableColumnList;
 
-        private List<String> sqlList;
+        private List<RowSql> sqlList;
+
+        private long successCount;
+
+        private long failedCount;
+
+        private long skippedCount;
 
         private static final int BATCH_SIZE = 1000;
 
@@ -87,6 +95,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             this.taskContext.checkCancelled();
             Map<Integer, String> map = ConverterUtils.convertToStringMap(headMap, context);
             this.headMap = invertMap(map);
+            this.mappedHeadMap = mappedHeadMap();
             this.tableColumns = getTableColumns(columns, this.headMap);
         }
 
@@ -94,7 +103,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             List<TableColumn> tableColumns = new ArrayList<>();
             this.tableColumnList = new ArrayList<>();
             for (TableColumn column : columns) {
-                if (headMap.containsKey(column.getName().toUpperCase(Locale.ROOT))) {
+                if (shouldInclude(column)) {
                     tableColumns.add(column);
                     this.tableColumnList.add(column.getName());
                 }
@@ -119,6 +128,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
         public void invoke(Map<Integer, String> data, AnalysisContext context) {
             this.taskContext.checkCancelled();
             if (data == null || data.isEmpty()) {
+                skippedCount++;
                 return;
             }
             List<String> values = getValueList(data);
@@ -126,12 +136,13 @@ public abstract class BaseExcelImporter extends BaseImporter {
             String sql = getInsertSql(values);
 
             if (StringUtils.isBlank(sql)) {
+                skippedCount++;
                 return;
             }
             if (sqlList == null) {
                 sqlList = new ArrayList<>();
             }
-            sqlList.add(sql);
+            sqlList.add(new RowSql(context.readRowHolder().getRowIndex() + 1, sql));
             if (sqlList.size() >= BATCH_SIZE) {
                 executeBatchInsert();
             } else {
@@ -142,7 +153,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
         private List<String> getValueList(Map<Integer, String> data) {
             List<String> values = new ArrayList<>();
             for (TableColumn column : tableColumns) {
-                Integer index = headMap.get(column.getName().toUpperCase(Locale.ROOT));
+                Integer index = sourceIndex(column.getName());
                 if (index == null) {
                     values.add(null);
                     continue;
@@ -156,6 +167,41 @@ public abstract class BaseExcelImporter extends BaseImporter {
                 }
             }
             return values;
+        }
+
+        private Map<String, Integer> mappedHeadMap() {
+            Map<String, Integer> mapped = new HashMap<>();
+            if (spec.getColumnMappings() == null) {
+                return mapped;
+            }
+            for (Map<String, String> mapping : spec.getColumnMappings()) {
+                String source = mapping.get("sourceColumn");
+                String target = mapping.get("targetColumn");
+                Integer sourceIndex = headMap.get(source == null ? null : source.toUpperCase(Locale.ROOT));
+                if (sourceIndex != null && StringUtils.isNotBlank(target)) {
+                    mapped.put(target.toUpperCase(Locale.ROOT), sourceIndex);
+                }
+            }
+            return mapped;
+        }
+
+        private Integer sourceIndex(String targetColumn) {
+            String target = targetColumn.toUpperCase(Locale.ROOT);
+            if (spec.getColumnMappings() != null) {
+                return mappedHeadMap.get(target);
+            }
+            return headMap.get(target);
+        }
+
+        private boolean shouldInclude(TableColumn column) {
+            if (spec.getColumnMappings() == null) {
+                return sourceIndex(column.getName()) != null;
+            }
+            if (sourceIndex(column.getName()) != null) {
+                return true;
+            }
+            return "NULL".equalsIgnoreCase(spec.getUnmappedTarget())
+                    && !Boolean.TRUE.equals(column.getAutoIncrement());
         }
 
         private String getInsertSql(List<String> values) {
@@ -172,6 +218,10 @@ public abstract class BaseExcelImporter extends BaseImporter {
         public void doAfterAllAnalysed(AnalysisContext context) {
             this.taskContext.checkCancelled();
             executeBatchInsert();
+            taskContext.logInfo("IMPORT_SUMMARY", "Data import completed", Map.of(
+                    "successCount", successCount,
+                    "failedCount", failedCount,
+                    "skippedCount", skippedCount));
         }
 
         private void executeBatchInsert() {
@@ -179,9 +229,23 @@ public abstract class BaseExcelImporter extends BaseImporter {
             if (sqlList != null && !sqlList.isEmpty()) {
                 taskContext.logInfo(TaskEventCode.BATCH_EXECUTED.name(),
                         String.format("Executing batch insert: %s", sqlList.size()));
-                sqlExecutor.executeBatch(sqlList);
+                for (RowSql row : sqlList) {
+                    try {
+                        // The connection's existing auto-commit policy is preserved: a failed row does not
+                        // roll back previously inserted rows, and the task continues with the next row.
+                        sqlExecutor.executeSql(row.sql());
+                        successCount++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        taskContext.logError("IMPORT_ROW_FAILED", "Could not import row", Map.of(
+                                "row", row.number(), "message", StringUtils.defaultString(e.getMessage())));
+                    }
+                }
             }
             sqlList = new ArrayList<>();
+        }
+
+        private record RowSql(int number, String sql) {
         }
     }
 
