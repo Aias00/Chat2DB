@@ -11,7 +11,12 @@ public enum AccountActionTypeEnum {
     GRANT_PRIVILEGE,
     REVOKE_PRIVILEGE,
     ALTER_PASSWORD_POLICY,
-    ALTER_RESOURCE_LIMITS;
+    ALTER_RESOURCE_LIMITS,
+    CREATE_ROLE,
+    DROP_ROLE,
+    GRANT_ROLE,
+    REVOKE_ROLE,
+    SET_DEFAULT_ROLE;
 
     public static AccountActionTypeEnum from(String value) {
         if (value == null) {

@@ -40,6 +40,7 @@ public final class MysqlAccountSqlBuilderConstants {
     public static final String ERROR_KEY_ACCOUNT_INVALID_ACCOUNT_NAME = "mysql.account.invalidAccountName";
     public static final String ERROR_KEY_ACCOUNT_INVALID_EXPIRE_DAYS = "mysql.account.invalidPasswordExpireDays";
     public static final String ERROR_KEY_ACCOUNT_INVALID_RESOURCE_LIMIT = "mysql.account.invalidResourceLimit";
+    public static final String ERROR_KEY_ACCOUNT_ROLE_REQUIRED = "mysql.account.roleRequired";
     public static final int MAX_PASSWORD_EXPIRE_DAYS = 65535;
 
     public static final String SQL_PASSWORD_EXPIRE_DEFAULT = "PASSWORD EXPIRE DEFAULT";
@@ -52,6 +53,10 @@ public final class MysqlAccountSqlBuilderConstants {
     public static final String SQL_MAX_CONNECTIONS_PER_HOUR = " MAX_CONNECTIONS_PER_HOUR ";
     public static final String SQL_MAX_USER_CONNECTIONS = " MAX_USER_CONNECTIONS ";
     public static final String SQL_WITH_LIMITS = " WITH";
+    public static final String SQL_CREATE_ROLE = "CREATE ROLE ";
+    public static final String SQL_DROP_ROLE_IF_EXISTS = "DROP ROLE IF EXISTS ";
+    public static final String SQL_WITH_ADMIN_OPTION = " WITH ADMIN OPTION";
+    public static final String SQL_SET_DEFAULT_ROLE = "SET DEFAULT ROLE ";
 
     private MysqlAccountSqlBuilderConstants() {
     }

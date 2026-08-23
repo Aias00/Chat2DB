@@ -109,6 +109,13 @@ class MysqlAccountSqlBuilder {
                 }
                 yield SQL_ALTER_USER + account(command) + SQL_WITH_LIMITS + limits;
             }
+            case CREATE_ROLE -> SQL_CREATE_ROLE + account(command);
+            case DROP_ROLE -> SQL_DROP_ROLE_IF_EXISTS + account(command);
+            case GRANT_ROLE -> SQL_GRANT + roleAccount(command) + SQLConstants.SQL_TO + account(command)
+                    + (Boolean.TRUE.equals(command.getWithAdminOption()) ? SQL_WITH_ADMIN_OPTION : "");
+            case REVOKE_ROLE -> SQL_REVOKE + roleAccount(command) + SQL_FROM + account(command);
+            case SET_DEFAULT_ROLE -> SQL_SET_DEFAULT_ROLE + requireDefaultRoleMode(command.getDefaultRoleMode())
+                    + SQLConstants.SQL_TO + account(command);
             default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
         };
     }
@@ -221,6 +228,20 @@ class MysqlAccountSqlBuilder {
         if (command.getPrivileges() == null || command.getPrivileges().isEmpty()) {
             throw new BusinessException(ERROR_KEY_ACCOUNT_PRIVILEGE_REQUIRED);
         }
+    }
+
+    private static String roleAccount(AccountOperationRequest command) {
+        if (StringUtils.isBlank(command.getRoleName())) {
+            throw new BusinessException(ERROR_KEY_ACCOUNT_ROLE_REQUIRED);
+        }
+        return account(command.getRoleName(), command.getRoleHost());
+    }
+
+    private static String requireDefaultRoleMode(String mode) {
+        if (!"ALL".equals(mode) && !"NONE".equals(mode)) {
+            throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
+        }
+        return mode;
     }
 
     private static void validateAccountPart(String value, String code) {
