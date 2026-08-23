@@ -3,6 +3,7 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.sql.Chat2DBContext;
+import ai.chat2db.spi.model.request.TableMetadataRequest;
 import com.alibaba.excel.EasyExcel;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -102,7 +103,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
 
         // Resolve mapping: source index -> target column name; track unmapped targets.
         Map<Integer, String> sourceToTarget = new LinkedHashMap<>();
-        for (Map<String, String> mapping : mappings == null ? List.of() : mappings) {
+        for (Map<String, String> mapping : mappings == null ? List.<Map<String, String>>of() : mappings) {
             String source = mapping.get("sourceColumn");
             String target = mapping.get("targetColumn");
             if (StringUtils.isBlank(target)) {
@@ -122,17 +123,22 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         int skipped = 0;
 
         String insertSql = buildInsertSql(tableName, targetColumns, sourceToTarget, strategy);
+        List<Map<String, Object>> boundColumns = targetColumns.stream()
+                .filter(target -> !DEFAULT_STRATEGY.equals(strategy)
+                        || sourceToTarget.values().stream()
+                        .anyMatch(name -> StringUtils.equals(name, (String) target.get("name"))))
+                .toList();
         Connection connection = Chat2DBContext.getConnection();
         try (PreparedStatement statement = connection.prepareStatement(insertSql)) {
             for (int r = 1; r < rows.size(); r++) {
                 Map<Integer, String> row = rows.get(r);
                 try {
                     int paramIndex = 1;
-                    for (Map<String, Object> target : targetColumns) {
+                    for (Map<String, Object> target : boundColumns) {
                         String targetName = (String) target.get("name");
-                        String sourceIndexKey = sourceToTarget.entrySet().stream()
+                        Integer sourceIndexKey = sourceToTarget.entrySet().stream()
                                 .filter(e -> StringUtils.equals(e.getValue(), targetName))
-                                .map(Map.Entry::getKey)
+                                .map(e -> e.getKey())
                                 .findFirst().orElse(-1);
                         if (sourceIndexKey < 0) {
                             // Unmapped target column: DEFAULT (omit) or explicit NULL.
@@ -260,8 +266,9 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
 
     private static List<Map<String, Object>> targetColumns(String databaseName, String tableName) {
         Connection connection = Chat2DBContext.getConnection();
-        return Chat2DBContext.getDbMetaData().columns(connection, databaseName, null, tableName).stream()
-                .map(column -> {
+        return Chat2DBContext.getDbMetaData().columns(connection,
+                        new TableMetadataRequest(databaseName, null, tableName)).stream()
+                .<Map<String, Object>>map(column -> {
                     Map<String, Object> map = new LinkedHashMap<>();
                     map.put("name", column.getName());
                     map.put("dataType", column.getColumnType());
@@ -294,7 +301,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         // EasyExcel without a model returns List<Map<Integer,String>>; the same reader is
         // used for preview (bounded) and execution (full), so both see identical rows.
         try {
-            List<Map<Integer, String>> all = (List<Map<Integer, String>>) EasyExcel.read(new ByteArrayInputStream(bytes))
+            List<Map<Integer, String>> all = (List<Map<Integer, String>>) (List<?>) EasyExcel
+                    .read(new ByteArrayInputStream(bytes))
                     .headRowNumber(1)
                     .sheet()
                     .doReadSync();

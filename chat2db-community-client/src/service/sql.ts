@@ -433,7 +433,13 @@ const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', {
 /** Import preview and column mapping (MYSQL-IMPORT-001). */
 export interface IImportPreview {
   sourceColumns: { name: string; sampleValues: string[] }[];
-  targetColumns: { name: string; dataType: string; nullable: boolean; autoIncrement: boolean; defaultValue: string | null }[];
+  targetColumns: {
+    name: string;
+    dataType: string;
+    nullable: boolean;
+    autoIncrement: boolean;
+    defaultValue: string | null;
+  }[];
   suggestedMapping: { sourceColumn: string; targetColumn: string }[];
   previewLimit: number;
   previewRows: number;
