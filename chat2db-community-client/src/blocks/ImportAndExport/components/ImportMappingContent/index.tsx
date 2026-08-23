@@ -8,7 +8,7 @@ interface IProps {
   dataSourceId: number;
   databaseName: string;
   tableName: string;
-  filePath: string;
+  file: File;
   onDone: () => void;
 }
 
@@ -20,14 +20,15 @@ const SKIP = '__skip__';
  * unmapped target columns are filled (DEFAULT or NULL), executes the import, and reports
  * row-level errors. Preview and execution share the backend parser.
  */
-const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath, onDone }: IProps) => {
+const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onDone }: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
+  const [fileId, setFileId] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [unmappedTarget, setUnmappedTarget] = useState<'DEFAULT' | 'NULL'>('DEFAULT');
   const [executing, setExecuting] = useState(false);
-  const [result, setResult] = useState<IImportExecuteResult | null>(null);
+  const [result] = useState<IImportExecuteResult | null>(null);
   const [csvOptions, setCsvOptions] = useState<ICsvOptions>({
     encoding: 'UTF-8',
     delimiter: ',',
@@ -35,21 +36,21 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
     escape: '"',
     hasHeader: true,
     emptyAsNull: true,
+    headerRow: 1,
   });
-  const isCsv = filePath.toLowerCase().endsWith('.csv');
-  const isExcel = /\.xlsx?$/i.test(filePath);
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+  const isExcel = /\.xlsx?$/i.test(file.name);
 
-  const load = useCallback(() => {
+  const load = useCallback((stagedFileId: string) => {
     setLoading(true);
     setError(null);
-    setResult(null);
     sqlService
       .getImportPreview({
         dataSourceId,
         databaseName,
         tableName,
-        filePath,
-        csvOptions: isExcel ? csvOptions : undefined,
+        fileId: stagedFileId,
+        importOptions: isExcel ? csvOptions : undefined,
       })
       .then((data) => {
         setPreview(data);
@@ -63,11 +64,22 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, [dataSourceId, databaseName, tableName, filePath, isCsv, isExcel, csvOptions]);
+  }, [dataSourceId, databaseName, tableName, isExcel, csvOptions]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setLoading(true);
+    setError(null);
+    sqlService
+      .uploadImportFile({ file })
+      .then((id) => {
+        setFileId(id);
+        load(id);
+      })
+      .catch((e) => {
+        setError(e?.message || i18n('common.text.failure'));
+        setLoading(false);
+      });
+  }, [file, load]);
 
   const targetOptions = useMemo(() => {
     if (!preview) {
@@ -129,7 +141,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
   ];
 
   const execute = () => {
-    if (blockedColumns.length > 0) {
+    if (blockedColumns.length > 0 || !fileId) {
       Modal.error({
         title: i18n('workspace.importExport.requiredUnmapped'),
         content: blockedColumns.map((c) => `${c.name} (${c.dataType})`).join(', '),
@@ -143,14 +155,14 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
         dataSourceId,
         databaseName,
         tableName,
-        filePath,
+        fileId,
         mappings: Object.entries(mapping)
           .filter(([, target]) => target && target !== SKIP)
           .map(([source, target]) => ({ sourceColumn: source, targetColumn: target })),
         unmappedTarget,
-        csvOptions: isExcel ? csvOptions : undefined,
+        importOptions: isExcel ? csvOptions : undefined,
       })
-      .then(setResult)
+      .then(onDone)
       .catch((e) => setError(e?.message || i18n('common.text.failure')))
       .finally(() => setExecuting(false));
   };
@@ -184,7 +196,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
           </div>
         </div>
       )}
-      {!result && preview && isExcel && (
+      {preview && isExcel && (
         <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
             style={{ width: 160 }}
@@ -202,7 +214,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
           />
           <span>{i18n('workspace.importExport.headerRow')}</span>
           <InputNumber
-            min={0}
+            min={1}
             value={csvOptions.headerRow ?? 0}
             onChange={(v) => setCsvOptions((prev) => ({ ...prev, headerRow: v ?? 0 }))}
             style={{ width: 70 }}
@@ -215,7 +227,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
           </Checkbox>
         </div>
       )}
-      {!result && preview && isCsv && (
+      {preview && isCsv && (
         <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
             style={{ width: 120 }}
@@ -249,7 +261,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
           <span style={{ color: 'var(--text-color-secondary)' }}>{i18n('workspace.importExport.csvOptionsHint')}</span>
         </div>
       )}
-      {!result && preview && (
+      {preview && (
         <>
           <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span>{i18n('workspace.importExport.previewHint', preview.previewRows)}</span>
@@ -267,7 +279,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
                 {i18n('workspace.importExport.requiredUnmapped')}: {blockedColumns.map((c) => c.name).join(', ')}
               </span>
             )}
-            <Button size="small" onClick={load} loading={loading}>
+            <Button size="small" onClick={() => fileId && load(fileId)} loading={loading}>
               {i18n('common.button.refresh')}
             </Button>
           </div>

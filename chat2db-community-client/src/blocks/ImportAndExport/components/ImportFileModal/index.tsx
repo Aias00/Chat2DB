@@ -6,25 +6,29 @@ import ImportExportFile, { ImportExportFileRef } from '../ImportExportFile';
 import { useImportExportStore } from '@/store/importExport';
 import ModalFooterButton from '@/components/Modal/ModalFooterButton';
 import importExportServices from '@/service/importExport';
-import { ImportExportFileType, ImportExportTaskStatus, ImportExportType } from '@/constants/importExport';
-import { DatabaseTypeCode } from '@/constants';
+import { ImportExportTaskStatus, ImportExportType } from '@/constants/importExport';
 import Log from '@/blocks/ImportAndExport/components/Log';
 import { ImportExportTaskDetails } from '@/typings/importExport';
 import ImportMappingContent from '@/blocks/ImportAndExport/components/ImportMappingContent';
 import jcefApi from '@/jcef';
 import { isDesktop } from '@/utils/env';
+import type { FileUrl } from '@/components/UploadLocalFile';
 
 interface IProps {
   className?: string;
 }
+
+const isPreviewFile = (file?: FileUrl) => {
+  const name = file?.file?.name?.toLowerCase();
+  return name?.endsWith('.xls') || name?.endsWith('.xlsx');
+};
 
 export default memo<IProps>((_props) => {
   const [isReady, setIsReady] = useState(false);
   const importExportFileRef = useRef<ImportExportFileRef>(null);
   const [taskId, setTaskId] = useState<number>();
   const [taskDetails, setTaskDetails] = useState<ImportExportTaskDetails>();
-  const [importFilePath, setImportFilePath] = useState<string>('');
-  const [importFileType, setImportFileType] = useState<ImportExportFileType>();
+  const [importFile, setImportFile] = useState<FileUrl>();
 
   const { importExportDataBoundInfo, setImportExportDataBoundInfo, getTaskList } = useImportExportStore((state) => {
     return {
@@ -38,8 +42,7 @@ export default memo<IProps>((_props) => {
     if (!importExportDataBoundInfo) {
       setTaskId(undefined);
       setTaskDetails(undefined);
-      setImportFilePath('');
-      setImportFileType(undefined);
+      setImportFile(undefined);
     }
   }, [importExportDataBoundInfo]);
 
@@ -54,15 +57,9 @@ export default memo<IProps>((_props) => {
     });
   };
 
-  const handleImportFileChange = (filePath: string, fileType: ImportExportFileType) => {
-    setImportFilePath(filePath);
-    setImportFileType(fileType);
+  const handleImportFileChange = (file: FileUrl) => {
+    setImportFile(file);
   };
-
-  const useMysqlExcelMapping =
-    importExportDataBoundInfo?.type === ImportExportType.IMPORT &&
-    importExportDataBoundInfo.databaseType === DatabaseTypeCode.MYSQL &&
-    (importFileType === ImportExportFileType.XLS || importFileType === ImportExportFileType.XLSX);
 
   const renderFooter = () => {
     return (
@@ -137,7 +134,7 @@ export default memo<IProps>((_props) => {
       headerIconCode={importExportDataBoundInfo?.type === ImportExportType.IMPORT ? 'icon-upload' : 'icon-download'}
       headerBorder
       destroyOnClose
-      footer={taskId ? logRenderFooter() : useMysqlExcelMapping ? null : renderFooter()}
+      footer={taskId ? logRenderFooter() : !isDesktop && isPreviewFile(importFile) ? null : renderFooter()}
       maskClosable={false}
       onCancel={() => {
         setImportExportDataBoundInfo(null);
@@ -145,13 +142,14 @@ export default memo<IProps>((_props) => {
     >
       {taskId ? (
         <Log onTaskChange={handleTaskChange} taskId={taskId} />
-      ) : useMysqlExcelMapping && importFilePath ? (
+      ) : importExportDataBoundInfo?.type === ImportExportType.IMPORT && !isDesktop && isPreviewFile(importFile) ? (
         <ImportMappingContent
           dataSourceId={importExportDataBoundInfo.dataSourceId}
           databaseName={importExportDataBoundInfo.databaseName}
           tableName={importExportDataBoundInfo.tableName || ''}
-          filePath={importFilePath}
+          file={importFile.file!}
           onDone={() => {
+            getTaskList();
             setImportExportDataBoundInfo(null);
           }}
         />

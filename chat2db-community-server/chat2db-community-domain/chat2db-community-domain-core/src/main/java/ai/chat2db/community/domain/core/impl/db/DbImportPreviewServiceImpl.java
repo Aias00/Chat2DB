@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -36,9 +37,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
 
     @Override
     public Map<String, Object> preview(Long dataSourceId, String databaseName, String tableName,
-                                       String filePath, Map<String, Object> csvOptions) {
-        byte[] bytes = readFile(filePath);
-        ParseOutcome outcome = parseRows(bytes, filePath, PREVIEW_ROW_LIMIT, csvOptions);
+                                       File file, Map<String, Object> importOptions) {
+        ParseOutcome outcome = parseRows(file, PREVIEW_ROW_LIMIT, importOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
             throw new BusinessException("import.preview.emptyFile");
@@ -91,12 +91,11 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         return result;
     }
 
-    @Override
+    @Deprecated(forRemoval = true)
     public Map<String, Object> execute(Long dataSourceId, String databaseName, String tableName,
-                                       String filePath, Map<String, Object> csvOptions,
+                                       File file, Map<String, Object> importOptions,
                                        List<Map<String, String>> mappings, String unmappedTarget) {
-        byte[] bytes = readFile(filePath);
-        ParseOutcome outcome = parseRows(bytes, filePath, Integer.MAX_VALUE, csvOptions);
+        ParseOutcome outcome = parseRows(file, Integer.MAX_VALUE, importOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
             throw new BusinessException("import.preview.emptyFile");
@@ -308,27 +307,17 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                                 int firstDataRow, List<Map<String, Object>> sheets) {
     }
 
-    private static byte[] readFile(String filePath) {
-        if (StringUtils.isBlank(filePath)) {
-            throw new BusinessException("import.preview.fileRequired");
+    private static ParseOutcome parseRows(File file, int limit, Map<String, Object> importOptions) {
+        if (file == null || !file.isFile() || !file.canRead()) {
+            throw new BusinessException("import.preview.fileUnreadable");
         }
-        try {
-            return java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(filePath));
-        } catch (Exception e) {
-            log.warn("import preview cannot read file {}", filePath, e);
-            throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
-        }
-    }
-
-    private static ParseOutcome parseRows(byte[] bytes, String fileName, int limit,
-                                          Map<String, Object> csvOptions) {
-        Map<String, Object> options = csvOptions == null ? Map.of() : csvOptions;
-        if (ExcelParser.isExcel(fileName)) {
+        Map<String, Object> options = importOptions == null ? Map.of() : importOptions;
+        if (ExcelParser.isExcel(file.getName())) {
             String sheetName = (String) options.getOrDefault("sheetName", null);
             int startRow = ((Number) options.getOrDefault("startRow", 0)).intValue();
             int headerRow = ((Number) options.getOrDefault("headerRow", 0)).intValue();
             boolean emptyAsNull = Boolean.TRUE.equals(options.getOrDefault("emptyAsNull", Boolean.TRUE));
-            ExcelParser.ExcelResult result = ExcelParser.parse(bytes, fileName, sheetName,
+            ExcelParser.ExcelResult result = ExcelParser.parse(file, file.getName(), sheetName,
                     startRow, headerRow, emptyAsNull, limit);
             List<Map<Integer, ExcelParser.CellValue>> rows = result.rows();
             Map<Integer, ExcelParser.CellValue> header;
@@ -344,7 +333,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                 }
                 firstDataRow = 0;
             }
-            return new ParseOutcome(rows, header, firstDataRow, ExcelParser.sheets(bytes, fileName));
+            return new ParseOutcome(rows, header, firstDataRow, ExcelParser.sheets(file, file.getName()));
         }
         throw new BusinessException("import.preview.unsupportedFile");
     }

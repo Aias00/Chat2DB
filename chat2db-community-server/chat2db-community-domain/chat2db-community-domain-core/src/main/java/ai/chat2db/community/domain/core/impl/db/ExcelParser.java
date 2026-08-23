@@ -11,6 +11,8 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -47,6 +49,23 @@ public final class ExcelParser {
                 if (!workbook.isSheetHidden(i) && !workbook.isSheetVeryHidden(i)) {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("name", sheet.getSheetName());
+                    entry.put("visible", true);
+                    result.add(entry);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            throw workbookError(fileName, e);
+        }
+    }
+
+    public static List<Map<String, Object>> sheets(File file, String fileName) {
+        try (Workbook workbook = open(file, fileName)) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                if (!workbook.isSheetHidden(i) && !workbook.isSheetVeryHidden(i)) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("name", workbook.getSheetName(i));
                     entry.put("visible", true);
                     result.add(entry);
                 }
@@ -98,6 +117,43 @@ public final class ExcelParser {
         }
     }
 
+    public static ExcelResult parse(File file, String fileName, String sheetName,
+                                    int startRow, int headerRow, boolean emptyAsNull, int limit) {
+        try (Workbook workbook = open(file, fileName)) {
+            return parseWorkbook(workbook, sheetName, startRow, headerRow, emptyAsNull, limit);
+        } catch (Exception e) {
+            throw workbookError(fileName, e);
+        }
+    }
+
+    private static ExcelResult parseWorkbook(Workbook workbook, String sheetName,
+                                             int startRow, int headerRow, boolean emptyAsNull, int limit) {
+        Sheet sheet = selectSheet(workbook, sheetName);
+        int effectiveStart = Math.max(0, startRow);
+        int effectiveHeader = headerRow > 0 ? headerRow - 1 : effectiveStart;
+        Map<Integer, CellValue> header = headerRow > 0 ? readRow(sheet, effectiveHeader, emptyAsNull) : Map.of();
+        int maxColumn = header.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
+        List<Map<Integer, CellValue>> rows = new ArrayList<>();
+        int physicalRow = headerRow > 0 ? effectiveHeader + 1 : effectiveStart;
+        int count = 0;
+        while (physicalRow <= sheet.getLastRowNum() && count < limit) {
+            Map<Integer, CellValue> row = readRow(sheet, physicalRow++, emptyAsNull);
+            if (!row.isEmpty()) {
+                rows.add(row);
+                maxColumn = Math.max(maxColumn, row.keySet().stream().mapToInt(Integer::intValue).max().orElse(0));
+                count++;
+            }
+        }
+        List<Map<Integer, CellValue>> normalizedRows = new ArrayList<>();
+        if (headerRow > 0) {
+            normalizedRows.add(normalizeRow(header, maxColumn));
+        }
+        for (Map<Integer, CellValue> row : rows) {
+            normalizedRows.add(normalizeRow(row, maxColumn));
+        }
+        return new ExcelResult(normalizedRows, headerRow > 0 ? 1 : 0);
+    }
+
     private static Map<Integer, CellValue> normalizeRow(Map<Integer, CellValue> row, int maxColumn) {
         Map<Integer, CellValue> normalized = new LinkedHashMap<>();
         for (int c = 0; c <= maxColumn; c++) {
@@ -110,6 +166,14 @@ public final class ExcelParser {
     private static Workbook open(byte[] bytes, String fileName) {
         try {
             return WorkbookFactory.create(new ByteArrayInputStream(bytes));
+        } catch (Exception e) {
+            throw workbookError(fileName, e);
+        }
+    }
+
+    private static Workbook open(File file, String fileName) {
+        try (FileInputStream input = new FileInputStream(file)) {
+            return WorkbookFactory.create(input);
         } catch (Exception e) {
             throw workbookError(fileName, e);
         }
@@ -161,7 +225,7 @@ public final class ExcelParser {
                     Date date = cell.getDateCellValue();
                     return new CellValue(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(date), "date");
                 }
-                return new CellValue(new java.math.BigDecimal(cell.getNumericCellValue()).stripTrailingZeros().toPlainString(),
+                return new CellValue(java.math.BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString(),
                         "number");
             case BOOLEAN:
                 return new CellValue(String.valueOf(cell.getBooleanCellValue()), "boolean");
@@ -181,7 +245,7 @@ public final class ExcelParser {
                 case STRING:
                     return cell.getStringCellValue();
                 case NUMERIC:
-                    return new java.math.BigDecimal(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
+                    return java.math.BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
                 case BOOLEAN:
                     return String.valueOf(cell.getBooleanCellValue());
                 default:

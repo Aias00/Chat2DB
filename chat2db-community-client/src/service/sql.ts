@@ -467,8 +467,17 @@ export interface ICsvOptions {
   headerRow?: number;
 }
 
+export interface IImportTaskSubmitResult {
+  taskId: number;
+}
+
+const uploadImportFile = createRequest<{ file: File }, string>('/api/rdb/import_preview/upload', {
+  method: 'post',
+  contentType: 'formData',
+});
+
 const getImportPreview = createRequest<
-  { dataSourceId: number; databaseName: string; tableName: string; filePath: string; csvOptions?: ICsvOptions },
+  { dataSourceId: number; databaseName: string; tableName: string; fileId: string; importOptions?: ICsvOptions },
   IImportPreview
 >('/api/rdb/import_preview/preview', { method: 'post' });
 
@@ -477,12 +486,12 @@ const executeImportWithMapping = createRequest<
     dataSourceId: number;
     databaseName: string;
     tableName: string;
-    filePath: string;
+    fileId: string;
     mappings: { sourceColumn: string | null; targetColumn: string }[];
     unmappedTarget: 'DEFAULT' | 'NULL';
-    csvOptions?: ICsvOptions;
+    importOptions?: ICsvOptions;
   },
-  IImportExecuteResult
+  IImportTaskSubmitResult
 >('/api/rdb/import_preview/execute', { method: 'post' });
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
 
@@ -544,5 +553,6 @@ export default {
   checkIsSelectSQL,
   getImportPreview,
   executeImportWithMapping,
+  uploadImportFile,
   getDataSourceList,
 };
