@@ -374,6 +374,8 @@ public abstract class DbWebConverter {
 
     public abstract DbTablespaceQueryRequest request2param(TablespaceQueryRequest request);
 
+    public abstract DbTablespaceQueryRequest request2param(TablespaceCapabilityRequest request);
+
     public abstract DbTablespaceCreateRequest request2param(TablespaceCreateRequest request);
 
     public abstract DbTablespaceModifyRequest request2param(TablespaceModifyRequest request);

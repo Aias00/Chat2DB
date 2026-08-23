@@ -12,7 +12,9 @@ import ai.chat2db.spi.sql.builder.IDmlSqlBuilder;
 import ai.chat2db.spi.sql.builder.IDqlSqlBuilder;
 import ai.chat2db.spi.sql.builder.ISchemaSqlBuilder;
 import ai.chat2db.spi.sql.builder.ITableSqlBuilder;
+import ai.chat2db.spi.sql.builder.ITablespaceSqlBuilder;
 import ai.chat2db.spi.sql.builder.IViewSqlBuilder;
+import ai.chat2db.spi.DefaultSqlBuilder;
 import ai.chat2db.spi.model.request.PageLimitRequest;
 import ai.chat2db.spi.model.request.DeleteSqlRequest;
 import ai.chat2db.spi.model.request.MultiInsertSqlRequest;
@@ -88,6 +90,11 @@ public class RedisSqlBuilder implements ISqlBuilder, IDqlSqlBuilder, IDmlSqlBuil
     @Override
     public IViewSqlBuilder view() {
         return this;
+    }
+
+    @Override
+    public ITablespaceSqlBuilder tablespace() {
+        return new DefaultSqlBuilder();
     }
 
     @Override

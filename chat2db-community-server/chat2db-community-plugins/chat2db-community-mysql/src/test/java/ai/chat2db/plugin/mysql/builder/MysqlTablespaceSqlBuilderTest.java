@@ -3,15 +3,24 @@ package ai.chat2db.plugin.mysql.builder;
 import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.metadata.Tablespace;
+import ai.chat2db.plugin.mysql.MysqlMetaData;
 import ai.chat2db.plugin.mysql.util.MysqlVersionUtils;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_DETAIL_SQL_TEMPLATE;
+import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACES_SQL;
 
 /**
  * Unit tests for {@link MysqlTablespaceSqlBuilder} DDL generation and the table-option emit in
@@ -165,6 +174,54 @@ class MysqlTablespaceSqlBuilderTest {
     }
 
     @Test
+    void shouldUseInformationSchemaDiscoverySupportedByMysql57And80() {
+        assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.TABLESPACES"));
+        assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.FILES"));
+        assertTrue(TABLESPACES_SQL.contains("T.ENGINE = 'InnoDB'"));
+        assertEquals(TABLESPACES_SQL.replace("ORDER BY T.NAME", "AND T.NAME = '%s' ORDER BY T.NAME"),
+                TABLESPACE_DETAIL_SQL_TEMPLATE);
+    }
+
+    @Test
+    void shouldDiscoverGeneralTablespaceWhenFileMetadataIsUnavailable() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("SPACE", 42L);
+        row.put("NAME", "ts_archive");
+        row.put("ENGINE", "InnoDB");
+        row.put("FILE_BLOCK_SIZE", 8192L);
+        row.put("FILE_NAME", null);
+        row.put("AUTOEXTEND_NEXT_SIZE", 0L);
+        row.put("MAXIMUM_SIZE", 0L);
+        row.put("EXTENT_SIZE", 0L);
+        row.put("INITIAL_SIZE", 0L);
+        row.put("STATUS", "NORMAL");
+        Connection connection = connectionReturning(resultSet(List.of(row)));
+
+        Tablespace tablespace = new MysqlMetaData().tablespaces(connection).get(0);
+
+        assertEquals("ts_archive", tablespace.getName());
+        assertEquals(42L, tablespace.getSpaceId());
+        assertEquals(8192L, tablespace.getFileBlockSize());
+        assertEquals("NORMAL", tablespace.getStatus());
+        assertTrue(tablespace.getDataFiles() == null || tablespace.getDataFiles().isEmpty());
+    }
+
+    @Test
+    void shouldPreserveTablespacePlacementAcrossCreateAndMigration() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        TableColumn column = TableColumn.builder().name("id").columnType("BIGINT").nullable(0).build();
+        Table original = Table.builder().databaseName("test_db").name("t1").columnList(List.of(column))
+                .indexList(List.of()).tablespace("ts_old").build();
+        Table migrated = Table.builder().databaseName("test_db").name("t1").columnList(List.of(column))
+                .indexList(List.of()).tablespace("ts_new").build();
+
+        assertTrue(builder.buildCreateTable(migrated,
+                ai.chat2db.community.domain.api.config.TableBuilderConfig.defaultConfig())
+                .contains("TABLESPACE `ts_new`"));
+        assertTrue(builder.buildAlterTable(original, migrated).contains("TABLESPACE `ts_new`"));
+    }
+
+    @Test
     void shouldGatesRenameByServerVersion() {
         assertTrue(MysqlVersionUtils.supportsTablespaceRename("8.0.36"));
         assertTrue(MysqlVersionUtils.supportsTablespaceRename("8.4.0"));
@@ -174,5 +231,67 @@ class MysqlTablespaceSqlBuilderTest {
         assertFalse(MysqlVersionUtils.supportsTablespaceRename(""));
         // Tolerate version suffixes.
         assertTrue(MysqlVersionUtils.supportsTablespaceRename("8.0.36-log"));
+    }
+
+    private Connection connectionReturning(ResultSet resultSet) {
+        PreparedStatement statement = (PreparedStatement) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] {PreparedStatement.class}, (proxy, method, args) -> {
+                    if ("execute".equals(method.getName())) {
+                        return true;
+                    }
+                    if ("getResultSet".equals(method.getName())) {
+                        return resultSet;
+                    }
+                    if ("close".equals(method.getName())) {
+                        return null;
+                    }
+                    return defaultValue(method.getReturnType());
+        });
+        return (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {Connection.class},
+                (proxy, method, args) -> "prepareStatement".equals(method.getName()) ? statement
+                        : defaultValue(method.getReturnType()));
+    }
+
+    private ResultSet resultSet(List<Map<String, Object>> rows) {
+        final int[] rowIndex = {-1};
+        final boolean[] wasNull = {false};
+        return (ResultSet) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {ResultSet.class},
+                (proxy, method, args) -> {
+                    if ("next".equals(method.getName())) {
+                        return ++rowIndex[0] < rows.size();
+                    }
+                    if ("getString".equals(method.getName()) || "getLong".equals(method.getName())) {
+                        Object value = rows.get(rowIndex[0]).get(args[0]);
+                        wasNull[0] = value == null;
+                        return "getLong".equals(method.getName()) ? value == null ? 0L : ((Number) value).longValue()
+                                : value == null ? null : value.toString();
+                    }
+                    if ("wasNull".equals(method.getName())) {
+                        return wasNull[0];
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+    }
+
+    private Object defaultValue(Class<?> returnType) {
+        if (!returnType.isPrimitive()) {
+            return null;
+        }
+        if (returnType == boolean.class) {
+            return false;
+        }
+        if (returnType == long.class) {
+            return 0L;
+        }
+        if (returnType == double.class) {
+            return 0D;
+        }
+        if (returnType == float.class) {
+            return 0F;
+        }
+        if (returnType == char.class) {
+            return '\0';
+        }
+        return 0;
     }
 }

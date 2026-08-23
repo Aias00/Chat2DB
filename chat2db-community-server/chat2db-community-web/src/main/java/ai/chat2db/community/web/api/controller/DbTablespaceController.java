@@ -13,6 +13,7 @@ import ai.chat2db.community.tools.wrapper.result.ListResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
 import ai.chat2db.community.web.api.converter.db.DbWebConverter;
 import ai.chat2db.community.web.api.model.request.db.TablespaceCreateRequest;
+import ai.chat2db.community.web.api.model.request.db.TablespaceCapabilityRequest;
 import ai.chat2db.community.web.api.model.request.db.TablespaceModifyRequest;
 import ai.chat2db.community.web.api.model.request.db.TablespaceQueryRequest;
 import ai.chat2db.community.web.api.model.response.db.TablespaceCapabilityResponse;
@@ -96,7 +97,7 @@ public class DbTablespaceController {
      * Endpoint: {@code GET /api/rdb/tablespace/capability}.
      */
     @GetMapping("/capability")
-    public DataResult<TablespaceCapabilityResponse> capability(@Valid TablespaceQueryRequest request) {
+    public DataResult<TablespaceCapabilityResponse> capability(@Valid TablespaceCapabilityRequest request) {
         TablespaceCapability capability = tablespaceService.capability(dbWebConverter.request2param(request));
         return DataResult.of(dbWebConverter.tablespaceCapability2response(capability));
     }
