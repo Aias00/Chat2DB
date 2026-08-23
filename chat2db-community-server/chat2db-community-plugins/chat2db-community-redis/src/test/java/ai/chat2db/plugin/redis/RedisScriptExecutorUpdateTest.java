@@ -35,6 +35,13 @@ class RedisScriptExecutorUpdateTest {
     }
 
     @Test
+    void nullOldKeyKeepsCreatePathValid() {
+        RedisKey emptyListKey = RedisKey.builder().name("k").type("list").build();
+
+        assertNotNull(RedisScriptExecutor.getInstance().update(null, emptyListKey));
+    }
+
+    @Test
     void rejectsNullAndUnknownKeyTypesBeforeGeneratingCommands() {
         RedisKey valid = RedisKey.builder().name("k").type("string").build();
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
@@ -43,6 +50,8 @@ class RedisScriptExecutorUpdateTest {
                 .update(valid, RedisKey.builder().name("k").type(null).build()));
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(RedisKey.builder().name("k").type(null).build(), RedisKey.builder().name("k").type(null).build()));
+        assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
+                .update(RedisKey.builder().name("k").type("unknown").build(), valid));
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(valid, RedisKey.builder().name("k").type("unknown").build()));
     }

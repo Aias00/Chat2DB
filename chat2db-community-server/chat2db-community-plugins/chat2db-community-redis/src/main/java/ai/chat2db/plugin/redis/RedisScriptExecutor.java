@@ -308,10 +308,9 @@ public class RedisScriptExecutor extends DefaultSQLExecutor {
         if (oldKey == null && newKey == null) {
             return new ExecuteResponse();
         }
-        // Validate both key types up front. A null/none/unknown type means the key
-        // is missing or the request is malformed/stale (the UI never submits these),
-        // so reject explicitly before generating any Redis command — never fall back
-        // to string semantics and silently emit DEL/RENAME/type-specific writes.
+        // Validate key objects that are present up front. A null oldKey/newKey is
+        // a valid create/delete signal, but a present key with null/none/unknown
+        // type is malformed or stale and must not reach type-specific scripts.
         validateKeyType(oldKey, "old");
         validateKeyType(newKey, "new");
 
@@ -368,8 +367,7 @@ public class RedisScriptExecutor extends DefaultSQLExecutor {
      */
     private void validateKeyType(RedisKey key, String role) {
         if (key == null) {
-            throw new BusinessException(String.format(RedisConstants.ERROR_UNSUPPORTED_KEY_TYPE,
-                    role + "=<missing>"));
+            return;
         }
         String type = key.getType();
         if (StringUtils.isBlank(type)) {
