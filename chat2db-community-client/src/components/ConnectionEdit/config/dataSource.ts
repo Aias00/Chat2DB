@@ -295,6 +295,135 @@ export const portItem: any = {
   },
 };
 
+const mysqlTlsItems = [
+  {
+    defaultValue: 'DISABLED',
+    inputType: InputType.SELECT,
+    labelName: {
+      [LangType.EN_US]: 'TLS Mode',
+      [LangType.ZH_CN]: 'TLS 模式',
+      [LangType.JA_JP]: 'TLS モード',
+    },
+    name: 'sslTlsMode',
+    required: false,
+    selects: [
+      {
+        label: 'DISABLED',
+        value: 'DISABLED',
+      },
+      {
+        label: 'REQUIRED',
+        value: 'REQUIRED',
+      },
+      {
+        label: 'VERIFY_CA',
+        value: 'VERIFY_CA',
+      },
+      {
+        label: 'VERIFY_IDENTITY',
+        value: 'VERIFY_IDENTITY',
+      },
+    ],
+    styles: {
+      width: '50%',
+    },
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.TEXTAREA,
+    labelName: {
+      [LangType.EN_US]: 'CA PEM',
+      [LangType.ZH_CN]: 'CA PEM',
+      [LangType.JA_JP]: 'CA PEM',
+    },
+    name: 'sslCaPem',
+    required: false,
+    rows: 4,
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.TEXTAREA,
+    labelName: {
+      [LangType.EN_US]: 'Client Cert PEM',
+      [LangType.ZH_CN]: '客户端证书 PEM',
+      [LangType.JA_JP]: 'クライアント証明書 PEM',
+    },
+    name: 'sslClientCertPem',
+    required: false,
+    rows: 4,
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.TEXTAREA,
+    labelName: {
+      [LangType.EN_US]: 'Client Key PEM',
+      [LangType.ZH_CN]: '客户端密钥 PEM',
+      [LangType.JA_JP]: 'クライアント鍵 PEM',
+    },
+    name: 'sslClientPrivateKeyPem',
+    required: false,
+    rows: 4,
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.PASSWORD,
+    labelName: {
+      [LangType.EN_US]: 'Client Key Password',
+      [LangType.ZH_CN]: '客户端密钥密码',
+      [LangType.JA_JP]: 'クライアント鍵パスワード',
+    },
+    name: 'sslClientKeyPassword',
+    required: false,
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.SELECT,
+    labelName: {
+      [LangType.EN_US]: 'Key Store Type',
+      [LangType.ZH_CN]: '密钥库类型',
+      [LangType.JA_JP]: 'キーストア種別',
+    },
+    name: 'sslKeyStoreType',
+    required: false,
+    selects: [
+      {
+        label: 'PKCS12',
+        value: 'PKCS12',
+      },
+      {
+        label: 'JKS',
+        value: 'JKS',
+      },
+    ],
+    styles: {
+      width: '50%',
+    },
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.TEXTAREA,
+    labelName: {
+      [LangType.EN_US]: 'Key Store Base64',
+      [LangType.ZH_CN]: '密钥库 Base64',
+      [LangType.JA_JP]: 'キーストア Base64',
+    },
+    name: 'sslKeyStoreBytes',
+    required: false,
+    rows: 4,
+  },
+  {
+    defaultValue: '',
+    inputType: InputType.PASSWORD,
+    labelName: {
+      [LangType.EN_US]: 'Key Store Password',
+      [LangType.ZH_CN]: '密钥库密码',
+      [LangType.JA_JP]: 'キーストアパスワード',
+    },
+    name: 'sslKeyStorePassword',
+    required: false,
+  },
+];
+
 export const dataSourceFormConfigs: IConnectionConfig[] = [
   // MYSQL
   {
@@ -412,6 +541,7 @@ export const dataSourceFormConfigs: IConnectionConfig[] = [
           name: 'url',
           required: true,
         },
+        ...mysqlTlsItems,
       ],
       pattern: /jdbc:mysql:\/\/(.*):(\d+)(\/([\w-]+))?/,
       template: 'jdbc:mysql://{host}:{port}/{database}',

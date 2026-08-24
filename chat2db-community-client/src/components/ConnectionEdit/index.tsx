@@ -33,6 +33,16 @@ type ITabsType = 'ssh' | 'baseInfo' | 'driver';
 
 const OSCAR_JDBC_URL_PREFIX = 'jdbc:oscar://';
 const OSCAR_DRIVER_CLASS = 'com.oscar.Driver';
+const MYSQL_TLS_FORM_FIELDS: Record<string, string> = {
+  sslTlsMode: 'tlsMode',
+  sslCaPem: 'caPem',
+  sslClientCertPem: 'clientCertPem',
+  sslClientPrivateKeyPem: 'clientPrivateKeyPem',
+  sslClientKeyPassword: 'clientKeyPassword',
+  sslKeyStoreType: 'keyStoreType',
+  sslKeyStoreBytes: 'keyStoreBytes',
+  sslKeyStorePassword: 'keyStorePassword',
+};
 
 const connectionFormTranslations: Partial<Record<LangType, Record<string, string>>> = {
   [LangType.ES_ES]: {
@@ -146,12 +156,31 @@ function normalizeConnectionData(connectionData?: IConnectionDetails | null) {
     return {} as IConnectionDetails;
   }
   const resolvedType = resolveConnectionType(connectionData);
+  const ssl = connectionData.ssl || {};
   return {
     ...connectionData,
     ...(resolvedType && resolvedType !== connectionData.type ? { type: resolvedType } : {}),
     watermarkEnabled: connectionData.watermarkEnabled === true,
     watermarkContent: connectionData.watermarkContent || '',
+    sslTlsMode: ssl.tlsMode || 'DISABLED',
+    sslCaPem: ssl.caPem || '',
+    sslClientCertPem: ssl.clientCertPem || '',
+    sslClientPrivateKeyPem: ssl.clientPrivateKeyPem || '',
+    sslClientKeyPassword: ssl.clientKeyPassword || '',
+    sslKeyStoreType: ssl.keyStoreType || '',
+    sslKeyStoreBytes: ssl.keyStoreBytes || '',
+    sslKeyStorePassword: ssl.keyStorePassword || '',
   };
+}
+
+function collectSslPayload(data: Record<string, any>) {
+  const ssl: Record<string, any> = {};
+  Object.entries(MYSQL_TLS_FORM_FIELDS).forEach(([formField, sslField]) => {
+    ssl[sslField] = data[formField];
+    delete data[formField];
+  });
+  ssl.tlsMode = ssl.tlsMode || 'DISABLED';
+  return ssl;
 }
 
 function mergeSavedConnectionData(current: IConnectionDetails, saved: any) {
@@ -472,6 +501,7 @@ const ConnectionEdit = forwardRef((props: IProps, ref: ForwardedRef<ICreateConne
     if (baseInfo.host) {
       baseInfo.host = normalizeJdbcHostFromUrl(baseInfo.host);
     }
+    const ssl = backfillData.type === DatabaseTypeCode.MYSQL ? collectSslPayload(baseInfo) : undefined;
     const extendInfo: any = [];
     extendTableData.map((t: any) => {
       if (t.label || t.value) {
@@ -490,6 +520,9 @@ const ConnectionEdit = forwardRef((props: IProps, ref: ForwardedRef<ICreateConne
       connectionEnvType: ConnectionEnvType.DAILY,
       type: backfillData.type,
     };
+    if (ssl) {
+      data.ssl = ssl;
+    }
 
     if (backfillData.id) {
       data.id = backfillData.id;
@@ -691,6 +724,7 @@ function RenderForm(props: IRenderFormProps) {
   useEffect(() => {
     form.resetFields();
     changeDataSourceFormConfig(backfillData);
+    form.setFieldsValue(backfillData);
     formDataRef.current = backfillData;
   }, [backfillData.id, backfillData.type]);
 
@@ -918,6 +952,14 @@ function RenderForm(props: IRenderFormProps) {
     const inputControl = (
       <Input disabled={props.disabled} maxLength={t.maxLength} placeholder={placeholder} />
     );
+    const textareaControl = (
+      <Input.TextArea
+        disabled={props.disabled}
+        maxLength={t.maxLength}
+        placeholder={placeholder}
+        rows={t.rows || 3}
+      />
+    );
     const selectControl = (
       <Select
         placeholder={placeholder}
@@ -966,6 +1008,7 @@ function RenderForm(props: IRenderFormProps) {
 
       const controls: Partial<Record<InputType, React.ReactNode>> = {
         [InputType.INPUT]: inputControl,
+        [InputType.TEXTAREA]: textareaControl,
         [InputType.SELECT]: selectControl,
         [InputType.COLOR]: (
           <DataSourceColorPicker
@@ -996,6 +1039,17 @@ function RenderForm(props: IRenderFormProps) {
           labelAlign={labelAlign}
         >
           {inputControl}
+        </Form.Item>
+      ),
+
+      [InputType.TEXTAREA]: () => (
+        <Form.Item
+          label={label}
+          name={name}
+          style={{ '--form-label-width': labelWidth } as any}
+          labelAlign={labelAlign}
+        >
+          {textareaControl}
         </Form.Item>
       ),
 

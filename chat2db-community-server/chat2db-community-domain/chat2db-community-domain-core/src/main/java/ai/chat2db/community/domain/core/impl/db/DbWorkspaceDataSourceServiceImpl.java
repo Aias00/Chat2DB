@@ -71,7 +71,7 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
 
     @Override
     public WorkspaceDataSource queryDisplayDataSourceById(Long id, Boolean requestPassword) {
-        WorkspaceDataSource dataSource = environmentEnricher.enrich(queryDataSourceById(id, requestPassword));
+        WorkspaceDataSource dataSource = copyDataSource(environmentEnricher.enrich(queryDataSourceById(id, requestPassword)));
         if (Boolean.TRUE.equals(requestPassword)) {
             decryptPassword(dataSource);
         }
@@ -230,6 +230,16 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
             copy = new WorkspaceDataSource();
         }
         BeanUtils.copyProperties(dataSource, copy);
+        copy.setSsl(copySsl(dataSource.getSsl()));
+        return copy;
+    }
+
+    private SSLInfo copySsl(SSLInfo ssl) {
+        if (ssl == null) {
+            return null;
+        }
+        SSLInfo copy = new SSLInfo();
+        BeanUtils.copyProperties(ssl, copy);
         return copy;
     }
 

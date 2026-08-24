@@ -42,6 +42,7 @@ export interface IFormItem {
     labelWidth?: ILocalizedConnectionText;
     labelAlign?: string; // Label alignment; defaults to left.
   },
+  rows?: number;
   hidden?: boolean;
   fileTypes?: string[];
   maxLength?: number;

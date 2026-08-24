@@ -23,15 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * Covers the TLS material merge/encrypt semantics in {@link LocalWorkspaceStorage}:
  * <ul>
  *   <li>create encrypts the secret fields and leaves public material cleartext;</li>
- *   <li>update preserves a blank secret (keeps the previous ciphertext, so the user need not
- *       re-upload the key on every edit) and re-encrypts a supplied secret;</li>
+ *   <li>update clears a blank secret so removing TLS material deletes the previous ciphertext,
+ *       and re-encrypts a supplied replacement secret;</li>
  *   <li>public fields always follow the incoming value — an empty string clears the previous.</li>
  * </ul>
  *
  * <p>AES-GCM encryption is non-deterministic (random IV), so ciphertext is never compared by
  * value. Instead each secret is verified by round-tripping through {@code decrypt} and by
- * confirming it differs from the cleartext; the "preserve" path additionally checks the previous
- * ciphertext is returned byte-for-byte (no decrypt+reencrypt).
+ * confirming it differs from the cleartext.
  *
  * <p>The merge helpers are private; they are exercised directly via reflection so the assertions
  * pin the contract without coupling to the file-backed {@code DataSourceStorage} round-trip.

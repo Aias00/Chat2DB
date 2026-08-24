@@ -68,6 +68,56 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
     }
 
     @Test
+    void queryDisplayRedactsTlsSecretsWithoutMutatingSavedDataSource() {
+        savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
+        savedDataSource.setSsl(savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem"));
+        savedDataSource.getSsl().setClientPrivateKeyPem("encrypted-key");
+        savedDataSource.getSsl().setClientKeyPassword("encrypted-key-password");
+        savedDataSource.getSsl().setKeyStoreBytes("encrypted-store-bytes");
+        savedDataSource.getSsl().setKeyStorePassword("encrypted-store-password");
+
+        WorkspaceDataSource display = service.queryDisplayDataSourceById(1L, false);
+
+        assertNotNull(display.getSsl());
+        assertEquals(MySqlTlsMode.VERIFY_IDENTITY.name(), display.getSsl().getTlsMode());
+        assertEquals("saved-ca-pem", display.getSsl().getCaPem());
+        assertNull(display.getSsl().getClientPrivateKeyPem());
+        assertNull(display.getSsl().getClientKeyPassword());
+        assertNull(display.getSsl().getKeyStoreBytes());
+        assertNull(display.getSsl().getKeyStorePassword());
+        assertEquals("encrypted-key", savedDataSource.getSsl().getClientPrivateKeyPem());
+        assertEquals("encrypted-key-password", savedDataSource.getSsl().getClientKeyPassword());
+        assertEquals("encrypted-store-bytes", savedDataSource.getSsl().getKeyStoreBytes());
+        assertEquals("encrypted-store-password", savedDataSource.getSsl().getKeyStorePassword());
+    }
+
+    @Test
+    void communityExportRedactsTlsSecretsWithoutMutatingSavedDataSource() {
+        savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
+        savedDataSource.setSsl(savedSsl(MySqlTlsMode.VERIFY_CA, "saved-ca-pem"));
+        savedDataSource.getSsl().setClientPrivateKeyPem("encrypted-key");
+        savedDataSource.getSsl().setClientKeyPassword("encrypted-key-password");
+        savedDataSource.getSsl().setKeyStoreBytes("encrypted-store-bytes");
+        savedDataSource.getSsl().setKeyStorePassword("encrypted-store-password");
+
+        List<WorkspaceDataSource> exported = service.exportDisplayDataSources(List.of(1L));
+
+        assertEquals(1, exported.size());
+        SSLInfo ssl = exported.get(0).getSsl();
+        assertNotNull(ssl);
+        assertEquals(MySqlTlsMode.VERIFY_CA.name(), ssl.getTlsMode());
+        assertEquals("saved-ca-pem", ssl.getCaPem());
+        assertNull(ssl.getClientPrivateKeyPem());
+        assertNull(ssl.getClientKeyPassword());
+        assertNull(ssl.getKeyStoreBytes());
+        assertNull(ssl.getKeyStorePassword());
+        assertEquals("encrypted-key", savedDataSource.getSsl().getClientPrivateKeyPem());
+        assertEquals("encrypted-key-password", savedDataSource.getSsl().getClientKeyPassword());
+        assertEquals("encrypted-store-bytes", savedDataSource.getSsl().getKeyStoreBytes());
+        assertEquals("encrypted-store-password", savedDataSource.getSsl().getKeyStorePassword());
+    }
+
+    @Test
     void preConnectRecoversSavedSslWhenRequestDoesNotResubmitIt() {
         // Saved row carries TLS material (public fields only — secret fields are blank so
         // decryptSensitiveFields is a no-op on them, keeping the test focused on recovery).
