@@ -43,7 +43,7 @@ export default memo<IProps>((props) => {
         <Input value={formData.jdbcDriverClass} onChange={onChange} />
       </Form.Item>
       <Form.Item label={i18n('connection.title.uploadDriver')}>
-        <UploadLocalFile fileUrlListChange={handleFileUrlListChange} accept={'jar'} />
+        <UploadLocalFile fileUrlListChange={handleFileUrlListChange} accept={'jar'} stageLocalFile />
       </Form.Item>
     </Form>
   );

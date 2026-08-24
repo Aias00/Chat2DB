@@ -40,6 +40,7 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
     private static final String CUSTOM_DRIVER_CONFIG_PATH = USER_HOME_ENV_PATH
             + File.separator + "storage"
             + File.separator + "custom-driver.json";
+    private static final String DRIVER_FILE_DIRECTORY = "driver-files";
 
     private static Map<String, List<DriverConfig>> driverConfigMap = new ConcurrentSkipListMap<>();
 
@@ -323,7 +324,15 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
             return null;
         }
         try {
+            Path base = Paths.get(ConfigUtils.getBasePath(), DRIVER_FILE_DIRECTORY)
+                    .toAbsolutePath()
+                    .normalize();
+            Files.createDirectories(base);
+            Path realBase = base.toRealPath();
             Path source = Paths.get(driverPath).toRealPath(LinkOption.NOFOLLOW_LINKS);
+            if (!source.startsWith(realBase)) {
+                return null;
+            }
             if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) || !Files.isReadable(source)) {
                 return null;
             }

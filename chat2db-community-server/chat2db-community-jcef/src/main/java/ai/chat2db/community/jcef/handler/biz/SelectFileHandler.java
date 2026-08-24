@@ -7,6 +7,7 @@ import ai.chat2db.community.jcef.context.JcefContext;
 import ai.chat2db.community.jcef.utils.OSOperateUtil;
 import ai.chat2db.community.tools.console.ConsoleMessage;
 import ai.chat2db.community.tools.console.ConsoleResult;
+import ai.chat2db.community.tools.util.ConfigUtils;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.google.common.collect.Lists;
@@ -19,10 +20,14 @@ import org.cef.handler.CefDialogHandler;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.Vector;
 
 
@@ -31,6 +36,7 @@ public class SelectFileHandler implements IJcefActionHandler {
     private static final String REQUEST_KEY_MULTIPLE = "multiple";
     private static final String REQUEST_KEY_FILE_SIZE = "fileSize";
     private static final String REQUEST_KEY_FILE_TYPE_LIST = "fileTypeList";
+    private static final String REQUEST_KEY_STAGE_LOCAL_FILE = "stageLocalFile";
     private static final String RESPONSE_KEY_DATA = "data";
     private static final String RESPONSE_KEY_FILE_PATH = "filePath";
     private static final String RESPONSE_KEY_FILE_NAME = "fileName";
@@ -41,6 +47,7 @@ public class SelectFileHandler implements IJcefActionHandler {
     private static final String CEF_EXTENSION_DELIMITER = ";";
     private static final String CEF_FILTER_SEPARATOR = "|";
     private static final String SELECTED_FILES_ACCEPT_FILTER_DESCRIPTION = "Selected Files";
+    private static final String DRIVER_FILE_DIRECTORY = "driver-files";
 
     @Override
     public void handle(ConsoleMessage consoleMessage, ConsoleResult wsResult, CefQueryCallback callback) throws Exception {
@@ -48,13 +55,15 @@ public class SelectFileHandler implements IJcefActionHandler {
         String message = consoleMessage.getMessage();
         JSONObject jsonObject = JSON.parseObject(message);
         Boolean multiple = jsonObject.getBoolean(REQUEST_KEY_MULTIPLE);
+        boolean stageLocalFile = jsonObject.getBooleanValue(REQUEST_KEY_STAGE_LOCAL_FILE);
         long maxSizeMB = jsonObject.getLongValue(REQUEST_KEY_FILE_SIZE);
         List<String> fileTypeList = parseFileTypeList(jsonObject.get(REQUEST_KEY_FILE_TYPE_LIST));
         CefBrowser browser = JcefContext.getInstance().getBrowser_();
-        if (browser != null && openByJcefFileDialog(browser, fileTypeList, Boolean.TRUE.equals(multiple), callback)) {
+        if (browser != null
+                && openByJcefFileDialog(browser, fileTypeList, Boolean.TRUE.equals(multiple), stageLocalFile, callback)) {
             return;
         }
-        openByNativeFileChooser(fileTypeList, maxSizeMB, callback);
+        openByNativeFileChooser(fileTypeList, maxSizeMB, stageLocalFile, callback);
     }
 
     private List<String> parseFileTypeList(Object value) {
@@ -138,7 +147,8 @@ public class SelectFileHandler implements IJcefActionHandler {
         }
     }
 
-    private boolean openByJcefFileDialog(CefBrowser browser, List<String> fileTypeList, boolean multiple, CefQueryCallback callback) {
+    private boolean openByJcefFileDialog(CefBrowser browser, List<String> fileTypeList, boolean multiple,
+                                         boolean stageLocalFile, CefQueryCallback callback) {
         Vector<String> acceptFilters = buildAcceptFilters(fileTypeList);
         CefDialogHandler.FileDialogMode mode = multiple
                 ? CefDialogHandler.FileDialogMode.FILE_DIALOG_OPEN_MULTIPLE
@@ -147,7 +157,7 @@ public class SelectFileHandler implements IJcefActionHandler {
             browser.runFileDialog(mode, DEFAULT_DIALOG_TITLE, DEFAULT_FILE_PATH, acceptFilters, new CefRunFileDialogCallback() {
                 @Override
                 public void onFileDialogDismissed(Vector<String> filePaths) {
-                    buildFileDialogResponse(filePaths, callback);
+                    buildFileDialogResponse(filePaths, stageLocalFile, callback);
                 }
             });
             return true;
@@ -175,22 +185,24 @@ public class SelectFileHandler implements IJcefActionHandler {
         return fileType.startsWith(FILE_EXTENSION_PREFIX) ? fileType : FILE_EXTENSION_PREFIX + fileType;
     }
 
-    private void buildFileDialogResponse(Vector<String> filePaths, CefQueryCallback callback) {
+    private void buildFileDialogResponse(Vector<String> filePaths, boolean stageLocalFile, CefQueryCallback callback) {
         if (filePaths == null || filePaths.isEmpty()) {
             ResponseBuilder.buildSuccessJcef(buildResponseData(null), callback);
             return;
         }
         List<Map<@Nullable Object, @Nullable Object>> results = Lists.newArrayList();
         for (String filePath : filePaths) {
+            File file = new File(filePath);
             HashMap<@Nullable Object, @Nullable Object> result = Maps.newHashMap();
-            result.put(RESPONSE_KEY_FILE_PATH, filePath);
-            result.put(RESPONSE_KEY_FILE_NAME, new File(filePath).getName());
+            result.put(RESPONSE_KEY_FILE_PATH, stageLocalFile ? stageFile(filePath, file.getName()) : filePath);
+            result.put(RESPONSE_KEY_FILE_NAME, file.getName());
             results.add(result);
         }
         ResponseBuilder.buildSuccessJcef(buildResponseData(results), callback);
     }
 
-    private void openByNativeFileChooser(List<String> fileTypeList, long maxSizeMB, CefQueryCallback callback) {
+    private void openByNativeFileChooser(List<String> fileTypeList, long maxSizeMB, boolean stageLocalFile,
+                                         CefQueryCallback callback) {
         Pair<String, String> pair = OSOperateUtil.openNativeFileChooser(JcefContext.getInstance().getFrame_(),
                 null,
                 String.join(EXTENSION_DELIMITER, fileTypeList),
@@ -201,9 +213,30 @@ public class SelectFileHandler implements IJcefActionHandler {
             return;
         }
         HashMap<@Nullable Object, @Nullable Object> result = Maps.newHashMap();
-        result.put(RESPONSE_KEY_FILE_PATH, pair.getLeft());
+        result.put(RESPONSE_KEY_FILE_PATH, stageLocalFile ? stageFile(pair.getLeft(), pair.getRight()) : pair.getLeft());
         result.put(RESPONSE_KEY_FILE_NAME, pair.getRight());
         ResponseBuilder.buildSuccessJcef(buildResponseData(Lists.newArrayList(result)), callback);
+    }
+
+    private String stageFile(String filePath, String fileName) {
+        try {
+            Path source = Path.of(filePath).toAbsolutePath().normalize();
+            Path directory = Path.of(ConfigUtils.getBasePath(), DRIVER_FILE_DIRECTORY).toAbsolutePath().normalize();
+            Files.createDirectories(directory);
+            Path staged = directory.resolve(UUID.randomUUID() + extension(fileName)).normalize();
+            Files.copy(source, staged);
+            return staged.toString();
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot stage selected file", e);
+        }
+    }
+
+    private String extension(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        int dot = fileName.lastIndexOf(FILE_EXTENSION_PREFIX);
+        return dot >= 0 ? fileName.substring(dot) : "";
     }
 
     private Map<String, Object> buildResponseData(@Nullable Object data) {

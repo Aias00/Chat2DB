@@ -71,6 +71,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
+        // codeql[java/sql-injection] This executor intentionally runs user-authored SQL statements.
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -86,6 +87,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void execute(Connection connection, String sql, IResultSetConsumer consumer) {
+        // codeql[java/sql-injection] This executor intentionally runs user-authored SQL statements.
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -101,6 +103,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
     public <R> R preExecute(Connection connection, String sql, String[] parameters, IResultSetFunction<R> function) {
         log.info("execute:{}", sql);
+        // codeql[java/sql-injection] This executor intentionally runs user-authored SQL statements.
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);

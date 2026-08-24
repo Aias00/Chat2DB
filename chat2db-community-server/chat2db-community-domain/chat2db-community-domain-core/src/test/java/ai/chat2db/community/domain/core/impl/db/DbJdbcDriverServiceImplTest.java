@@ -2,6 +2,7 @@ package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.tools.constant.JdbcDriverConstants;
+import ai.chat2db.community.tools.util.ConfigUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,7 +23,9 @@ class DbJdbcDriverServiceImplTest {
 
     @Test
     void copyDriversCopiesOnlyReadableJarFilesByFileName() throws Exception {
-        Path source = Files.writeString(tempDirectory.resolve("custom-driver.jar"), "driver");
+        Path sourceDirectory = Path.of(ConfigUtils.getBasePath(), "driver-files");
+        Files.createDirectories(sourceDirectory);
+        Path source = Files.writeString(sourceDirectory.resolve("custom-driver.jar"), "driver");
         Path target = Path.of(JdbcDriverConstants.DRIVER_LIB_PATH).resolve(source.getFileName().toString());
         Files.deleteIfExists(target);
 
@@ -36,9 +39,11 @@ class DbJdbcDriverServiceImplTest {
     @Test
     void copyDriversRejectsDirectoriesAndNonJarFiles() throws Exception {
         Path textFile = Files.writeString(tempDirectory.resolve("driver.txt"), "driver");
+        Path outsideJar = Files.writeString(tempDirectory.resolve("outside.jar"), "driver");
 
         assertNull(new DbJdbcDriverServiceImpl().copyDrivers(List.of(tempDirectory.toString())));
         assertNull(new DbJdbcDriverServiceImpl().copyDrivers(List.of(textFile.toString())));
+        assertNull(new DbJdbcDriverServiceImpl().copyDrivers(List.of(outsideJar.toString())));
     }
 
     @Test
