@@ -260,8 +260,6 @@ public class SqlServerExecutor extends DefaultSQLExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(originalSql).success(Boolean.TRUE).build();
         int resultCount = 0;
         for (String sql : sqlList) {
-            // Chat2DB intentionally executes SQL text submitted by the connected console user.
-            // codeql[java/sql-injection]
             try (PreparedStatement stmt = connection.prepareStatement(sql)) {
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
                 long startedAtEpochMs = System.currentTimeMillis();

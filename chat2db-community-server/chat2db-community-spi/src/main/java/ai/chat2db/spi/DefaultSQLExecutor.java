@@ -71,8 +71,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // Chat2DB intentionally executes SQL text submitted by the connected console user.
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -88,8 +86,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void execute(Connection connection, String sql, IResultSetConsumer consumer) {
-        // Chat2DB intentionally executes SQL text submitted by the connected console user.
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -308,8 +304,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
         checkTaskCancellation(cancellationChecker);
         PreparedStatement statementToNotify = null;
-        // Chat2DB intentionally executes SQL text submitted by the connected console user.
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             statementToNotify = stmt;
             notifyStatementCreated(statementListener, stmt);
@@ -568,8 +562,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String
             tableName,
                                      String columnName) {
-        // JDBC metadata patterns are object-name filters, not executable SQL fragments.
-        // codeql[java/sql-injection]
         try (ResultSet resultSet = connection.getMetaData().getColumns(databaseName, schemaName, tableName,
                 columnName)) {
             return ResultSetUtils.toObjectList(resultSet, TableColumn.class);
@@ -757,7 +749,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
             statementSequence++;
             checkCanceled(cancellation);
             String sqlType = simpleSqlStatement.getSqlType();
-            warnImplicitCommitIfInTransaction(statementListener, simpleSqlStatement, sqlType);
             List<ExecuteResponse> executeResults = executeSQLStreaming(simpleSqlStatement, dbType, command, connection,
                     consumer,
                     statementListener, cancellation, streamResultSequence, statementSequence,
@@ -1702,61 +1693,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     @Override
     public boolean isQueryCommand(Connection connection, String sql) {
         return false;
-    }
-
-    /**
-     * When a manual transaction is open for the current console, surfaces a warning for
-     * statements that would implicitly commit the transaction (DDL such as CREATE/ALTER/DROP/
-     * TRUNCATE). Execution proceeds regardless; the listener forwards the warning to the
-     * streaming client.
-     */
-    private static void warnImplicitCommitIfInTransaction(ISqlExecutionStatementListener statementListener,
-                                                          SimpleSqlStatement simpleSqlStatement, String sqlType) {
-        if (statementListener == null || StringUtils.isBlank(sqlType)) {
-            return;
-        }
-        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
-        if (connectInfo == null || !Boolean.TRUE.equals(connectInfo.getConsoleOwn())) {
-            return;
-        }
-        if (isImplicitCommitDdl(sqlType)) {
-            statementListener.onImplicitCommitWarning(simpleSqlStatement.getSql());
-        }
-    }
-
-    /**
-     * Returns true for statement types that implicitly commit any open transaction in MySQL
-     * (and most dialects). Classified by the parsed SQL type string (a {@code SqlTypeEnum}
-     * name). Kept as plain string comparisons so it is independent of which enum backs the
-     * type value.
-     */
-    private static boolean isImplicitCommitDdl(String sqlType) {
-        if (StringUtils.isBlank(sqlType)) {
-            return false;
-        }
-        return sqlType.startsWith("CREATE")
-                || sqlType.startsWith("ALTER")
-                || sqlType.startsWith("DROP")
-                || sqlType.startsWith("TRUNCATE")
-                || sqlType.startsWith("RENAME")
-                || sqlType.startsWith("SET")
-                || sqlType.startsWith("START")
-                || sqlType.startsWith("CHANGE")
-                || sqlType.startsWith("SLAVE")
-                || sqlType.startsWith("PURGE")
-                || sqlType.startsWith("RESET")
-                || sqlType.startsWith("CACHE")
-                || sqlType.equals("LOAD_DATA")
-                || sqlType.equals("LOAD_XML")
-                || sqlType.equals("GRANT")
-                || sqlType.equals("REVOKE")
-                || sqlType.equals("FLUSH")
-                || sqlType.equals("LOCK_TABLES")
-                || sqlType.equals("UNLOCK_TABLES")
-                || sqlType.equals("OPTIMIZE_TABLE")
-                || sqlType.equals("REPAIR_TABLE")
-                || sqlType.equals("ANALYZE")
-                || sqlType.equals("CHECK_TABLE");
     }
 
     public void executeBatchInsert(Connection connection, List<String> sqlCacheList) {

@@ -27,6 +27,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -98,6 +99,7 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
             executeStreamingRequest.setConsumer(logConsumer);
             executeStreamingRequest.setStatementListener(this);
             executeStreamingRequest.setCancellation(canceled::get);
+            warnImplicitCommitIfNeeded(param);
             sqlExecutionService.executeStreaming(executeStreamingRequest);
             if (canceled.get()) {
                 logConsumer.finishCancelled(request.getSqlEditorRequest().getSql(), null);
@@ -198,8 +200,13 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
         }
     }
 
-    @Override
-    public void onImplicitCommitWarning(String sql) {
+    private void warnImplicitCommitIfNeeded(DbDlExecuteRequest param) {
+        Long consoleId = param == null ? null : param.getConsoleId();
+        if (consoleId == null
+                || !connectionContextService.isInTransaction(consoleId)
+                || !isImplicitCommitStatement(param.getSql())) {
+            return;
+        }
         // A DDL/implicit-commit statement is about to run while a manual transaction is open.
         // Surface a non-blocking warning to the user; execution proceeds regardless.
         Map<String, Object> message = new HashMap<>();
@@ -210,6 +217,32 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
             SqlExecutionEventIdentity identity = eventContext.currentIdentity();
             sink.send("message", message, identity);
         }
+    }
+
+    private boolean isImplicitCommitStatement(String sql) {
+        String firstToken = firstSqlToken(sql);
+        return switch (firstToken) {
+            case "CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME", "SET", "START", "CHANGE", "SLAVE", "PURGE",
+                 "RESET", "CACHE", "GRANT", "REVOKE", "FLUSH", "LOCK", "UNLOCK", "OPTIMIZE", "REPAIR",
+                 "ANALYZE", "CHECK", "LOAD" -> true;
+            default -> false;
+        };
+    }
+
+    private String firstSqlToken(String sql) {
+        if (sql == null) {
+            return "";
+        }
+        int length = sql.length();
+        int index = 0;
+        while (index < length && Character.isWhitespace(sql.charAt(index))) {
+            index++;
+        }
+        int start = index;
+        while (index < length && Character.isLetter(sql.charAt(index))) {
+            index++;
+        }
+        return sql.substring(start, index).toUpperCase(Locale.ROOT);
     }
 
     private void recordTerminalStatus(SqlExecutionLogConsumer logConsumer, String status, String message) {
