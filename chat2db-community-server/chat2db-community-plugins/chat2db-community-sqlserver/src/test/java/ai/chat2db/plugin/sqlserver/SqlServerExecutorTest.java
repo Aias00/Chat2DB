@@ -118,6 +118,25 @@ class SqlServerExecutorTest {
     }
 
     @Test
+    void shouldIgnoreGoInsideStatements() {
+        SqlServerExecutor executor = new SqlServerExecutor();
+
+        List<String> sqlList = executor.splitByGO(
+                "SELECT 'GO' AS token;\nSELECT 'value;GO' AS token;\nSELECT 1 AS go_value;");
+
+        assertEquals(List.of("SELECT 'GO' AS token;\nSELECT 'value;GO' AS token;\nSELECT 1 AS go_value;"), sqlList);
+    }
+
+    @Test
+    void shouldSplitGoDelimiterWithTrailingComment() {
+        SqlServerExecutor executor = new SqlServerExecutor();
+
+        List<String> sqlList = executor.splitByGO("SELECT 1;\n  GO; -- next batch\r\nSELECT 2;");
+
+        assertEquals(List.of("SELECT 1;", "SELECT 2;"), sqlList);
+    }
+
+    @Test
     void shouldExposeMetricsForGoBatch() throws Exception {
         SqlServerExecutor executor = new SqlServerExecutor();
         try (Connection connection = DriverManager.getConnection("jdbc:h2:mem:sqlserver_go_metrics")) {

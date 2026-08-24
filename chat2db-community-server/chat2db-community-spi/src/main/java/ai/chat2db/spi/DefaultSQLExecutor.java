@@ -71,6 +71,8 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
+        // Chat2DB intentionally executes SQL text submitted by the connected console user.
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -86,6 +88,8 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void execute(Connection connection, String sql, IResultSetConsumer consumer) {
+        // Chat2DB intentionally executes SQL text submitted by the connected console user.
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -304,6 +308,8 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
         checkTaskCancellation(cancellationChecker);
         PreparedStatement statementToNotify = null;
+        // Chat2DB intentionally executes SQL text submitted by the connected console user.
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             statementToNotify = stmt;
             notifyStatementCreated(statementListener, stmt);
@@ -562,6 +568,8 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String
             tableName,
                                      String columnName) {
+        // JDBC metadata patterns are object-name filters, not executable SQL fragments.
+        // codeql[java/sql-injection]
         try (ResultSet resultSet = connection.getMetaData().getColumns(databaseName, schemaName, tableName,
                 columnName)) {
             return ResultSetUtils.toObjectList(resultSet, TableColumn.class);

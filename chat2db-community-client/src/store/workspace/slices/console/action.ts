@@ -11,7 +11,6 @@ import { useZoerStore } from '@/store/zoer';
 import { getPersistableActiveConsoleId } from '../../utils/workspaceTabPersistence';
 import { executeSavedConsoleRemoval, resolveSavedConsoleRemoval } from '../../utils/savedConsoleLifecycle';
 import { confirmWorkspaceTabsClose } from '@/utils/editorCloseConfirmation';
-import { confirmAndKillTerminalTabs } from '@/utils/terminalSession';
 import confirmAndReleaseTransaction from '@/utils/transactionSession';
 import { applyWorkspaceTabBoundInfo, buildConsoleDefaultTabName } from '../../utils/consoleTabName';
 
