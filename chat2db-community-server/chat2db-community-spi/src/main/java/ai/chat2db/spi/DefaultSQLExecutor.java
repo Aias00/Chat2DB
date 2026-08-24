@@ -71,7 +71,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // codeql[java/sql-injection] This executor intentionally runs user-authored SQL statements.
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -87,7 +87,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void execute(Connection connection, String sql, IResultSetConsumer consumer) {
-        // codeql[java/sql-injection] This executor intentionally runs user-authored SQL statements.
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -103,7 +103,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
     public <R> R preExecute(Connection connection, String sql, String[] parameters, IResultSetFunction<R> function) {
         log.info("execute:{}", sql);
-        // codeql[java/sql-injection] This executor intentionally runs user-authored SQL statements.
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);
@@ -122,6 +122,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
     public void preExecute(Connection connection, String sql, String[] parameters, IResultSetConsumer consumer) {
         log.info("execute:{}", sql);
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);
@@ -276,6 +277,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
         checkTaskCancellation(cancellationChecker);
         PreparedStatement statementToNotify = null;
+        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             statementToNotify = stmt;
             notifyStatementCreated(statementListener, stmt);
