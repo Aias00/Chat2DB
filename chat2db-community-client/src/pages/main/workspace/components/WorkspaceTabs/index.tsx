@@ -1014,7 +1014,11 @@ const WorkspaceTabs = memo(() => {
         ? confirmAndKillTerminalTabs(
             (workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id)),
             workspaceTabList || [],
-          ).then((terminalOk) => (terminalOk ? confirmAndReleaseTransaction((workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id))) : false))
+          ).then((terminalOk) =>
+            terminalOk
+              ? confirmAndReleaseTransaction((workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id)))
+              : false,
+          )
         : false,
     );
   };
