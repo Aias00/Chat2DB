@@ -225,7 +225,7 @@ class MysqlConsoleTransactionIT {
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setDbType("MYSQL");
         connectInfo.setConnection(connection);
-        ConsoleTransactionRegistry.register(consoleId, connectInfo);
+        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(consoleId, connectInfo));
         return connectInfo;
     }
 
