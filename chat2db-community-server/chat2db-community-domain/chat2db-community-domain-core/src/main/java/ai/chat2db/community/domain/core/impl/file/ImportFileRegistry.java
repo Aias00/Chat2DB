@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
@@ -34,8 +35,17 @@ public class ImportFileRegistry implements IImportFileRegistry {
         String id = UUID.randomUUID().toString();
         String extension = extension(originalFileName);
         try {
-            Files.createDirectories(stagingDirectory());
-            Files.copy(file.toPath(), stagingFile(id, extension), StandardCopyOption.REPLACE_EXISTING);
+            Path source = file.toPath().toRealPath(LinkOption.NOFOLLOW_LINKS);
+            if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) || !Files.isReadable(source)) {
+                throw new IOException("file is not readable");
+            }
+            Path stagingDirectory = stagingDirectory();
+            Files.createDirectories(stagingDirectory);
+            Path target = stagingFile(id, extension);
+            if (!target.getParent().equals(stagingDirectory)) {
+                throw new IOException("invalid staging target");
+            }
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
         }
@@ -48,9 +58,8 @@ public class ImportFileRegistry implements IImportFileRegistry {
             throw new BusinessException("import.preview.fileUnreadable");
         }
         cleanupExpiredFiles();
-        try (var files = Files.list(stagingDirectory())) {
-            Path file = files.filter(path -> path.getFileName().toString().matches(fileId + "\\.(csv|xls|xlsx)"))
-                    .findFirst().orElseThrow(() -> new BusinessException("import.preview.fileUnreadable"));
+        try {
+            Path file = stagedFile(fileId);
             if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
                 throw new BusinessException("import.preview.fileUnreadable");
             }
@@ -72,11 +81,12 @@ public class ImportFileRegistry implements IImportFileRegistry {
             return;
         }
         claimedFiles.remove(fileId);
-        try (var files = Files.list(stagingDirectory())) {
-            files.filter(path -> path.getFileName().toString().matches(fileId + "\\.(csv|xls|xlsx)"))
-                    .forEach(ImportFileRegistry::deleteQuietly);
-        } catch (IOException ignored) {
-            // Cleanup does not change the task outcome once execution has completed.
+        for (String extension : ALLOWED_EXTENSIONS) {
+            try {
+                deleteQuietly(stagingFile(fileId, extension));
+            } catch (BusinessException ignored) {
+                // Cleanup does not change the task outcome once execution has completed.
+            }
         }
     }
 
@@ -96,11 +106,29 @@ public class ImportFileRegistry implements IImportFileRegistry {
     }
 
     private static Path stagingDirectory() {
-        return Path.of(ConfigUtils.getBasePath(), "import-preview");
+        return Path.of(ConfigUtils.getBasePath(), "import-preview").normalize().toAbsolutePath();
     }
 
     private static Path stagingFile(String id, String extension) {
-        return stagingDirectory().resolve(id + "." + extension);
+        if (!isFileId(id) || !ALLOWED_EXTENSIONS.contains(extension)) {
+            throw new BusinessException("import.preview.fileUnreadable");
+        }
+        Path directory = stagingDirectory();
+        Path file = directory.resolve(id + "." + extension).normalize();
+        if (!file.getParent().equals(directory)) {
+            throw new BusinessException("import.preview.fileUnreadable");
+        }
+        return file;
+    }
+
+    private static Path stagedFile(String id) throws IOException {
+        for (String extension : ALLOWED_EXTENSIONS) {
+            Path file = stagingFile(id, extension);
+            if (Files.exists(file)) {
+                return file;
+            }
+        }
+        throw new BusinessException("import.preview.fileUnreadable");
     }
 
     private void cleanupExpiredFiles() {
@@ -110,7 +138,7 @@ public class ImportFileRegistry implements IImportFileRegistry {
             }
             Instant deadline = Instant.now().minus(MAX_AGE);
             try (var files = Files.list(stagingDirectory())) {
-                files.filter(path -> path.getFileName().toString().matches("[0-9a-fA-F-]{36}\\.(csv|xls|xlsx)"))
+                files.filter(ImportFileRegistry::isStagedImportFile)
                         .filter(path -> isExpired(path, deadline)).filter(this::canDelete)
                         .forEach(ImportFileRegistry::deleteQuietly);
             }
@@ -120,7 +148,7 @@ public class ImportFileRegistry implements IImportFileRegistry {
     }
 
     private boolean canDelete(Path path) {
-        String id = path.getFileName().toString().substring(0, 36);
+        String id = stagedFileId(path);
         Instant claimedAt = claimedFiles.get(id);
         return claimedAt == null || claimedAt.isBefore(Instant.now().minus(CLAIMED_MAX_AGE));
     }
@@ -143,5 +171,18 @@ public class ImportFileRegistry implements IImportFileRegistry {
         } catch (IOException ignored) {
             // Best effort only.
         }
+    }
+
+    private static boolean isStagedImportFile(Path path) {
+        String name = path.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot == 36 && isFileId(name.substring(0, dot))
+                && ALLOWED_EXTENSIONS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
+    private static String stagedFileId(Path path) {
+        String name = path.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(0, dot);
     }
 }
