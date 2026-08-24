@@ -8,7 +8,6 @@ import ai.chat2db.community.domain.api.model.metadata.ColumnType;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.spi.util.SqlUtils;
 import com.google.common.collect.Maps;
-import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Arrays;
@@ -19,7 +18,6 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_COMMENT_KEY
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_COMMENT_SPACE_SINGLE_QUOTE;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlColumnTypeEnumConstants.*;
-@Getter
 public enum MysqlColumnTypeEnum implements IColumnBuilder {
 
     BIT("BIT", true, false, true, false, false, false, true, true, false, false, false),
@@ -132,6 +130,10 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
 
     MysqlColumnTypeEnum(String dataTypeName, boolean supportLength, boolean supportScale, boolean supportNullable, boolean supportAutoIncrement, boolean supportCharset, boolean supportCollation, boolean supportComments, boolean supportDefaultValue, boolean supportExtent, boolean supportValue, boolean supportOnUpdateCurrentTimestamp) {
         this.columnType = new ColumnType(dataTypeName, supportLength, supportScale, supportNullable, supportAutoIncrement, supportCharset, supportCollation, supportComments, supportDefaultValue, supportExtent, supportValue, false, supportOnUpdateCurrentTimestamp);
+    }
+
+    public ColumnType getColumnType() {
+        return columnType;
     }
 
     private static Map<String, MysqlColumnTypeEnum> COLUMN_TYPE_MAP = Maps.newHashMap();
