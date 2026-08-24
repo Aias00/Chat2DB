@@ -7,6 +7,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CodingErrorAction;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.io.Reader;
 import java.util.ArrayList;
@@ -47,12 +48,18 @@ final class CsvParser {
         } catch (Exception e) {
             throw new BusinessException("import.preview.invalidEncoding", new Object[]{charset.name()}, e);
         }
-        return parse(new java.io.StringReader(text), limit);
+        return parseRows(new java.io.StringReader(text), limit);
     }
 
     CsvResult parse(Path file, int limit) {
-        try (Reader reader = Files.newBufferedReader(file, charset)) {
-            return parse(reader, limit);
+        try {
+            Path readableFile = file.toRealPath(LinkOption.NOFOLLOW_LINKS);
+            if (!Files.isRegularFile(readableFile, LinkOption.NOFOLLOW_LINKS) || !Files.isReadable(readableFile)) {
+                throw new BusinessException("import.preview.fileUnreadable");
+            }
+            try (Reader reader = Files.newBufferedReader(readableFile, charset)) {
+                return parseRows(reader, limit);
+            }
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -60,7 +67,17 @@ final class CsvParser {
         }
     }
 
-    private CsvResult parse(Reader reader, int limit) {
+    CsvResult parse(Reader reader, int limit) {
+        try {
+            return parseRows(reader, limit);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("import.preview.invalidEncoding", new Object[]{charset.name()}, e);
+        }
+    }
+
+    private CsvResult parseRows(Reader reader, int limit) {
         List<Map<Integer, String>> rows = new ArrayList<>();
         List<String> fields = new ArrayList<>();
         StringBuilder field = new StringBuilder();
