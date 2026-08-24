@@ -42,18 +42,45 @@ class RedisScriptExecutorUpdateTest {
     }
 
     @Test
-    void rejectsNullAndUnknownKeyTypesBeforeGeneratingCommands() {
+    void rejectsNullOldTypeBeforeGeneratingCommands() {
         RedisKey valid = RedisKey.builder().name("k").type("string").build();
+
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(RedisKey.builder().name("k").type(null).build(), valid));
+    }
+
+    @Test
+    void rejectsNullNewTypeBeforeGeneratingCommands() {
+        RedisKey valid = RedisKey.builder().name("k").type("string").build();
+
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(valid, RedisKey.builder().name("k").type(null).build()));
+    }
+
+    @Test
+    void rejectsBothNullTypesBeforeGeneratingCommands() {
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(RedisKey.builder().name("k").type(null).build(), RedisKey.builder().name("k").type(null).build()));
+    }
+
+    @Test
+    void rejectsUnknownKeyTypesBeforeGeneratingCommands() {
+        RedisKey valid = RedisKey.builder().name("k").type("string").build();
+
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(RedisKey.builder().name("k").type("unknown").build(), valid));
         assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
                 .update(valid, RedisKey.builder().name("k").type("unknown").build()));
+    }
+
+    @Test
+    void rejectsNoneKeyTypesBeforeGeneratingCommands() {
+        RedisKey valid = RedisKey.builder().name("k").type("string").build();
+
+        assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
+                .update(RedisKey.builder().name("k").type("none").build(), valid));
+        assertThrows(BusinessException.class, () -> RedisScriptExecutor.getInstance()
+                .update(valid, RedisKey.builder().name("k").type("none").build()));
     }
 
     @Test
