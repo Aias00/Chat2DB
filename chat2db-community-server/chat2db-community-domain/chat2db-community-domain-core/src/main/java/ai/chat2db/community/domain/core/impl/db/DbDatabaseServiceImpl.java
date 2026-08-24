@@ -15,10 +15,9 @@ import ai.chat2db.community.domain.api.model.metadata.Database;
 import ai.chat2db.community.domain.api.model.metadata.MetaSchema;
 import ai.chat2db.community.domain.api.model.metadata.Schema;
 import ai.chat2db.community.domain.api.model.sql.Sql;
-import ai.chat2db.spi.sql.Chat2DBContext;
-import ai.chat2db.spi.model.datasource.ConnectInfo;
-import ai.chat2db.spi.DefaultSQLExecutor;
 import ai.chat2db.community.tools.exception.BusinessException;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.sql.Chat2DBContext;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +25,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -147,25 +148,28 @@ public class DbDatabaseServiceImpl implements IDbDatabaseService {
 
     private static final String SQL_DATABASE_INFO =
             "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
-                    + "FROM information_schema.schemata WHERE SCHEMA_NAME = '%s'";
+                    + "FROM information_schema.schemata WHERE SCHEMA_NAME = ?";
 
     @Override
     public Map<String, String> databaseInfo(String databaseName) {
         if (StringUtils.isBlank(databaseName)) {
             throw new BusinessException("database.name.required");
         }
-        String escapedName = Chat2DBContext.getDbMetaData().getSQLIdentifierProcessor().escapeString(databaseName);
         Connection connection = Chat2DBContext.getConnection();
-        return DefaultSQLExecutor.getInstance().execute(connection,
-                String.format(SQL_DATABASE_INFO, escapedName), resultSet -> {
-                    if (!resultSet.next()) {
-                        throw new BusinessException("database.notFound");
-                    }
-                    Map<String, String> info = new LinkedHashMap<>();
-                    info.put("charset", resultSet.getString("DEFAULT_CHARACTER_SET_NAME"));
-                    info.put("collation", resultSet.getString("DEFAULT_COLLATION_NAME"));
-                    return info;
-                });
+        try (PreparedStatement statement = connection.prepareStatement(SQL_DATABASE_INFO)) {
+            statement.setString(1, databaseName);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new BusinessException("database.notFound");
+                }
+                Map<String, String> info = new LinkedHashMap<>();
+                info.put("charset", resultSet.getString("DEFAULT_CHARACTER_SET_NAME"));
+                info.put("collation", resultSet.getString("DEFAULT_COLLATION_NAME"));
+                return info;
+            }
+        } catch (SQLException e) {
+            throw new BusinessException("database.infoFailed", new Object[]{e.getMessage()}, e);
+        }
     }
 
     @Override
