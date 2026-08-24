@@ -164,7 +164,7 @@ const ImportExportFile = forwardRef((props: IProps, ref: ForwardedRef<ImportExpo
       )}
       {isImport && (
         <Form.Item>
-          <UploadLocalFile fileUrlListChange={handleFileUrlListChange} accept={uploadLocalFileAccept} />
+          <UploadLocalFile fileUrlListChange={handleFileUrlListChange} accept={uploadLocalFileAccept} stageLocalFile />
         </Form.Item>
       )}
       {isDevelopment && (

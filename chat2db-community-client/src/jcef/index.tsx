@@ -126,7 +126,7 @@ const jcefApi = {
     return createJcefApi('kill-terminals', params);
   },
   // Select file
-  selectFile: (params: { fileTypeList: string[]; fileSize?: number; multiple?: boolean }) => {
+  selectFile: (params: { fileTypeList: string[]; fileSize?: number; multiple?: boolean; stageLocalFile?: boolean }) => {
     return createJcefApi('select-file', params);
   },
   // maximize

@@ -2,6 +2,7 @@ package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
 import ai.chat2db.community.tools.exception.BusinessException;
+import ai.chat2db.community.tools.util.ConfigUtils;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import com.alibaba.excel.EasyExcel;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,9 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -36,6 +40,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private static final int EXECUTION_BATCH_SIZE = 200;
     private static final String DEFAULT_STRATEGY = "DEFAULT";
     private static final String NULL_STRATEGY = "NULL";
+    private static final String IMPORT_FILE_DIRECTORY = "import-files";
 
     @Override
     public Map<String, Object> preview(Long dataSourceId, String databaseName, String tableName,
@@ -391,15 +396,28 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             throw new BusinessException("import.preview.fileRequired");
         }
         try {
-            java.nio.file.Path path = java.nio.file.Paths.get(filePath).normalize();
-            if (!java.nio.file.Files.isRegularFile(path) || !java.nio.file.Files.isReadable(path)) {
+            Path path = resolveImportFile(filePath);
+            if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
                 throw new java.io.IOException("file is not readable");
             }
-            return java.nio.file.Files.readAllBytes(path);
+            return Files.readAllBytes(path);
         } catch (Exception e) {
             log.warn("import preview cannot read file {}", filePath, e);
             throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
         }
+    }
+
+    static Path resolveImportFile(String filePath) throws java.io.IOException {
+        Path baseDirectory = Paths.get(ConfigUtils.getBasePath(), IMPORT_FILE_DIRECTORY)
+                .toAbsolutePath()
+                .normalize();
+        Files.createDirectories(baseDirectory);
+        Path realBaseDirectory = baseDirectory.toRealPath();
+        Path realFile = Paths.get(filePath).toAbsolutePath().normalize().toRealPath();
+        if (!realFile.startsWith(realBaseDirectory)) {
+            throw new java.io.IOException("file is outside import directory");
+        }
+        return realFile;
     }
 
     private static boolean isCsv(String fileName) {

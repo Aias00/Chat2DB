@@ -26,6 +26,7 @@ interface IProps extends UploadProps {
   // Whether OSS upload is enabled on the web.
   webOssUpload?: boolean;
   fileSize?: number;
+  stageLocalFile?: boolean;
 }
 
 export interface UploadLocalFileRef {
@@ -42,6 +43,7 @@ const UploadLocalFile = forwardRef((props: IProps, ref: ForwardedRef<UploadLocal
     webOssUpload,
     descriptionSlot,
     fileSize,
+    stageLocalFile,
     ...rest
   } = props;
   const { styles, cx } = useStyles();
@@ -129,7 +131,7 @@ const UploadLocalFile = forwardRef((props: IProps, ref: ForwardedRef<UploadLocal
         return type.replace('.', '');
       }) || [];
 
-    jcefApi.selectFile({ fileTypeList, fileSize }).then((data) => {
+    jcefApi.selectFile({ fileTypeList, fileSize, stageLocalFile }).then((data) => {
       if (data) {
         setFileList(data);
       }
