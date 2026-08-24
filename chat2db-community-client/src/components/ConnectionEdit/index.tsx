@@ -19,6 +19,7 @@ import { IConnectionConfig, IFormItem, ILocalizedConnectionText, ISelect } from 
 import { applyConnectionIdentityColorUpdate } from './identityColorUpdate';
 import styles from './index.less';
 import { formatJdbcHostForUrl, normalizeJdbcHostFromUrl, shouldSyncJdbcUrlForField } from './utils/jdbcUrl';
+import { collectMysqlTlsPayload, expandMysqlTlsConfig } from './utils/mysqlTls';
 
 // ----- store -----
 import { clientRuntime } from '@client-runtime';
@@ -33,16 +34,6 @@ type ITabsType = 'ssh' | 'baseInfo' | 'driver';
 
 const OSCAR_JDBC_URL_PREFIX = 'jdbc:oscar://';
 const OSCAR_DRIVER_CLASS = 'com.oscar.Driver';
-const MYSQL_TLS_FORM_FIELDS: Record<string, string> = {
-  sslTlsMode: 'tlsMode',
-  sslCaPem: 'caPem',
-  sslClientCertPem: 'clientCertPem',
-  sslClientPrivateKeyPem: 'clientPrivateKeyPem',
-  sslClientKeyPassword: 'clientKeyPassword',
-  sslKeyStoreType: 'keyStoreType',
-  sslKeyStoreBytes: 'keyStoreBytes',
-  sslKeyStorePassword: 'keyStorePassword',
-};
 
 const connectionFormTranslations: Partial<Record<LangType, Record<string, string>>> = {
   [LangType.ES_ES]: {
@@ -156,31 +147,13 @@ function normalizeConnectionData(connectionData?: IConnectionDetails | null) {
     return {} as IConnectionDetails;
   }
   const resolvedType = resolveConnectionType(connectionData);
-  const ssl = connectionData.ssl || {};
   return {
     ...connectionData,
     ...(resolvedType && resolvedType !== connectionData.type ? { type: resolvedType } : {}),
     watermarkEnabled: connectionData.watermarkEnabled === true,
     watermarkContent: connectionData.watermarkContent || '',
-    sslTlsMode: ssl.tlsMode || 'DISABLED',
-    sslCaPem: ssl.caPem || '',
-    sslClientCertPem: ssl.clientCertPem || '',
-    sslClientPrivateKeyPem: ssl.clientPrivateKeyPem || '',
-    sslClientKeyPassword: ssl.clientKeyPassword || '',
-    sslKeyStoreType: ssl.keyStoreType || '',
-    sslKeyStoreBytes: ssl.keyStoreBytes || '',
-    sslKeyStorePassword: ssl.keyStorePassword || '',
+    ...expandMysqlTlsConfig(connectionData),
   };
-}
-
-function collectSslPayload(data: Record<string, any>) {
-  const ssl: Record<string, any> = {};
-  Object.entries(MYSQL_TLS_FORM_FIELDS).forEach(([formField, sslField]) => {
-    ssl[sslField] = data[formField];
-    delete data[formField];
-  });
-  ssl.tlsMode = ssl.tlsMode || 'DISABLED';
-  return ssl;
 }
 
 function mergeSavedConnectionData(current: IConnectionDetails, saved: any) {
@@ -501,7 +474,7 @@ const ConnectionEdit = forwardRef((props: IProps, ref: ForwardedRef<ICreateConne
     if (baseInfo.host) {
       baseInfo.host = normalizeJdbcHostFromUrl(baseInfo.host);
     }
-    const ssl = backfillData.type === DatabaseTypeCode.MYSQL ? collectSslPayload(baseInfo) : undefined;
+    const ssl = backfillData.type === DatabaseTypeCode.MYSQL ? collectMysqlTlsPayload(baseInfo) : undefined;
     const extendInfo: any = [];
     extendTableData.map((t: any) => {
       if (t.label || t.value) {
@@ -1153,8 +1126,10 @@ function RenderForm(props: IRenderFormProps) {
         noStyle
         shouldUpdate={(previous, current) => previous[t.visibleWhen!.name] !== current[t.visibleWhen!.name]}
       >
-        {({ getFieldValue }) =>
-          getFieldValue(t.visibleWhen!.name) === t.visibleWhen!.value ? (
+        {({ getFieldValue }) => {
+          const visibleValue = getFieldValue(t.visibleWhen!.name);
+          const visibleValues = t.visibleWhen!.values || [t.visibleWhen!.value];
+          return visibleValues.includes(visibleValue) ? (
             renderedItem
           ) : (
             <div
@@ -1165,8 +1140,8 @@ function RenderForm(props: IRenderFormProps) {
               )}
               style={width ? { width } : undefined}
             />
-          )
-        }
+          );
+        }}
       </Form.Item>
     );
   }

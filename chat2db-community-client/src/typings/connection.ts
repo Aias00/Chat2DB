@@ -19,6 +19,17 @@ export interface IConnectionEnv {
   color: string;
 }
 
+export interface IMysqlTlsConfig {
+  tlsMode?: 'DISABLED' | 'REQUIRED' | 'VERIFY_CA' | 'VERIFY_IDENTITY';
+  caPem?: string;
+  clientCertPem?: string;
+  clientPrivateKeyPem?: string;
+  clientKeyPassword?: string;
+  keyStoreType?: 'JKS' | 'PKCS12' | '';
+  keyStoreBytes?: string;
+  keyStorePassword?: string;
+}
+
 export interface IConnectionDetails {
   spaceId: number;
   id: number;
@@ -38,6 +49,7 @@ export interface IConnectionDetails {
   environmentId: number;
   storageType: DataSourceStorageType;
   ssh: any;
+  ssl?: IMysqlTlsConfig;
   driverConfig: {
     jdbcDriver: string;
     jdbcDriverClass: string;

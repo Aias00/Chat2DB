@@ -295,6 +295,8 @@ export const portItem: any = {
   },
 };
 
+const mysqlTlsEnabledModes = ['REQUIRED', 'VERIFY_CA', 'VERIFY_IDENTITY'];
+
 const mysqlTlsItems = [
   {
     defaultValue: 'DISABLED',
@@ -303,6 +305,8 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'TLS Mode',
       [LangType.ZH_CN]: 'TLS 模式',
       [LangType.JA_JP]: 'TLS モード',
+      [LangType.ES_ES]: 'Modo TLS',
+      [LangType.KO_KR]: 'TLS 모드',
     },
     name: 'sslTlsMode',
     required: false,
@@ -335,10 +339,16 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'CA PEM',
       [LangType.ZH_CN]: 'CA PEM',
       [LangType.JA_JP]: 'CA PEM',
+      [LangType.ES_ES]: 'CA PEM',
+      [LangType.KO_KR]: 'CA PEM',
     },
     name: 'sslCaPem',
     required: false,
     rows: 4,
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
   {
     defaultValue: '',
@@ -347,10 +357,16 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'Client Cert PEM',
       [LangType.ZH_CN]: '客户端证书 PEM',
       [LangType.JA_JP]: 'クライアント証明書 PEM',
+      [LangType.ES_ES]: 'Certificado cliente PEM',
+      [LangType.KO_KR]: '클라이언트 인증서 PEM',
     },
     name: 'sslClientCertPem',
     required: false,
     rows: 4,
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
   {
     defaultValue: '',
@@ -359,10 +375,16 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'Client Key PEM',
       [LangType.ZH_CN]: '客户端密钥 PEM',
       [LangType.JA_JP]: 'クライアント鍵 PEM',
+      [LangType.ES_ES]: 'Clave cliente PEM',
+      [LangType.KO_KR]: '클라이언트 키 PEM',
     },
     name: 'sslClientPrivateKeyPem',
     required: false,
     rows: 4,
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
   {
     defaultValue: '',
@@ -371,9 +393,15 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'Client Key Password',
       [LangType.ZH_CN]: '客户端密钥密码',
       [LangType.JA_JP]: 'クライアント鍵パスワード',
+      [LangType.ES_ES]: 'Contraseña de clave cliente',
+      [LangType.KO_KR]: '클라이언트 키 비밀번호',
     },
     name: 'sslClientKeyPassword',
     required: false,
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
   {
     defaultValue: '',
@@ -382,6 +410,8 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'Key Store Type',
       [LangType.ZH_CN]: '密钥库类型',
       [LangType.JA_JP]: 'キーストア種別',
+      [LangType.ES_ES]: 'Tipo de almacén de claves',
+      [LangType.KO_KR]: '키 저장소 유형',
     },
     name: 'sslKeyStoreType',
     required: false,
@@ -398,6 +428,10 @@ const mysqlTlsItems = [
     styles: {
       width: '50%',
     },
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
   {
     defaultValue: '',
@@ -406,10 +440,16 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'Key Store Base64',
       [LangType.ZH_CN]: '密钥库 Base64',
       [LangType.JA_JP]: 'キーストア Base64',
+      [LangType.ES_ES]: 'Almacén de claves Base64',
+      [LangType.KO_KR]: '키 저장소 Base64',
     },
     name: 'sslKeyStoreBytes',
     required: false,
     rows: 4,
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
   {
     defaultValue: '',
@@ -418,9 +458,15 @@ const mysqlTlsItems = [
       [LangType.EN_US]: 'Key Store Password',
       [LangType.ZH_CN]: '密钥库密码',
       [LangType.JA_JP]: 'キーストアパスワード',
+      [LangType.ES_ES]: 'Contraseña del almacén de claves',
+      [LangType.KO_KR]: '키 저장소 비밀번호',
     },
     name: 'sslKeyStorePassword',
     required: false,
+    visibleWhen: {
+      name: 'sslTlsMode',
+      values: mysqlTlsEnabledModes,
+    },
   },
 ];
 

@@ -49,7 +49,8 @@ export interface IFormItem {
   helpKey?: 'workspace.identityColor.help' | 'workspace.watermark.help';
   visibleWhen?: {
     name: string;
-    value: any;
+    value?: any;
+    values?: any[];
   };
   layoutGroup?: 'dataSourceIdentity';
 }
