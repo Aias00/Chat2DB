@@ -25,8 +25,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Translates a structured {@link SSLInfo} into MySQL Connector/J connection properties, merged
@@ -43,10 +41,9 @@ public final class MySqlTlsTranslator {
     private static final String KEY_STORE_TYPE_PKCS12 = "PKCS12";
     private static final String KEY_STORE_TYPE_JKS = "JKS";
     private static final char[] GENERATED_STORE_PASSWORD = new char[0];
-    private static final Pattern CERTIFICATE_PATTERN = Pattern.compile(
-            "-----BEGIN CERTIFICATE-----\\s*([A-Za-z0-9+/=\\r\\n]+)\\s*-----END CERTIFICATE-----");
-    private static final Pattern PRIVATE_KEY_PATTERN = Pattern.compile(
-            "-----BEGIN ([A-Z ]*PRIVATE KEY)-----\\s*([A-Za-z0-9+/=\\r\\n]+)\\s*-----END \\1-----");
+    private static final String CERTIFICATE_LABEL = "CERTIFICATE";
+    private static final String PRIVATE_KEY_LABEL = "PRIVATE KEY";
+    private static final String ENCRYPTED_PRIVATE_KEY_LABEL = "ENCRYPTED PRIVATE KEY";
 
     private MySqlTlsTranslator() {
     }
@@ -237,10 +234,9 @@ public final class MySqlTlsTranslator {
     private static List<Certificate> parseCertificates(String pem, String field) {
         try {
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
-            Matcher matcher = CERTIFICATE_PATTERN.matcher(pem);
             List<Certificate> certificates = new ArrayList<>();
-            while (matcher.find()) {
-                byte[] der = Base64.getMimeDecoder().decode(matcher.group(1));
+            for (PemBlock block : pemBlocks(pem, CERTIFICATE_LABEL)) {
+                byte[] der = Base64.getMimeDecoder().decode(block.body());
                 certificates.add(factory.generateCertificate(new ByteArrayInputStream(der)));
             }
             if (certificates.isEmpty()) {
@@ -255,26 +251,73 @@ public final class MySqlTlsTranslator {
     }
 
     private static PrivateKey parsePrivateKey(String pem, String password) {
-        Matcher matcher = PRIVATE_KEY_PATTERN.matcher(pem);
-        if (!matcher.find()) {
+        PemBlock block = firstPemBlock(pem, PRIVATE_KEY_LABEL, ENCRYPTED_PRIVATE_KEY_LABEL);
+        if (block == null) {
             throw new BusinessException("datasource.tls.missingPrivateKey");
         }
-        String label = matcher.group(1);
         byte[] der;
         try {
-            der = Base64.getMimeDecoder().decode(matcher.group(2));
+            der = Base64.getMimeDecoder().decode(block.body());
         } catch (IllegalArgumentException e) {
             throw new BusinessException("datasource.tls.invalidPrivateKey", null, e);
         }
-        if ("ENCRYPTED PRIVATE KEY".equals(label)) {
+        if (ENCRYPTED_PRIVATE_KEY_LABEL.equals(block.label())) {
             if (StringUtils.isBlank(password)) {
                 throw new BusinessException("datasource.tls.privateKeyPasswordRequired");
             }
             der = decryptEncryptedPrivateKey(der, password);
-        } else if (!"PRIVATE KEY".equals(label)) {
+        } else if (!PRIVATE_KEY_LABEL.equals(block.label())) {
             throw new BusinessException("datasource.tls.privateKeyPkcs8Required");
         }
         return generatePrivateKey(der);
+    }
+
+    private static List<PemBlock> pemBlocks(String pem, String label) {
+        List<PemBlock> blocks = new ArrayList<>();
+        int index = 0;
+        PemBlock block;
+        while ((block = nextPemBlock(pem, label, index)) != null) {
+            blocks.add(block);
+            index = block.endIndex();
+        }
+        return blocks;
+    }
+
+    private static PemBlock firstPemBlock(String pem, String... labels) {
+        if (pem == null) {
+            return null;
+        }
+        PemBlock first = null;
+        for (String label : labels) {
+            PemBlock candidate = nextPemBlock(pem, label, 0);
+            if (candidate != null && (first == null || candidate.startIndex() < first.startIndex())) {
+                first = candidate;
+            }
+        }
+        return first;
+    }
+
+    private static PemBlock nextPemBlock(String pem, String label, int fromIndex) {
+        if (pem == null) {
+            return null;
+        }
+        String begin = pemBoundary("BEGIN", label);
+        String end = pemBoundary("END", label);
+        int beginIndex = pem.indexOf(begin, fromIndex);
+        if (beginIndex < 0) {
+            return null;
+        }
+        int bodyStart = beginIndex + begin.length();
+        int endIndex = pem.indexOf(end, bodyStart);
+        if (endIndex < 0) {
+            return null;
+        }
+        String body = pem.substring(bodyStart, endIndex);
+        return new PemBlock(label, body, beginIndex, endIndex + end.length());
+    }
+
+    private static String pemBoundary(String marker, String label) {
+        return "-----" + marker + " " + label + "-----";
     }
 
     private static byte[] decryptEncryptedPrivateKey(byte[] encryptedKey, String password) {
@@ -339,5 +382,8 @@ public final class MySqlTlsTranslator {
 
     private static char[] passwordChars(String password) {
         return password == null ? null : password.toCharArray();
+    }
+
+    private record PemBlock(String label, String body, int startIndex, int endIndex) {
     }
 }
