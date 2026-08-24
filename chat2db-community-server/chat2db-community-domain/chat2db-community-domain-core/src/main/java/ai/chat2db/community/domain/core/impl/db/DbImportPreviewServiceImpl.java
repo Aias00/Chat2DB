@@ -386,7 +386,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                                 int firstDataRow, List<Map<String, Object>> sheets) {
     }
 
-    private static java.nio.file.Path importFile(String filePath) {
+    private static byte[] importFile(String filePath) {
         if (StringUtils.isBlank(filePath)) {
             throw new BusinessException("import.preview.fileRequired");
         }
@@ -395,7 +395,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             if (!java.nio.file.Files.isRegularFile(path) || !java.nio.file.Files.isReadable(path)) {
                 throw new java.io.IOException("file is not readable");
             }
-            return path;
+            return java.nio.file.Files.readAllBytes(path);
         } catch (Exception e) {
             log.warn("import preview cannot read file {}", filePath, e);
             throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);

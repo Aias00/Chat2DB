@@ -2,19 +2,13 @@ package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.Charset;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class CsvParserTest {
-
-    @TempDir
-    private Path tempDirectory;
 
     @Test
     void parsesQuotedDelimitersAndEmbeddedNewlines() {
@@ -37,13 +31,11 @@ class CsvParserTest {
     }
 
     @Test
-    void parsesReadablePathAndRejectsDirectory() throws Exception {
+    void parsesValidatedFileBytes() {
         CsvParser parser = new CsvParser("UTF-8", ",", "\"", "\"", true, true);
-        Path file = Files.writeString(tempDirectory.resolve("sample.csv"), "name\nAda\n");
 
-        CsvParser.CsvResult result = parser.parse(file, 50);
+        CsvParser.CsvResult result = parser.parse("name\nAda\n".getBytes(Charset.forName("UTF-8")), 50);
 
         assertEquals("Ada", result.rows().get(1).get(0));
-        assertThrows(BusinessException.class, () -> parser.parse(tempDirectory, 50));
     }
 }

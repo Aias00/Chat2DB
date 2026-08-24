@@ -6,9 +6,6 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CodingErrorAction;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,22 +46,6 @@ final class CsvParser {
             throw new BusinessException("import.preview.invalidEncoding", new Object[]{charset.name()}, e);
         }
         return parseRows(new java.io.StringReader(text), limit);
-    }
-
-    CsvResult parse(Path file, int limit) {
-        try {
-            Path readableFile = file.toRealPath(LinkOption.NOFOLLOW_LINKS);
-            if (!Files.isRegularFile(readableFile, LinkOption.NOFOLLOW_LINKS) || !Files.isReadable(readableFile)) {
-                throw new BusinessException("import.preview.fileUnreadable");
-            }
-            try (Reader reader = Files.newBufferedReader(readableFile, charset)) {
-                return parseRows(reader, limit);
-            }
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BusinessException("import.preview.invalidEncoding", new Object[]{charset.name()}, e);
-        }
     }
 
     CsvResult parse(Reader reader, int limit) {
