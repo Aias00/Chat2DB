@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Form, Select, message } from 'antd';
+import { Button, Form, Modal, Select, message } from 'antd';
 import i18n from '@/i18n';
 import sqlService from '@/service/sql';
-import { Modal } from 'antd';
+
+type OptionItem = {
+  value: string;
+  label: string;
+  charset?: string | null;
+};
 
 /**
  * Database default character set and collation editor (MYSQL-OBJ-001). Loads the values
@@ -16,7 +21,7 @@ const DatabasePropertiesContent = ({
   dataSourceId: number;
   databaseName: string;
 }) => {
-  const [options, setOptions] = useState<{ charsets: { value: string; label: string }[]; collations: { value: string; label: string; charset?: string | null }[] }>({
+  const [options, setOptions] = useState<{ charsets: OptionItem[]; collations: OptionItem[] }>({
     charsets: [],
     collations: [],
   });
