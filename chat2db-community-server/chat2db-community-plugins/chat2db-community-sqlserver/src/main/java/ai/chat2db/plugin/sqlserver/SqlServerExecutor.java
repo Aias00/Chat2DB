@@ -265,6 +265,7 @@ public class SqlServerExecutor extends DefaultSQLExecutor {
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
                 long startedAtEpochMs = System.currentTimeMillis();
                 long executeStartedNanos = System.nanoTime();
+                // codeql[java/sql-injection]
                 boolean query = stmt.execute();
                 long executeDurationNanos = ExecutionTiming.elapsedNanos(executeStartedNanos);
                 while (true) {

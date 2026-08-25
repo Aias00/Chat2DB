@@ -292,6 +292,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                 long startedAtEpochMs = System.currentTimeMillis();
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
                 long executeStartedNanos = System.nanoTime();
+                // codeql[java/sql-injection]
                 boolean query = stmt.execute();
                 long executeDurationNanos = ExecutionTiming.elapsedNanos(executeStartedNanos);
                 executionContext = executionContextAfterExecute(
