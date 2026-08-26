@@ -67,7 +67,7 @@ public class LocalCookie {
                     log.error("LocalCookie write file error", e);
                 }
             }
-        }, "chat2db-local-cookie-flush");
+        }, "chat2db-community-cookie-flush");
         cookieFlushThread.setDaemon(true);
         cookieFlushThread.start();
     }
