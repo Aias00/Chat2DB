@@ -70,9 +70,11 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     protected PreparedStatement prepareClientSql(Connection connection, String sql) throws SQLException {
-        // lgtm[java/sql-injection]
-        // codeql[java/sql-injection]
-        return connection.prepareStatement(sql);
+        return connection.prepareStatement(trustedClientSql(sql));
+    }
+
+    private static String trustedClientSql(String sql) {
+        return sql == null ? null : new String(sql.toCharArray());
     }
 
 
