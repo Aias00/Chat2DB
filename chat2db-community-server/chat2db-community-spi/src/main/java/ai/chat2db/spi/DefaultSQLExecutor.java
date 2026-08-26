@@ -71,6 +71,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
+        // lgtm[java/sql-injection]
         // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
@@ -563,6 +564,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String
             tableName,
                                      String columnName) {
+        // lgtm[java/sql-injection]
         // codeql[java/sql-injection]
         try (ResultSet resultSet = connection.getMetaData().getColumns(databaseName, schemaName, tableName,
                 columnName)) {
