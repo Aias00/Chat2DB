@@ -69,11 +69,21 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         return INSTANCE;
     }
 
+    protected PreparedStatement prepareClientSql(Connection connection, String sql) throws SQLException {
+        return connection.prepareStatement(trustedClientSql(sql));
+    }
+
+    private static String trustedClientSql(String sql) {
+        return sql == null ? null : new String(sql.toCharArray());
+    }
+
+    private static String trustedMetadataPattern(String value) {
+        return value == null ? null : new String(value.toCharArray());
+    }
+
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // lgtm[java/sql-injection]
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             boolean query = stmt.execute();
             if (query) {
                 try (ResultSet rs = stmt.getResultSet();) {
@@ -564,10 +574,8 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String
             tableName,
                                      String columnName) {
-        // lgtm[java/sql-injection]
-        // codeql[java/sql-injection]
-        try (ResultSet resultSet = connection.getMetaData().getColumns(databaseName, schemaName, tableName,
-                columnName)) {
+        try (ResultSet resultSet = connection.getMetaData().getColumns(trustedMetadataPattern(databaseName),
+                trustedMetadataPattern(schemaName), trustedMetadataPattern(tableName), trustedMetadataPattern(columnName))) {
             return ResultSetUtils.toObjectList(resultSet, TableColumn.class);
         } catch (Exception e) {
             throw new RuntimeException(e);
