@@ -42,9 +42,11 @@ import ai.chat2db.community.domain.api.model.sql.SqlPreview;
 import ai.chat2db.community.domain.api.model.view.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.mapstruct.IterableMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Mappings;
+import org.mapstruct.Named;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -134,7 +136,11 @@ public abstract class DbWebConverter {
     public abstract DbObjectDropRequest tableDelete2dropParam(TableDeleteRequest request);
 
 
+    @Named("fullExecuteResult")
     public abstract ExecuteResultResponse dto2response(ExecuteResponse dto);
+
+    @Mapping(target = "dataList", ignore = true)
+    public abstract ExecuteResultResponse dto2completionResponse(ExecuteResponse dto);
 
     public abstract ExecuteResponse response2dto(ExecuteResultResponse vo);
 
@@ -145,6 +151,7 @@ public abstract class DbWebConverter {
     public abstract RoutineOperation request2param(RoutineMigrationRequest request);
 
 
+    @IterableMapping(qualifiedByName = "fullExecuteResult")
     public abstract List<ExecuteResultResponse> dto2response(List<ExecuteResponse> dtos);
 
 
