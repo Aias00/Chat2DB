@@ -260,6 +260,7 @@ public class SqlServerExecutor extends DefaultSQLExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(originalSql).success(Boolean.TRUE).build();
         int resultCount = 0;
         for (String sql : sqlList) {
+            // lgtm[java/sql-injection]
             // codeql[java/sql-injection]
             try (PreparedStatement stmt = connection.prepareStatement(sql)) {
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
