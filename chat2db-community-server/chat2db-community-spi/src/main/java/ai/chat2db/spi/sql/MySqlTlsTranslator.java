@@ -213,6 +213,8 @@ public final class MySqlTlsTranslator {
                 keyStore.setCertificateEntry("ca-" + i, certificates.get(i));
             }
             return writeGeneratedStoreUrl(keyStore, "chat2db-mysql-trust-store-");
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw new BusinessException("datasource.tls.invalidCaCertificate", null, e);
         }

@@ -112,6 +112,52 @@ class MySqlTlsTranslatorTest {
         assertThrows(BusinessException.class, () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
     }
 
+    @Test
+    void caPemWithoutCertificateBlockReportsFieldSpecificDiagnostic() {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setCaPem("not a certificate");
+        Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.missingCertificate", exception.getCode());
+        assertEquals("caPem", exception.getArgs()[0]);
+        assertFalse(p.containsKey("trustCertificateKeyStoreUrl"));
+    }
+
+    @Test
+    void malformedCaPemReportsCertificateDiagnostic() {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setCaPem("""
+                -----BEGIN CERTIFICATE-----
+                not-base64
+                -----END CERTIFICATE-----
+                """);
+        Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.invalidCertificate", exception.getCode());
+        assertEquals("caPem", exception.getArgs()[0]);
+        assertFalse(p.containsKey("trustCertificateKeyStoreUrl"));
+    }
+
+    @Test
+    void clientCertificateWithoutPrivateKeyReportsPrivateKeyDiagnostic() {
+        SSLInfo ssl = ssl(MySqlTlsMode.REQUIRED);
+        ssl.setClientCertPem(PEM_CLIENT_CERT);
+        ssl.setClientPrivateKeyPem("not a private key");
+        Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.missingPrivateKey", exception.getCode());
+        assertFalse(p.containsKey("clientCertificateKeyStoreUrl"));
+    }
+
     // ---- Connector/J 8.x ----------------------------------------------------------------
 
     @Test
