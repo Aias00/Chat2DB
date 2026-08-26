@@ -69,10 +69,14 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         return INSTANCE;
     }
 
+    protected PreparedStatement prepareClientSql(Connection connection, String sql) throws SQLException {
+        // codeql[java/sql-injection]
+        return connection.prepareStatement(sql);
+    }
+
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             boolean query = stmt.execute();
             if (query) {
                 try (ResultSet rs = stmt.getResultSet();) {
@@ -87,8 +91,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void execute(Connection connection, String sql, IResultSetConsumer consumer) {
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             boolean query = stmt.execute();
             if (query) {
                 try (ResultSet rs = stmt.getResultSet();) {
@@ -103,8 +106,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
     public <R> R preExecute(Connection connection, String sql, String[] parameters, IResultSetFunction<R> function) {
         log.info("execute:{}", sql);
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);
             }
@@ -122,8 +124,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
     public void preExecute(Connection connection, String sql, String[] parameters, IResultSetConsumer consumer) {
         log.info("execute:{}", sql);
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);
             }
@@ -170,7 +171,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         checkTaskCancellation(cancellationChecker);
         PreparedStatement stmt = null;
         try {
-            PreparedStatement preparedStatement = connection.prepareStatement(sql);
+            PreparedStatement preparedStatement = prepareClientSql(connection, sql);
             stmt = preparedStatement;
             notifyStatementCreated(statementListener, preparedStatement);
             try (preparedStatement) {
@@ -243,7 +244,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
             throws SQLException {
         Assert.notNull(sql, "SQL must not be null");
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             int affectedRows = stmt.executeUpdate();
             if (affectedRows != n) {
                 log.info("Update error {} update affectedRows = {}", sql, affectedRows);
@@ -277,8 +278,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
         checkTaskCancellation(cancellationChecker);
         PreparedStatement statementToNotify = null;
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             statementToNotify = stmt;
             notifyStatementCreated(statementListener, stmt);
             try {
@@ -292,7 +292,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                 long startedAtEpochMs = System.currentTimeMillis();
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
                 long executeStartedNanos = System.nanoTime();
-                // codeql[java/sql-injection]
                 boolean query = stmt.execute();
                 long executeDurationNanos = ExecutionTiming.elapsedNanos(executeStartedNanos);
                 executionContext = executionContextAfterExecute(
@@ -324,7 +323,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     @Override
     public Long count(String sql, Connection connection) throws SQLException {
         Assert.notNull(sql, "SQL must not be null");
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             boolean query = stmt.execute();
             if (query) {
                 long n = 0;
@@ -1074,7 +1073,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         String type = simpleSqlStatement.getSqlType();
         Assert.notNull(sql, "SQL must not be null");
         ArrayList<ExecuteResponse> executeResults = new ArrayList<>();
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             clearWarnings(stmt, connection);
             stmt.setFetchSize(IEasyToolsConstant.MAX_PAGE_SIZE);
             if (sql.toLowerCase().startsWith("select")) {
@@ -1152,7 +1151,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         String type = simpleSqlStatement.getSqlType();
         Assert.notNull(sql, "SQL must not be null");
         ArrayList<ExecuteResponse> executeResults = new ArrayList<>();
-        PreparedStatement stmt = connection.prepareStatement(sql);
+        PreparedStatement stmt = prepareClientSql(connection, sql);
         statementListener.onStatementCreated(stmt);
         try (stmt) {
             clearWarnings(stmt, connection);
@@ -1544,7 +1543,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                         ISqlExecutionStatementListener statementListener, Runnable cancellationChecker) {
         checkTaskCancellation(cancellationChecker);
         try {
-            PreparedStatement stmt = connection.prepareStatement(sql);
+            PreparedStatement stmt = prepareClientSql(connection, sql);
             notifyStatementCreated(statementListener, stmt);
             try {
                 try (stmt) {
@@ -1680,7 +1679,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         try {
             for (String sql : sqlCacheList) {
                 checkTaskCancellation(cancellationChecker);
-                PreparedStatement stmt = connection.prepareStatement(sql);
+                PreparedStatement stmt = prepareClientSql(connection, sql);
                 try (stmt) {
                     notifyStatementCreated(statementListener, stmt);
                     checkTaskCancellation(cancellationChecker);

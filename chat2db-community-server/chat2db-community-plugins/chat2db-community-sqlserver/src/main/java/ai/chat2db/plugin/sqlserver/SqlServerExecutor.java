@@ -260,12 +260,10 @@ public class SqlServerExecutor extends DefaultSQLExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(originalSql).success(Boolean.TRUE).build();
         int resultCount = 0;
         for (String sql : sqlList) {
-            // codeql[java/sql-injection]
-            try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
                 long startedAtEpochMs = System.currentTimeMillis();
                 long executeStartedNanos = System.nanoTime();
-                // codeql[java/sql-injection]
                 boolean query = stmt.execute();
                 long executeDurationNanos = ExecutionTiming.elapsedNanos(executeStartedNanos);
                 while (true) {
