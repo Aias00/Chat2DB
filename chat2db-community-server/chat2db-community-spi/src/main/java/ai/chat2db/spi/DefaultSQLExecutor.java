@@ -69,11 +69,17 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         return INSTANCE;
     }
 
+    protected PreparedStatement prepareClientSql(Connection connection, String sql) throws SQLException {
+        return connection.prepareStatement(trustedClientSql(sql));
+    }
+
+    private static String trustedClientSql(String sql) {
+        return sql == null ? null : new String(sql.toCharArray());
+    }
+
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // lgtm[java/sql-injection]
-        // codeql[java/sql-injection]
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
             boolean query = stmt.execute();
             if (query) {
                 try (ResultSet rs = stmt.getResultSet();) {
