@@ -447,16 +447,18 @@ export interface IEventItem {
   definition: string | null;
 }
 
-const getEventList = createRequest<{ databaseName: string }, IEventItem[]>('/api/rdb/event/list', { method: 'get' });
-const getEventSchedulerStatus = createRequest<Record<string, never>, { schedulerEnabled: boolean }>(
+type EventDatasourceParams = { dataSourceId: number; databaseName: string };
+
+const getEventList = createRequest<EventDatasourceParams, IEventItem[]>('/api/rdb/event/list', { method: 'get' });
+const getEventSchedulerStatus = createRequest<EventDatasourceParams, { schedulerEnabled: boolean; eventCount: number }>(
   '/api/rdb/event/scheduler_status',
   { method: 'get' },
 );
-const getEventDropSql = createRequest<{ databaseName: string; eventName: string }, string>(
+const getEventDropSql = createRequest<EventDatasourceParams & { eventName: string }, string>(
   '/api/rdb/event/drop_sql',
   { method: 'post' },
 );
-const getEventEnabledSql = createRequest<{ databaseName: string; eventName: string; enabled: boolean }, string>(
+const getEventEnabledSql = createRequest<EventDatasourceParams & { eventName: string; enabled: boolean }, string>(
   '/api/rdb/event/enabled_sql',
   { method: 'post' },
 );

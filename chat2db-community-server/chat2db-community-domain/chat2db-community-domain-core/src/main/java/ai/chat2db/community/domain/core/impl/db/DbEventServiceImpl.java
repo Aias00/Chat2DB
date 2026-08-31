@@ -61,7 +61,11 @@ public class DbEventServiceImpl implements IDbEventService {
     }
 
     @Override
-    public Map<String, Object> schedulerStatus() {
+    public Map<String, Object> schedulerStatus(String databaseName) {
+        if (StringUtils.isBlank(databaseName)) {
+            throw new BusinessException("database.name.required");
+        }
+        String escaped = Chat2DBContext.getDbMetaData().getSQLIdentifierProcessor().escapeString(databaseName);
         Connection connection = Chat2DBContext.getConnection();
         String scheduler = DefaultSQLExecutor.getInstance().execute(connection, SQL_SCHEDULER_STATE, resultSet -> {
             if (resultSet.next()) {
@@ -70,8 +74,16 @@ public class DbEventServiceImpl implements IDbEventService {
             }
             return "OFF";
         });
+        Long eventCount = DefaultSQLExecutor.getInstance().execute(connection, String.format(SQL_EVENT_COUNT, escaped),
+                resultSet -> {
+                    if (resultSet.next()) {
+                        return resultSet.getLong(1);
+                    }
+                    return 0L;
+                });
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("schedulerEnabled", !"OFF".equals(scheduler));
+        status.put("eventCount", eventCount == null ? 0L : eventCount);
         return status;
     }
 

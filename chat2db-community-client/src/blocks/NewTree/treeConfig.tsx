@@ -1126,7 +1126,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
       const { dataSourceId, databaseName } = extraParams;
       return new Promise((r: (value: TreeNodeLoadResult) => void, j) => {
         mysqlServer
-          .getEventList({ databaseName })
+          .getEventList({ dataSourceId, databaseName })
           .then((res) => {
             const list: TreeNodeData[] = (res || []).map((t: any) => {
               const key = treeConfig[TreeNodeType.EVENT].createTreeNodeKey!({

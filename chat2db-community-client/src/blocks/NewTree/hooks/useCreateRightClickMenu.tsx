@@ -323,7 +323,7 @@ END;`
       refresh: () => void;
     }) => {
       sqlService
-        .getEventEnabledSql({ databaseName: dbName, eventName, enabled })
+        .getEventEnabledSql({ dataSourceId: dsId, databaseName: dbName, eventName, enabled })
         .then((sql) => {
           openUnifiedConfirmationModal({
             title: i18n('workspace.menu.eventPreviewTitle'),
@@ -536,7 +536,7 @@ END;`
             needInputConfirmText: originalTitle,
             onOk: () => {
               return sqlService
-                .getEventDropSql({ databaseName: extraParams.databaseName, eventName: originalTitle })
+                .getEventDropSql({ dataSourceId, databaseName: extraParams.databaseName, eventName: originalTitle })
                 .then((sql) => {
                 return sqlService.executeDDL({ dataSourceId, sql }).then(() => {
                   refreshAfterDelete();

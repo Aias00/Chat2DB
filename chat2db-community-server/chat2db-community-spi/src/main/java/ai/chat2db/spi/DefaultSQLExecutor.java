@@ -69,17 +69,9 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         return INSTANCE;
     }
 
-    protected PreparedStatement prepareClientSql(Connection connection, String sql) throws SQLException {
-        return connection.prepareStatement(trustedClientSql(sql));
-    }
-
-    private static String trustedClientSql(String sql) {
-        return sql == null ? null : new String(sql.toCharArray());
-    }
-
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        try (PreparedStatement stmt = prepareClientSql(connection, sql)) {
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
                 try (ResultSet rs = stmt.getResultSet();) {
@@ -570,7 +562,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String
             tableName,
                                      String columnName) {
-        // codeql[java/sql-injection]
         try (ResultSet resultSet = connection.getMetaData().getColumns(databaseName, schemaName, tableName,
                 columnName)) {
             return ResultSetUtils.toObjectList(resultSet, TableColumn.class);

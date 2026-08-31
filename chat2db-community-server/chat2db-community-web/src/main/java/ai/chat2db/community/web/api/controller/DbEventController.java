@@ -3,6 +3,7 @@ package ai.chat2db.community.web.api.controller;
 import ai.chat2db.community.domain.api.service.db.IDbEventService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
+import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -32,21 +32,21 @@ public class DbEventController {
     /**
      * Lists events of a database.
      * <p>
-     * Endpoint: {@code GET /api/rdb/event/list?databaseName=xxx}.
+     * Endpoint: {@code GET /api/rdb/event/list?dataSourceId=1&databaseName=xxx}.
      */
     @GetMapping("/list")
-    public DataResult<List<Map<String, Object>>> list(@RequestParam("databaseName") String databaseName) {
-        return DataResult.of(eventService.list(databaseName));
+    public DataResult<List<Map<String, Object>>> list(@Valid DataSourceBaseRequest request) {
+        return DataResult.of(eventService.list(request.getDatabaseName()));
     }
 
     /**
      * Returns the global event_scheduler state.
      * <p>
-     * Endpoint: {@code GET /api/rdb/event/scheduler_status}.
+     * Endpoint: {@code GET /api/rdb/event/scheduler_status?dataSourceId=1&databaseName=xxx}.
      */
     @GetMapping("/scheduler_status")
-    public DataResult<Map<String, Object>> schedulerStatus() {
-        return DataResult.of(eventService.schedulerStatus());
+    public DataResult<Map<String, Object>> schedulerStatus(@Valid DataSourceBaseRequest request) {
+        return DataResult.of(eventService.schedulerStatus(request.getDatabaseName()));
     }
 
     /**
@@ -71,22 +71,13 @@ public class DbEventController {
     }
 
     @Data
-    public static class EventNameRequest {
-        @NotBlank
-        private String databaseName;
-
+    public static class EventNameRequest extends DataSourceBaseRequest {
         @NotBlank
         private String eventName;
     }
 
     @Data
-    public static class SetEnabledRequest {
-        @NotBlank
-        private String databaseName;
-
-        @NotBlank
-        private String eventName;
-
+    public static class SetEnabledRequest extends EventNameRequest {
         @NotNull
         private Boolean enabled;
     }

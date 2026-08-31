@@ -21,9 +21,10 @@ public interface IDbEventService {
     /**
      * Returns the scheduler state and whether events are missing.
      *
+     * @param databaseName the database name whose event count should be reported.
      * @return map with {@code schedulerEnabled} and {@code eventCount}.
      */
-    Map<String, Object> schedulerStatus();
+    Map<String, Object> schedulerStatus(String databaseName);
 
     /**
      * Generates the DROP EVENT statement for preview and execution.
