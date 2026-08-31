@@ -102,6 +102,40 @@ class MysqlAccountSqlBuilderTest {
     }
 
     @Test
+    void alterAuthPluginWithPasswordOnlyUsesIdentifiedByPasswordSyntax() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.ALTER_AUTH_PLUGIN);
+        command.setPassword("secret");
+
+        assertEquals(
+                "ALTER USER 'alice''s'@'10.0.%' IDENTIFIED BY 'secret'",
+                MysqlAccountSqlBuilder.buildSql(command));
+        assertEquals(
+                "ALTER USER 'alice''s'@'10.0.%' IDENTIFIED BY '******'",
+                MysqlAccountSqlBuilder.buildDisplaySql(command));
+    }
+
+    @Test
+    void alterAuthPluginWithPasswordAndTlsUsesIdentifiedByBeforeRequire() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.ALTER_AUTH_PLUGIN);
+        command.setPassword("secret");
+        command.setTlsRequirement("SSL");
+
+        assertEquals(
+                "ALTER USER 'alice''s'@'10.0.%' IDENTIFIED BY 'secret' REQUIRE SSL",
+                MysqlAccountSqlBuilder.buildSql(command));
+    }
+
+    @Test
+    void alterAuthPluginCanClearTlsRequirementWithRequireNone() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.ALTER_AUTH_PLUGIN);
+        command.setTlsRequirement("NONE");
+
+        assertEquals(
+                "ALTER USER 'alice''s'@'10.0.%' REQUIRE NONE",
+                MysqlAccountSqlBuilder.buildSql(command));
+    }
+
+    @Test
     void alterAuthPluginRejectsEmptyAndInvalidTlsCombinations() {
         AccountOperationRequest empty = base(AccountActionTypeEnum.ALTER_AUTH_PLUGIN);
         assertThrows(RuntimeException.class, () -> MysqlAccountSqlBuilder.buildSql(empty));

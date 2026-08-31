@@ -156,6 +156,10 @@ public class MysqlAccountManager implements IAccountManager {
                 account.setUser(resultSet.getString(FIELD_USER));
                 account.setHost(resultSet.getString(FIELD_HOST));
                 account.setAuthenticationPlugin(safeGetString(resultSet, FIELD_PLUGIN));
+                account.setTlsRequirement(normalizeTlsRequirement(safeGetString(resultSet, FIELD_SSL_TYPE)));
+                account.setTlsCipher(safeGetString(resultSet, FIELD_SSL_CIPHER));
+                account.setTlsIssuer(safeGetString(resultSet, FIELD_X509_ISSUER));
+                account.setTlsSubject(safeGetString(resultSet, FIELD_X509_SUBJECT));
                 if (includeLocked) {
                     String accountLocked = safeGetString(resultSet, FIELD_ACCOUNT_LOCKED);
                     account.setLocked(StringUtils.isBlank(accountLocked) ? null : VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(accountLocked));
@@ -206,6 +210,16 @@ public class MysqlAccountManager implements IAccountManager {
             return null;
         }
         return null;
+    }
+
+    private String normalizeTlsRequirement(String sslType) {
+        if (StringUtils.isBlank(sslType)) {
+            return VALUE_TLS_REQUIREMENT_NONE;
+        }
+        if (VALUE_MYSQL_SSL_TYPE_ANY.equalsIgnoreCase(sslType)) {
+            return VALUE_TLS_REQUIREMENT_SSL;
+        }
+        return sslType.toUpperCase(java.util.Locale.ROOT);
     }
 
     private String safeGetString(ResultSet resultSet, String column) {

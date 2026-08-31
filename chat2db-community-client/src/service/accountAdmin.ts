@@ -46,6 +46,10 @@ export interface Account {
   host: string;
   displayName: string;
   authenticationPlugin?: string;
+  tlsRequirement?: string;
+  tlsCipher?: string;
+  tlsIssuer?: string;
+  tlsSubject?: string;
   locked?: boolean;
 }
 

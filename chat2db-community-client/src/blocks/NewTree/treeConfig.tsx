@@ -10,6 +10,7 @@ import { getDatabaseSupport } from '@/utils/database';
 import { canUseAccountManage, isMongodbTreeDataSource, isRedisTreeDataSource } from '@/utils/databaseJudgments';
 import { v4 as uuid } from 'uuid';
 import { createSavedConsoleTreeNodeKey } from '@/store/tree/backgroundRefresh';
+import { createDatabaseAccountTreeNodeExtraParams } from './accountTreeNodes';
 
 const fileIcon = 'icon-colourful-folder-close';
 const unfoldFileIcon = 'icon-colourful-folder-open';
@@ -402,12 +403,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
           title: null,
           treeNodeType: TreeNodeType.DATABASE_ACCOUNT,
           isLeaf: true,
-          extraParams: {
-            ...extraParams,
-            user: account.user,
-            host: account.host,
-            popoverContent: account.displayName,
-          },
+          extraParams: createDatabaseAccountTreeNodeExtraParams(extraParams, account),
         }));
       });
     },

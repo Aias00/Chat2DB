@@ -78,7 +78,8 @@ class MysqlAccountSqlBuilder {
                     sb.append(SQL_IDENTIFIED_WITH).append(requireValidAuthPlugin(command.getAuthPlugin()));
                 }
                 if (StringUtils.isNotBlank(command.getPassword())) {
-                    sb.append(SQL_BY).append(passwordLiteral(command, maskSensitive));
+                    sb.append(StringUtils.isNotBlank(command.getAuthPlugin()) ? SQL_BY : SQL_IDENTIFIED_BY)
+                            .append(passwordLiteral(command, maskSensitive));
                 }
                 if (StringUtils.isNotBlank(command.getTlsRequirement())) {
                     appendTlsRequirement(sb, command);

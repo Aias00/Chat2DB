@@ -18,6 +18,7 @@ import sqlService from '@/service/sql';
 import { DatabaseTypeCode, TreeNodeType } from '@/constants';
 import { useTreeStore } from '@/store/tree';
 import { IBoundInfo } from '@/typings';
+import { buildAccountSecurityCommand, createAccountSecurityInitialValues } from './accountSecurity';
 import styles from './index.less';
 
 interface IProps {
@@ -378,14 +379,9 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     accountForm.setFieldsValue({
       user: selectedAccount?.user,
       host: selectedAccount?.host,
-      password: '',
-      authPlugin: undefined,
-      tlsRequirement: undefined,
-      tlsCipher: undefined,
-      tlsIssuer: undefined,
-      tlsSubject: undefined,
+      ...createAccountSecurityInitialValues(uniqueData),
     });
-  }, [accountModalOpen, selectedAccount?.user, selectedAccount?.host]);
+  }, [accountModalOpen, selectedAccount?.user, selectedAccount?.host, uniqueData]);
 
   const submitAccountCommand = () => {
     if (!accountActionType) {
@@ -393,18 +389,11 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     }
     return accountForm.validateFields().then((values) => {
       resetConfirmState();
-      return previewAndConfirm({
+      return previewAndConfirm(buildAccountSecurityCommand({
         dataSourceId: dataSourceId!,
-        user: values.user,
-        host: values.host,
-        password: values.password,
-        authPlugin: values.authPlugin,
-        tlsRequirement: values.tlsRequirement,
-        tlsCipher: values.tlsCipher,
-        tlsIssuer: values.tlsIssuer,
-        tlsSubject: values.tlsSubject,
         actionType: accountActionType,
-      }).then(() => {
+        values,
+      })).then(() => {
         setAccountModalOpen(false);
       });
     });
