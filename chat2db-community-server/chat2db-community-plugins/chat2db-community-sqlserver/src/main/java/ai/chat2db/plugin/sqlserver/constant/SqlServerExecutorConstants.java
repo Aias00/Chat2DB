@@ -12,8 +12,13 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
+
 
 public final class SqlServerExecutorConstants {
+
+    public static final Pattern GO_DELIMITER_PATTERN = Pattern.compile(
+            "(?mi)(?:^[ \\t]*|(?<=;)[ \\t]*)go[ \\t]*;?[ \\t]*(?:--.*)?(?=\\r?\\n|$)");
 
     private SqlServerExecutorConstants() {
     }

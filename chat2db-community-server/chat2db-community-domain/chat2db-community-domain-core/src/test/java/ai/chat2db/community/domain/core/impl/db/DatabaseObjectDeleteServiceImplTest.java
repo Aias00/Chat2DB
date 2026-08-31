@@ -366,6 +366,11 @@ class DatabaseObjectDeleteServiceImplTest {
         }
 
         @Override
+        public <T> T withConsoleTransactionLock(Long consoleId, java.util.concurrent.Callable<T> action) throws Exception {
+            return action.call();
+        }
+
+        @Override
         public ConnectionProfile currentProfile() {
             if (Chat2DBContext.getConnectInfo() == null) {
                 bindProfile(profile);

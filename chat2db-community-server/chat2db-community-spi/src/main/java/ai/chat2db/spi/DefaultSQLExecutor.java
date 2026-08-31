@@ -71,8 +71,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // lgtm[java/sql-injection]
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -88,7 +86,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void execute(Connection connection, String sql, IResultSetConsumer consumer) {
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -307,8 +304,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
         checkTaskCancellation(cancellationChecker);
         PreparedStatement statementToNotify = null;
-        // lgtm[java/sql-injection]
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             statementToNotify = stmt;
             notifyStatementCreated(statementListener, stmt);
@@ -1720,8 +1715,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         try {
             for (String sql : sqlCacheList) {
                 checkTaskCancellation(cancellationChecker);
-                // lgtm[java/sql-injection]
-                // codeql[java/sql-injection]
                 PreparedStatement stmt = connection.prepareStatement(sql);
                 try (stmt) {
                     notifyStatementCreated(statementListener, stmt);

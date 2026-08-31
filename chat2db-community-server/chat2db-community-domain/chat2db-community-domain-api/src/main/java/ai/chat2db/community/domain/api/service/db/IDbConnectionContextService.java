@@ -10,6 +10,7 @@ import ai.chat2db.community.domain.api.model.request.runtime.McpConnectionContex
 import ai.chat2db.community.domain.api.model.request.runtime.DbObjectsQueryRequest;
 
 import java.util.List;
+import java.util.concurrent.Callable;
 
 /**
  * Manages connection context binding and current connection profile lookup.
@@ -111,6 +112,16 @@ public interface IDbConnectionContextService {
      * @return true when a manual transaction is open for the console.
      */
     boolean isInTransaction(Long consoleId);
+
+    /**
+     * Runs a unit of console-bound work under the same per-console lock used by manual
+     * transaction commit, rollback, and release.
+     *
+     * @param consoleId console identifier.
+     * @param action work to run.
+     * @return action result.
+     */
+    <T> T withConsoleTransactionLock(Long consoleId, Callable<T> action) throws Exception;
 
     /**
      * Releases every console-bound transaction, rolling back any open ones. Intended for

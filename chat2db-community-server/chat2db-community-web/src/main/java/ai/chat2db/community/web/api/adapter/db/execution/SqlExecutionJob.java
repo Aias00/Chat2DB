@@ -76,6 +76,22 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
 
     @Override
     public void run() {
+        Long consoleId = request.getConnectionContext() == null ? null : request.getConnectionContext().getConsoleId();
+        if (consoleId != null && connectionContextService.isInTransaction(consoleId)) {
+            try {
+                connectionContextService.withConsoleTransactionLock(consoleId, () -> {
+                    runInternal();
+                    return null;
+                });
+            } catch (Exception e) {
+                throw e instanceof RuntimeException runtimeException ? runtimeException : new RuntimeException(e);
+            }
+            return;
+        }
+        runInternal();
+    }
+
+    private void runInternal() {
         workerThread = Thread.currentThread();
         ConsoleHelper.setHeaders(request.getConsoleMessage());
         restoreLocalHeaders();

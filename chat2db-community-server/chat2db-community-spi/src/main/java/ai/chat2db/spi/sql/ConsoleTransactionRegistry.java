@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Callable;
 
 /**
  * Server-side registry that pins one isolated JDBC connection to a SQL Console so that
@@ -50,7 +51,12 @@ public class ConsoleTransactionRegistry {
 
     private static final ConcurrentHashMap<Long, BoundTransaction> BOUND = new ConcurrentHashMap<>();
 
+    private static final Object[] CONSOLE_LOCKS = new Object[1024];
+
     static {
+        for (int i = 0; i < CONSOLE_LOCKS.length; i++) {
+            CONSOLE_LOCKS[i] = new Object();
+        }
         // Daemon + named so the periodic eviction never blocks JVM exit and is attributable.
         Thread cleanupThread = new Thread(() -> {
             while (true) {
@@ -162,6 +168,20 @@ public class ConsoleTransactionRegistry {
         return bound == null ? null : bound.getState();
     }
 
+    public static Long getBoundDataSourceId(Long consoleId) {
+        BoundTransaction bound = BOUND.get(consoleId);
+        return bound == null ? null : bound.getConnectInfo().getDataSourceId();
+    }
+
+    public static <T> T withConsoleLock(Long consoleId, Callable<T> action) throws Exception {
+        if (consoleId == null) {
+            return action.call();
+        }
+        synchronized (lockFor(consoleId)) {
+            return action.call();
+        }
+    }
+
     /**
      * Commits the console's open transaction, restores auto-commit, and releases the bound
      * connection back to the pool. Returns {@link TransactionOutcome#UNKNOWN} when the
@@ -169,31 +189,33 @@ public class ConsoleTransactionRegistry {
      * server).
      */
     public static TransactionOutcome commit(Long consoleId) {
-        BoundTransaction bound = BOUND.get(consoleId);
-        if (bound == null) {
-            return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
-        }
-        bound.setState(TransactionState.COMMITTING);
-        Connection connection = bound.getConnectInfo().getConnection();
-        boolean discardRequired = false;
-        try {
-            connection.commit();
-        } catch (SQLException e) {
-            log.error("Commit failed for consoleId={}, discarding connection", consoleId, e);
-            discardRequired = true;
-        }
-        if (!discardRequired) {
-            discardRequired = !restoreAutoCommit(connection);
-        }
-        if (discardRequired) {
-            discardQuietly(bound.getConnectInfo());
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction bound = BOUND.get(consoleId);
+            if (bound == null) {
+                return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            }
+            bound.setState(TransactionState.COMMITTING);
+            Connection connection = bound.getConnectInfo().getConnection();
+            boolean discardRequired = false;
+            try {
+                connection.commit();
+            } catch (SQLException e) {
+                log.error("Commit failed for consoleId={}, discarding connection", consoleId, e);
+                discardRequired = true;
+            }
+            if (!discardRequired) {
+                discardRequired = !restoreAutoCommit(connection);
+            }
+            if (discardRequired) {
+                discardQuietly(bound.getConnectInfo());
+                BOUND.remove(consoleId);
+                return TransactionOutcome.UNKNOWN;
+            }
+            bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
             BOUND.remove(consoleId);
-            return TransactionOutcome.UNKNOWN;
+            ConnectionPool.close(bound.getConnectInfo());
+            return TransactionOutcome.COMMITTED;
         }
-        bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
-        BOUND.remove(consoleId);
-        ConnectionPool.close(bound.getConnectInfo());
-        return TransactionOutcome.COMMITTED;
     }
 
     /**
@@ -205,31 +227,33 @@ public class ConsoleTransactionRegistry {
      * caller is responsible for informing the user.
      */
     public static TransactionOutcome rollback(Long consoleId) {
-        BoundTransaction bound = BOUND.get(consoleId);
-        if (bound == null) {
-            return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
-        }
-        bound.setState(TransactionState.ROLLING_BACK);
-        Connection connection = bound.getConnectInfo().getConnection();
-        boolean discardRequired = false;
-        try {
-            connection.rollback();
-        } catch (SQLException e) {
-            log.error("Rollback failed for consoleId={}, discarding connection", consoleId, e);
-            discardRequired = true;
-        }
-        if (!discardRequired) {
-            discardRequired = !restoreAutoCommit(connection);
-        }
-        if (discardRequired) {
-            discardQuietly(bound.getConnectInfo());
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction bound = BOUND.get(consoleId);
+            if (bound == null) {
+                return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            }
+            bound.setState(TransactionState.ROLLING_BACK);
+            Connection connection = bound.getConnectInfo().getConnection();
+            boolean discardRequired = false;
+            try {
+                connection.rollback();
+            } catch (SQLException e) {
+                log.error("Rollback failed for consoleId={}, discarding connection", consoleId, e);
+                discardRequired = true;
+            }
+            if (!discardRequired) {
+                discardRequired = !restoreAutoCommit(connection);
+            }
+            if (discardRequired) {
+                discardQuietly(bound.getConnectInfo());
+                BOUND.remove(consoleId);
+                return TransactionOutcome.UNKNOWN;
+            }
+            bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
             BOUND.remove(consoleId);
-            return TransactionOutcome.UNKNOWN;
+            ConnectionPool.close(bound.getConnectInfo());
+            return TransactionOutcome.ROLLED_BACK;
         }
-        bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
-        BOUND.remove(consoleId);
-        ConnectionPool.close(bound.getConnectInfo());
-        return TransactionOutcome.ROLLED_BACK;
     }
 
     /**
@@ -239,38 +263,40 @@ public class ConsoleTransactionRegistry {
      * switch.
      */
     public static TransactionOutcome release(Long consoleId, boolean rollbackIfInTransaction) {
-        BoundTransaction bound = BOUND.remove(consoleId);
-        if (bound == null) {
-            return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction bound = BOUND.remove(consoleId);
+            if (bound == null) {
+                return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            }
+            TransactionOutcome outcome = TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            if (rollbackIfInTransaction && bound.getState() == TransactionState.IN_TRANSACTION) {
+                Connection connection = bound.getConnectInfo().getConnection();
+                boolean discardRequired = false;
+                try {
+                    connection.rollback();
+                    outcome = TransactionOutcome.ROLLED_BACK;
+                } catch (SQLException e) {
+                    log.error("Release-time rollback failed for consoleId={}, discarding connection", consoleId, e);
+                    discardRequired = true;
+                }
+                if (!discardRequired) {
+                    discardRequired = !restoreAutoCommit(connection);
+                }
+                if (discardRequired) {
+                    discardQuietly(bound.getConnectInfo());
+                    return TransactionOutcome.UNKNOWN;
+                }
+            } else {
+                // No open transaction or caller asked not to roll back; ensure auto-commit is on.
+                if (!restoreAutoCommit(bound.getConnectInfo().getConnection())) {
+                    discardQuietly(bound.getConnectInfo());
+                    return TransactionOutcome.UNKNOWN;
+                }
+            }
+            bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
+            ConnectionPool.close(bound.getConnectInfo());
+            return outcome;
         }
-        TransactionOutcome outcome = TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
-        if (rollbackIfInTransaction && bound.getState() == TransactionState.IN_TRANSACTION) {
-            Connection connection = bound.getConnectInfo().getConnection();
-            boolean discardRequired = false;
-            try {
-                connection.rollback();
-                outcome = TransactionOutcome.ROLLED_BACK;
-            } catch (SQLException e) {
-                log.error("Release-time rollback failed for consoleId={}, discarding connection", consoleId, e);
-                discardRequired = true;
-            }
-            if (!discardRequired) {
-                discardRequired = !restoreAutoCommit(connection);
-            }
-            if (discardRequired) {
-                discardQuietly(bound.getConnectInfo());
-                return TransactionOutcome.UNKNOWN;
-            }
-        } else {
-            // No open transaction or caller asked not to roll back; ensure auto-commit is on.
-            if (!restoreAutoCommit(bound.getConnectInfo().getConnection())) {
-                discardQuietly(bound.getConnectInfo());
-                return TransactionOutcome.UNKNOWN;
-            }
-        }
-        bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
-        ConnectionPool.close(bound.getConnectInfo());
-        return outcome;
     }
 
     /**
@@ -370,5 +396,10 @@ public class ConsoleTransactionRegistry {
             log.warn("Evicting idle bound transaction for consoleId={} after {}ms", consoleId, IDLE_TIMEOUT_MILLIS);
             release(consoleId, true);
         }
+    }
+
+    private static Object lockFor(Long consoleId) {
+        int index = consoleId == null ? 0 : Math.floorMod(consoleId.hashCode(), CONSOLE_LOCKS.length);
+        return CONSOLE_LOCKS[index];
     }
 }

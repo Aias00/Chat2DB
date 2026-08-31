@@ -30,6 +30,7 @@ import java.sql.SQLException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 
 @Slf4j
 @Service
@@ -155,20 +156,38 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse commitTransaction(DbConnectionContextRequest param) {
-        ConsoleTransactionRegistry.TransactionOutcome outcome =
-                ConsoleTransactionRegistry.commit(param.getConsoleId());
-        TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
-        response.setOutcome(outcome.name());
-        return response;
+        try {
+            return ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+                validateTransactionRequest(param);
+                ConsoleTransactionRegistry.TransactionOutcome outcome =
+                        ConsoleTransactionRegistry.commit(param.getConsoleId());
+                TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+                response.setOutcome(outcome.name());
+                return response;
+            });
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("connection error", null, e);
+        }
     }
 
     @Override
     public TransactionStateResponse rollbackTransaction(DbConnectionContextRequest param) {
-        ConsoleTransactionRegistry.TransactionOutcome outcome =
-                ConsoleTransactionRegistry.rollback(param.getConsoleId());
-        TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
-        response.setOutcome(outcome.name());
-        return response;
+        try {
+            return ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+                validateTransactionRequest(param);
+                ConsoleTransactionRegistry.TransactionOutcome outcome =
+                        ConsoleTransactionRegistry.rollback(param.getConsoleId());
+                TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+                response.setOutcome(outcome.name());
+                return response;
+            });
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("connection error", null, e);
+        }
     }
 
     @Override
@@ -179,12 +198,27 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public void releaseBoundConnection(DbConnectionContextRequest param) {
-        ConsoleTransactionRegistry.release(param.getConsoleId(), true);
+        try {
+            ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+                validateTransactionRequest(param);
+                ConsoleTransactionRegistry.release(param.getConsoleId(), true);
+                return null;
+            });
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("connection error", null, e);
+        }
     }
 
     @Override
     public boolean isInTransaction(Long consoleId) {
         return ConsoleTransactionRegistry.isInTransaction(consoleId);
+    }
+
+    @Override
+    public <T> T withConsoleTransactionLock(Long consoleId, Callable<T> action) throws Exception {
+        return ConsoleTransactionRegistry.withConsoleLock(consoleId, action);
     }
 
     @Override
@@ -295,6 +329,18 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             throw new BusinessException("datasource.not.found");
         }
         return connectionContextConverter.datasource2connectInfo(param, dataSource, dataSource.getUrl());
+    }
+
+    private void validateTransactionRequest(DbConnectionContextRequest param) {
+        WorkspaceDataSource dataSource = workspaceDataSourceService.queryDisplayDataSourceById(param.getDataSourceId(), false);
+        if (dataSource == null) {
+            log.info("query datasource failed:{}", param.getDataSourceId());
+            throw new BusinessException("datasource.not.found");
+        }
+        Long boundDataSourceId = ConsoleTransactionRegistry.getBoundDataSourceId(param.getConsoleId());
+        if (boundDataSourceId != null && !Objects.equals(boundDataSourceId, param.getDataSourceId())) {
+            throw new BusinessException("transaction.datasource.mismatch");
+        }
     }
 
     private ConnectInfo buildMcpConnectInfo(McpConnectionContextRequest param) {
