@@ -66,6 +66,7 @@ export interface AccountCommand extends AccountBaseParams {
   scope?: AccountPrivilegeScope;
   databaseName?: string;
   tableName?: string;
+  columnList?: string[];
   privileges?: AccountPrivilege[];
   grantOption?: boolean;
   password?: string;

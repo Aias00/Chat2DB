@@ -78,6 +78,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const watchedScope = Form.useWatch('scope', form);
   const watchedDatabaseName = Form.useWatch('databaseName', form);
   const watchedTableName = Form.useWatch('tableName', form);
+  const watchedColumnList = Form.useWatch('columnList', form);
   const watchedPrivileges = Form.useWatch('privileges', form);
   const watchedGrantOption = Form.useWatch('grantOption', form);
   const watchedActionType = Form.useWatch('actionType', form);
@@ -239,7 +240,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     if (!dataSourceId) {
       return;
     }
-    if (watchedScope !== AccountPrivilegeScope.TABLE) {
+    if (watchedScope !== AccountPrivilegeScope.TABLE && watchedScope !== AccountPrivilegeScope.COLUMN) {
       form.setFieldsValue({ tableName: undefined });
       setTableOptions([]);
       return;
@@ -347,6 +348,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     watchedScope,
     watchedDatabaseName,
     watchedTableName,
+    watchedColumnList,
     watchedPrivileges,
     watchedGrantOption,
   ]);
@@ -693,7 +695,10 @@ function isPreviewReady(command: AccountCommand | null): command is AccountComma
   if (command.scope !== AccountPrivilegeScope.GLOBAL && !command.databaseName) {
     return false;
   }
-  if (command.scope === AccountPrivilegeScope.TABLE && !command.tableName) {
+  if ((command.scope === AccountPrivilegeScope.TABLE || command.scope === AccountPrivilegeScope.COLUMN) && !command.tableName) {
+    return false;
+  }
+  if (command.scope === AccountPrivilegeScope.COLUMN && !command.columnList?.length) {
     return false;
   }
   return true;
