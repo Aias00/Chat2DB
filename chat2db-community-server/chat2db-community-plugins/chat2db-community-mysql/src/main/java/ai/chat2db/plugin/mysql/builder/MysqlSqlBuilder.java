@@ -52,6 +52,11 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_UNDEFINED;
 
 public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
+    private static final Set<String> INDEX_PREFIX_LENGTH_TYPES = Set.of(
+            "CHAR", "VARCHAR", "BINARY", "VARBINARY",
+            "TINYTEXT", "TEXT", "MEDIUMTEXT", "LONGTEXT",
+            "TINYBLOB", "BLOB", "MEDIUMBLOB", "LONGBLOB");
+
     @Override
     public String quoteIdentifier(String identifier) {
         return quoteMysqlIdentifier(identifier);
@@ -100,6 +105,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             if (mysqlIndexTypeEnum == null) {
                 continue;
             }
+            validateIndexPrefixLengths(table, tableIndex);
             script.append(SQLConstants.TAB).append(mysqlIndexTypeEnum.buildIndexScript(tableIndex)).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
 
@@ -202,6 +208,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                 if (mysqlIndexTypeEnum == null) {
                     continue;
                 }
+                validateIndexPrefixLengths(newTable, tableIndex);
                 script.append(SQLConstants.TAB).append(mysqlIndexTypeEnum.buildModifyIndex(tableIndex)).append(SQLConstants.COMMA_LINE_SEPARATOR);
             }
         }
@@ -227,6 +234,55 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             }
         }
         return PREVIOUS_COLUMN_NOT_FOUND;
+    }
+
+    private void validateIndexPrefixLengths(Table table, TableIndex tableIndex) {
+        if (table == null || CollectionUtils.isEmpty(table.getColumnList())
+                || CollectionUtils.isEmpty(tableIndex.getColumnList())) {
+            return;
+        }
+        for (TableIndexColumn indexColumn : tableIndex.getColumnList()) {
+            Long prefixLength = indexColumn.getSubPart();
+            if (prefixLength == null || prefixLength <= 0) {
+                continue;
+            }
+            TableColumn column = findColumn(table.getColumnList(), indexColumn.getColumnName());
+            if (column == null) {
+                throw new IllegalArgumentException("Invalid MySQL index prefix length: column not found "
+                        + indexColumn.getColumnName());
+            }
+            String columnType = baseColumnType(column.getColumnType());
+            if (!INDEX_PREFIX_LENGTH_TYPES.contains(columnType)) {
+                throw new IllegalArgumentException("Invalid MySQL index prefix length for column "
+                        + indexColumn.getColumnName() + " type " + column.getColumnType());
+            }
+            Integer columnLength = column.getColumnSize();
+            if (columnLength != null && prefixLength > columnLength) {
+                throw new IllegalArgumentException("Invalid MySQL index prefix length for column "
+                        + indexColumn.getColumnName() + ": " + prefixLength + " exceeds " + columnLength);
+            }
+        }
+    }
+
+    private TableColumn findColumn(List<TableColumn> columnList, String columnName) {
+        return columnList.stream()
+                .filter(column -> StringUtils.equalsIgnoreCase(column.getName(), columnName)
+                        || StringUtils.equalsIgnoreCase(column.getOldName(), columnName))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String baseColumnType(String columnType) {
+        String normalized = StringUtils.trimToEmpty(columnType).toUpperCase(Locale.ROOT);
+        int lengthStart = normalized.indexOf('(');
+        if (lengthStart >= 0) {
+            normalized = normalized.substring(0, lengthStart);
+        }
+        int spaceStart = normalized.indexOf(' ');
+        if (spaceStart >= 0) {
+            normalized = normalized.substring(0, spaceStart);
+        }
+        return normalized.trim();
     }
 
     @Override

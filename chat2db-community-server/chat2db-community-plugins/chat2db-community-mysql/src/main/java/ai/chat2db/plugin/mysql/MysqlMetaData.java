@@ -372,7 +372,8 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
         tableIndexColumn.setOrdinalPosition(resultSet.getShort(FIELD_SEQ_IN_INDEX));
         tableIndexColumn.setCollation(resultSet.getString(FIELD_COLLATION));
         tableIndexColumn.setCardinality(resultSet.getLong(FIELD_CARDINALITY));
-        tableIndexColumn.setSubPart(resultSet.getLong(FIELD_SUB_PART));
+        Long subPart = resultSet.getLong(FIELD_SUB_PART);
+        tableIndexColumn.setSubPart(resultSet.wasNull() ? null : subPart);
         String collation = resultSet.getString(FIELD_COLLATION);
         if (INDEX_COLLATION_ASC.equalsIgnoreCase(collation)) {
             tableIndexColumn.setAscOrDesc(INDEX_ASC);

@@ -21,6 +21,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MysqlSqlBuilderTest {
@@ -211,6 +212,91 @@ class MysqlSqlBuilderTest {
         assertEquals("ALTER TABLE `enterprise_gateway_dev`.`access_control_approval_process`\n"
                 + "\tADD INDEX `idx_column1` (`parent_id` ASC) USING BTREE,\n"
                 + "\tADD INDEX `idx_column2` (`id` ASC) USING BTREE;", sql);
+    }
+
+    @Test
+    void shouldRejectIndexPrefixLengthLongerThanColumnLength() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table oldTable = mysqlTable(List.of(mysqlVarcharColumn("name", "name", null)));
+        Table newTable = Table.builder()
+                .databaseName("test_db")
+                .name("sample_table")
+                .columnList(List.of(mysqlVarcharColumn("name", "name", null)))
+                .indexList(List.of(TableIndex.builder()
+                        .name("idx_name")
+                        .oldName("idx_name")
+                        .type("Normal")
+                        .editStatus(EditStatusEnum.ADD.name())
+                        .columnList(List.of(TableIndexColumn.builder()
+                                .columnName("name")
+                                .subPart(256L)
+                                .build()))
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+        assertTrue(error.getMessage().contains("prefix length"), error.getMessage());
+    }
+
+    @Test
+    void shouldRejectIndexPrefixLengthForUnsupportedColumnType() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        TableColumn idColumn = TableColumn.builder()
+                .name("id")
+                .oldName("id")
+                .columnType("INT")
+                .editStatus(null)
+                .build();
+        Table oldTable = mysqlTable(List.of(idColumn));
+        Table newTable = Table.builder()
+                .databaseName("test_db")
+                .name("sample_table")
+                .columnList(List.of(idColumn))
+                .indexList(List.of(TableIndex.builder()
+                        .name("idx_id")
+                        .oldName("idx_id")
+                        .type("Normal")
+                        .editStatus(EditStatusEnum.ADD.name())
+                        .columnList(List.of(TableIndexColumn.builder()
+                                .columnName("id")
+                                .subPart(1L)
+                                .build()))
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+        assertTrue(error.getMessage().contains("prefix length"), error.getMessage());
+    }
+
+    @Test
+    void shouldClearIndexPrefixLengthWhenSubPartIsNull() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table oldTable = mysqlTable(List.of(mysqlVarcharColumn("name", "name", null)));
+        Table newTable = Table.builder()
+                .databaseName("test_db")
+                .name("sample_table")
+                .columnList(List.of(mysqlVarcharColumn("name", "name", null)))
+                .indexList(List.of(TableIndex.builder()
+                        .name("idx_name")
+                        .oldName("idx_name")
+                        .type("Normal")
+                        .method("BTREE")
+                        .editStatus(EditStatusEnum.MODIFY.name())
+                        .columnList(List.of(TableIndexColumn.builder()
+                                .columnName("name")
+                                .ascOrDesc("ASC")
+                                .subPart(null)
+                                .build()))
+                        .build()))
+                .build();
+
+        String sql = builder.ddl().table().buildAlterTable(oldTable, newTable);
+
+        assertEquals("ALTER TABLE `test_db`.`sample_table`\n"
+                + "\tDROP INDEX `idx_name`,\n"
+                + "ADD INDEX `idx_name` (`name` ASC) USING BTREE;", sql);
     }
 
     @Test
