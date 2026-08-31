@@ -952,7 +952,7 @@ export const useCreateRightClickMenu = () => {
                 dataSourceId: ep.dataSourceId,
                 databaseName: ep.databaseName,
                 schemaName: ep.schemaName,
-                tableName: fnName,
+                functionName: fnName,
               }).then(() => {
                 handleLoadData();
               });
@@ -986,7 +986,7 @@ export const useCreateRightClickMenu = () => {
                 dataSourceId: ep.dataSourceId,
                 databaseName: ep.databaseName,
                 schemaName: ep.schemaName,
-                tableName: procName,
+                procedureName: procName,
               }).then(() => {
                 handleLoadData();
               });

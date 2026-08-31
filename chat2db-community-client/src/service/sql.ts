@@ -99,6 +99,20 @@ export interface ITableParams {
   schemaName?: string;
 }
 
+export interface IFunctionDeleteParams {
+  functionName: string;
+  dataSourceId: number;
+  databaseName: string;
+  schemaName?: string;
+}
+
+export interface IProcedureDeleteParams {
+  procedureName: string;
+  dataSourceId: number;
+  databaseName: string;
+  schemaName?: string;
+}
+
 export interface IColumn {
   name: string;
   dataType: string;
@@ -423,10 +437,10 @@ const getCreateSchemaSql = createRequest<
 const truncateTable = createRequest<ITableParams, void>('/api/rdb/table/truncate', { method: 'post' });
 
 // Delete function
-const deleteFunction = createRequest<ITableParams, void>('/api/rdb/function/delete', { method: 'post' });
+const deleteFunction = createRequest<IFunctionDeleteParams, void>('/api/rdb/function/delete', { method: 'post' });
 
 // Delete procedure
-const deleteProcedure = createRequest<ITableParams, void>('/api/rdb/procedure/delete', { method: 'post' });
+const deleteProcedure = createRequest<IProcedureDeleteParams, void>('/api/rdb/procedure/delete', { method: 'post' });
 
 export interface ICopyTableParams extends ITableParams {
   copyData: boolean;
