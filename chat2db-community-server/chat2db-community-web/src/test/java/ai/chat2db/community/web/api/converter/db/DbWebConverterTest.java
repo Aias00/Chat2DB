@@ -2,10 +2,13 @@ package ai.chat2db.community.web.api.converter.db;
 
 import ai.chat2db.community.domain.api.model.result.ExecuteResponse;
 import ai.chat2db.community.domain.api.model.result.ResultCell;
+import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
+import ai.chat2db.community.web.api.model.request.db.AccountCommandRequest;
 import ai.chat2db.community.web.api.model.response.db.ExecuteResultResponse;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
+import java.lang.reflect.Field;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,5 +40,23 @@ class DbWebConverterTest {
         assertEquals("50000+", response.getFuzzyTotal());
         assertEquals(Boolean.TRUE, response.getHasNextPage());
         assertEquals(1, response.getResultSetId());
+    }
+
+    @Test
+    void accountCommandRequestPreservesObjectNameForRoutineGrants() throws Exception {
+        Field objectName = AccountCommandRequest.class.getDeclaredField("objectName");
+        objectName.setAccessible(true);
+        AccountCommandRequest request = new AccountCommandRequest();
+        request.setActionType(ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum.GRANT_PRIVILEGE);
+        request.setUser("runner");
+        request.setHost("%");
+        request.setScope(ai.chat2db.community.domain.api.enums.plugin.PrivilegeScopeEnum.FUNCTION);
+        request.setDatabaseName("app");
+        request.setPrivileges(List.of("EXECUTE"));
+        objectName.set(request, "calculate_total");
+
+        AccountOperationRequest command = converter.request2command(request);
+
+        assertEquals("calculate_total", command.getObjectName());
     }
 }

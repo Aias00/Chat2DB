@@ -30,6 +30,7 @@ export enum AccountPrivilege {
   INDEX = 'INDEX',
   REFERENCES = 'REFERENCES',
   EXECUTE = 'EXECUTE',
+  ALTER_ROUTINE = 'ALTER_ROUTINE',
   SHOW_VIEW = 'SHOW_VIEW',
   TRIGGER = 'TRIGGER',
   EVENT = 'EVENT',
@@ -67,6 +68,7 @@ export interface AccountCommand extends AccountBaseParams {
   scope?: AccountPrivilegeScope;
   databaseName?: string;
   tableName?: string;
+  objectName?: string;
   privileges?: AccountPrivilege[];
   grantOption?: boolean;
   password?: string;

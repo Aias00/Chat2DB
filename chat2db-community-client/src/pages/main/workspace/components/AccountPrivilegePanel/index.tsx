@@ -78,6 +78,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const watchedScope = Form.useWatch('scope', form);
   const watchedDatabaseName = Form.useWatch('databaseName', form);
   const watchedTableName = Form.useWatch('tableName', form);
+  const watchedObjectName = Form.useWatch('objectName', form);
   const watchedPrivileges = Form.useWatch('privileges', form);
   const watchedGrantOption = Form.useWatch('grantOption', form);
   const watchedActionType = Form.useWatch('actionType', form);
@@ -349,6 +350,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     watchedScope,
     watchedDatabaseName,
     watchedTableName,
+    watchedObjectName,
     watchedPrivileges,
     watchedGrantOption,
   ]);
@@ -693,6 +695,12 @@ function isPreviewReady(command: AccountCommand | null): command is AccountComma
     return false;
   }
   if (command.scope === AccountPrivilegeScope.TABLE && !command.tableName) {
+    return false;
+  }
+  if (
+    (command.scope === AccountPrivilegeScope.FUNCTION || command.scope === AccountPrivilegeScope.PROCEDURE) &&
+    !command.objectName
+  ) {
     return false;
   }
   return true;
