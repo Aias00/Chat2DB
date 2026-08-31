@@ -21,7 +21,7 @@ public class AccountOperationRequest {
     private String previewToken;
     private String roleName;
     private String roleHost;
-    private List<String> roleList;
+    private List<AccountInfo> roleList;
     private Boolean withAdminOption;
     private String defaultRoleMode;
 }

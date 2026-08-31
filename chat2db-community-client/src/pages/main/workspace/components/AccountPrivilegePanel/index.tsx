@@ -9,6 +9,7 @@ import accountAdminService, {
   AccountPrivilege,
   AccountPrivilegeScope,
   formatAccountExecuteMessage,
+  type Account,
   type AccountCapability,
   type AccountCommand,
   type AccountExecute,
@@ -52,10 +53,12 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const [executeLoading, setExecuteLoading] = useState(false);
   const [databaseOptions, setDatabaseOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [tableOptions, setTableOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [accountOptions, setAccountOptions] = useState<Account[]>([]);
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [form] = Form.useForm();
   const [accountForm] = Form.useForm();
+  const [roleForm] = Form.useForm();
   const previewRequestRef = useRef(0);
   const updateTreeNodeDataByDetail = useTreeStore((state) => state.updateTreeNodeDataByDetail);
   const accountLockSupported = capability?.accountLockSupported !== false;
@@ -85,8 +88,21 @@ const AccountPrivilegePanel = memo((props: IProps) => {
       ? {
           user: uniqueData.user,
           host: uniqueData.host,
+          role: uniqueData.role,
+          defaultRoles: uniqueData.defaultRoles,
         }
       : null;
+  const roleManagementSupported = capability?.roleManagementSupported === true;
+  const roleOptions = useMemo(
+    () =>
+      accountOptions
+        .filter((account) => account.role)
+        .map((account) => ({
+          label: account.displayName,
+          value: roleValue(account),
+        })),
+    [accountOptions],
+  );
 
   const resetPreview = () => {
     setPreviewState(null);
@@ -100,6 +116,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     if (!dataSourceId) {
       return;
     }
+    loadAccounts();
     updateTreeNodeDataByDetail({
       treeNodeType: TreeNodeType.DATABASE_ACCOUNTS,
       dataSourceId,
@@ -170,12 +187,30 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     });
   };
 
+  const loadAccounts = () => {
+    if (!dataSourceId) {
+      setAccountOptions([]);
+      return Promise.resolve([]);
+    }
+    return accountAdminService
+      .list({ dataSourceId })
+      .then((accounts) => {
+        setAccountOptions(accounts || []);
+        return accounts || [];
+      })
+      .catch(() => {
+        setAccountOptions([]);
+        return [];
+      });
+  };
+
   useEffect(() => {
     if (!dataSourceId) {
       resetPreview();
       return;
     }
     loadCapability();
+    loadAccounts();
     loadDatabases();
     form.setFieldsValue({
       actionType: AccountActionType.GRANT_PRIVILEGE,
@@ -380,6 +415,18 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     });
   }, [accountModalOpen, selectedAccount?.user, selectedAccount?.host]);
 
+  useEffect(() => {
+    if (!selectedAccount || selectedAccount.role || !roleOptions.length) {
+      return;
+    }
+    roleForm.setFieldsValue({
+      roleValue: roleOptions[0].value,
+      withAdminOption: false,
+      defaultRoleMode: 'SELECTED',
+      roleValues: (selectedAccount.defaultRoles || []).map(roleValue),
+    });
+  }, [selectedAccount?.user, selectedAccount?.host, selectedAccount?.role, roleOptions]);
+
   const submitAccountCommand = () => {
     if (!accountActionType) {
       return Promise.resolve();
@@ -408,6 +455,45 @@ const AccountPrivilegePanel = memo((props: IProps) => {
       user: selectedAccount.user,
       host: selectedAccount.host,
       actionType,
+    });
+  };
+
+  const submitRoleCommand = (actionType: AccountActionType) => {
+    if (!dataSourceId || !selectedAccount) {
+      return Promise.resolve();
+    }
+    return roleForm.validateFields().then((values) => {
+      const selectedRole = parseRoleValue(values.roleValue);
+      const command: AccountCommand = {
+        dataSourceId,
+        user: selectedAccount.user,
+        host: selectedAccount.host,
+        actionType,
+        roleName: selectedRole?.user,
+        roleHost: selectedRole?.host,
+        withAdminOption: values.withAdminOption,
+      };
+      resetConfirmState();
+      return previewAndConfirm(command);
+    });
+  };
+
+  const submitDefaultRoleCommand = () => {
+    if (!dataSourceId || !selectedAccount) {
+      return Promise.resolve();
+    }
+    return roleForm.validateFields().then((values) => {
+      const mode = values.defaultRoleMode || 'SELECTED';
+      const command: AccountCommand = {
+        dataSourceId,
+        user: selectedAccount.user,
+        host: selectedAccount.host,
+        actionType: AccountActionType.SET_DEFAULT_ROLE,
+        defaultRoleMode: mode,
+        roleList: mode === 'SELECTED' ? (values.roleValues || []).map(parseRoleValue).filter(isAccount) : [],
+      };
+      resetConfirmState();
+      return previewAndConfirm(command);
     });
   };
 
@@ -443,7 +529,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
           <section className={styles.editorPane}>
             <Space className={styles.accountActions}>
               <Button
-                disabled={!selectedAccount}
+                disabled={!selectedAccount || selectedAccount.role}
                 onClick={() => openAccountModal(AccountActionType.ALTER_PASSWORD)}
               >
                 {i18n('workspace.databaseAccount.changePassword')}
@@ -456,7 +542,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                 }
               >
                 <Button
-                  disabled={!selectedAccount || !accountLockSupported}
+                  disabled={!selectedAccount || selectedAccount.role || !accountLockSupported}
                   icon={<LockOutlined />}
                   onClick={() => handleSelectedAccountCommand(AccountActionType.LOCK_ACCOUNT)}
                 />
@@ -469,17 +555,23 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                 }
               >
                 <Button
-                  disabled={!selectedAccount || !accountLockSupported}
+                  disabled={!selectedAccount || selectedAccount.role || !accountLockSupported}
                   icon={<UnlockOutlined />}
                   onClick={() => handleSelectedAccountCommand(AccountActionType.UNLOCK_ACCOUNT)}
                 />
               </Tooltip>
-              <Tooltip title={i18n('workspace.databaseAccount.deleteUser')}>
+              <Tooltip
+                title={
+                  selectedAccount.role ? i18n('workspace.databaseAccount.deleteRole') : i18n('workspace.databaseAccount.deleteUser')
+                }
+              >
                 <Button
                   danger
                   disabled={!selectedAccount}
                   icon={<DeleteOutlined />}
-                  onClick={() => handleSelectedAccountCommand(AccountActionType.DROP_USER)}
+                  onClick={() =>
+                    handleSelectedAccountCommand(selectedAccount.role ? AccountActionType.DROP_ROLE : AccountActionType.DROP_USER)
+                  }
                 />
               </Tooltip>
             </Space>
@@ -550,6 +642,48 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                 </Form.Item>
               )}
             </Form>
+            {roleManagementSupported && !selectedAccount.role && (
+              <Form form={roleForm} layout="vertical" className={styles.roleForm}>
+                <Form.Item name="roleValue" label={i18n('workspace.databaseAccount.role')} rules={[{ required: true }]}>
+                  <Select
+                    showSearch
+                    options={roleOptions}
+                    optionFilterProp="label"
+                    placeholder={i18n('workspace.databaseAccount.selectRole')}
+                  />
+                </Form.Item>
+                <Form.Item name="withAdminOption" valuePropName="checked">
+                  <Checkbox>{i18n('workspace.databaseAccount.withAdminOption')}</Checkbox>
+                </Form.Item>
+                <Space wrap>
+                  <Button disabled={!roleOptions.length} onClick={() => submitRoleCommand(AccountActionType.GRANT_ROLE)}>
+                    {i18n('workspace.databaseAccount.grantRole')}
+                  </Button>
+                  <Button disabled={!roleOptions.length} onClick={() => submitRoleCommand(AccountActionType.REVOKE_ROLE)}>
+                    {i18n('workspace.databaseAccount.revokeRole')}
+                  </Button>
+                </Space>
+                <Form.Item
+                  name="defaultRoleMode"
+                  label={i18n('workspace.databaseAccount.defaultRole')}
+                  rules={[{ required: true }]}
+                >
+                  <Select
+                    options={[
+                      { label: i18n('workspace.databaseAccount.defaultRoleSelected'), value: 'SELECTED' },
+                      { label: i18n('workspace.databaseAccount.defaultRoleAll'), value: 'ALL' },
+                      { label: i18n('workspace.databaseAccount.defaultRoleNone'), value: 'NONE' },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item name="roleValues" label={i18n('workspace.databaseAccount.defaultRoles')}>
+                  <Select mode="multiple" allowClear showSearch options={roleOptions} optionFilterProp="label" />
+                </Form.Item>
+                <Button disabled={!roleOptions.length} onClick={submitDefaultRoleCommand}>
+                  {i18n('workspace.databaseAccount.setDefaultRole')}
+                </Button>
+              </Form>
+            )}
             <section className={styles.previewSection}>
               <div className={styles.previewHeader}>
                 <span>{i18n('workspace.databaseAccount.previewSql')}</span>
@@ -658,9 +792,30 @@ function accountActionTitle(actionType: AccountActionType) {
       return i18n('workspace.databaseAccount.unlockAccount');
     case AccountActionType.DROP_USER:
       return i18n('workspace.databaseAccount.deleteUser');
+    case AccountActionType.DROP_ROLE:
+      return i18n('workspace.databaseAccount.deleteRole');
     default:
       return i18n('workspace.databaseAccount.userOperation');
   }
+}
+
+function roleValue(account: Account) {
+  return JSON.stringify({ user: account.user, host: account.host, displayName: account.displayName, role: true });
+}
+
+function parseRoleValue(value?: string): Account | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(value) as Account;
+  } catch {
+    return null;
+  }
+}
+
+function isAccount(account: Account | null): account is Account {
+  return !!account;
 }
 
 export default AccountPrivilegePanel;

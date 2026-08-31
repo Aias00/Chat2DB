@@ -1,7 +1,9 @@
 package ai.chat2db.plugin.mysql.account;
 
 import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
+import ai.chat2db.community.domain.api.enums.plugin.DefaultRoleModeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.PrivilegeScopeEnum;
+import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import org.junit.jupiter.api.Test;
 
@@ -95,11 +97,41 @@ class MysqlAccountSqlBuilderTest {
                 MysqlAccountSqlBuilder.buildSql(command));
     }
 
+    @Test
+    void revokeRoleUsesRoleAccountSyntaxIncludingHost() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.REVOKE_ROLE);
+        command.setRoleName("reporting'role");
+        command.setRoleHost("role\\host");
+
+        assertEquals(
+                "REVOKE 'reporting''role'@'role\\\\host' FROM 'alice''s'@'10.0.%'",
+                MysqlAccountSqlBuilder.buildSql(command));
+    }
+
+    @Test
+    void setSelectedDefaultRolesKeepsEachRoleHost() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.SET_DEFAULT_ROLE);
+        command.setDefaultRoleMode(DefaultRoleModeEnum.SELECTED.name());
+        command.setRoleList(List.of(role("reader", "%"), role("writer", "10.%")));
+
+        assertEquals(
+                "SET DEFAULT ROLE 'reader'@'%', 'writer'@'10.%' TO 'alice''s'@'10.0.%'",
+                MysqlAccountSqlBuilder.buildSql(command));
+    }
+
     private AccountOperationRequest base(AccountActionTypeEnum actionType) {
         AccountOperationRequest command = new AccountOperationRequest();
         command.setActionType(actionType.name());
         command.setUser("alice's");
         command.setHost("10.0.%");
         return command;
+    }
+
+    private AccountInfo role(String user, String host) {
+        AccountInfo role = new AccountInfo();
+        role.setUser(user);
+        role.setHost(host);
+        role.setRole(Boolean.TRUE);
+        return role;
     }
 }

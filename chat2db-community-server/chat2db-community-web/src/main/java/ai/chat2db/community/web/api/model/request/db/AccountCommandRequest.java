@@ -2,6 +2,7 @@ package ai.chat2db.community.web.api.model.request.db;
 
 import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.PrivilegeScopeEnum;
+import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -20,7 +21,7 @@ public class AccountCommandRequest extends AccountRequest {
     private String previewToken;
     private String roleName;
     private String roleHost;
-    private List<String> roleList;
+    private List<AccountInfo> roleList;
     private Boolean withAdminOption;
     private String defaultRoleMode;
 }

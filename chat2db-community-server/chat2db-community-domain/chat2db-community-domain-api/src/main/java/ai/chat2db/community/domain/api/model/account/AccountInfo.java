@@ -12,5 +12,5 @@ public class AccountInfo {
     private String authenticationPlugin;
     private Boolean locked;
     private Boolean role;
-    private List<String> defaultRoles;
+    private List<AccountInfo> defaultRoles;
 }

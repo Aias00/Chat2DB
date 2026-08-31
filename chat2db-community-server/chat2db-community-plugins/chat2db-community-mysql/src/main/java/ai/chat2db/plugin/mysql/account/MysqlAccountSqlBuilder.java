@@ -96,7 +96,7 @@ class MysqlAccountSqlBuilder {
                             throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
                         }
                         sb.append(command.getRoleList().stream()
-                                .map(role -> account(role, command.getRoleHost()))
+                                .map(role -> account(role.getUser(), role.getHost()))
                                 .collect(Collectors.joining(", ")));
                     }
                 }

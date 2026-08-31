@@ -406,6 +406,8 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
             ...extraParams,
             user: account.user,
             host: account.host,
+            role: account.role,
+            defaultRoles: account.defaultRoles,
             popoverContent: account.displayName,
           },
         }));

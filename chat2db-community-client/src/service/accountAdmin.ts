@@ -52,7 +52,7 @@ export interface Account {
   authenticationPlugin?: string;
   locked?: boolean;
   role?: boolean;
-  defaultRoles?: string[];
+  defaultRoles?: Account[];
 }
 
 export interface AccountCapability {
@@ -64,6 +64,7 @@ export interface AccountCapability {
   accountListReadable: boolean;
   accountLockSupported: boolean;
   roleManagementSupported?: boolean;
+  activeRoles?: Account[];
   editablePrivileges: AccountPrivilege[];
   message?: string;
 }
@@ -79,7 +80,7 @@ export interface AccountCommand extends AccountBaseParams {
   previewToken?: string;
   roleName?: string;
   roleHost?: string;
-  roleList?: string[];
+  roleList?: Account[];
   withAdminOption?: boolean;
   defaultRoleMode?: string;
 }
