@@ -2,8 +2,8 @@ package ai.chat2db.community.domain.core.impl.task.imports.excel;
 
 import ai.chat2db.community.domain.core.impl.task.imports.BaseImporter;
 import ai.chat2db.community.domain.core.impl.task.imports.ImportSqlExecutor;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.domain.api.model.task.ImportTaskSpec;
-import ai.chat2db.community.domain.api.model.task.TaskEventCode;
 import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
 import ai.chat2db.spi.ISqlBuilder;
 import ai.chat2db.spi.IValueProcessor;
@@ -19,8 +19,12 @@ import com.alibaba.excel.support.ExcelTypeEnum;
 import com.alibaba.excel.util.ConverterUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.*;
 
 
@@ -30,16 +34,14 @@ public abstract class BaseExcelImporter extends BaseImporter {
     protected void doImportData(ImportTaskSpec spec, TaskExecutionContext context, List<TableColumn> columns) {
         context.checkCancelled();
         ExcelTypeEnum excelType = getExcelType();
-        NoModelDataListener noModelDataListener = new NoModelDataListener(spec, context, columns);
         Map<String, Object> options = spec.getImportOptions() == null ? Map.of() : spec.getImportOptions();
-        String sheetName = (String) options.get("sheetName");
-        int startRow = numberOption(options, "startRow", 0);
-        int headerRow = numberOption(options, "headerRow", 1);
-        int rowsBeforeData = headerRow > 0 ? headerRow : Math.max(0, startRow);
+        ImportOptions importOptions = importOptions(spec.getSourceFile(), excelType, options);
+        NoModelDataListener noModelDataListener = new NoModelDataListener(spec, context, columns,
+                importOptions.firstDataRowIndex());
         EasyExcel.read(new File(spec.getSourceFile()), noModelDataListener)
                 .excelType(excelType)
-                .sheet(StringUtils.isBlank(sheetName) ? null : sheetName)
-                .headRowNumber(rowsBeforeData)
+                .sheet(importOptions.sheetName())
+                .headRowNumber(importOptions.rowsBeforeData())
                 .doRead();
         context.checkCancelled();
 
@@ -50,6 +52,50 @@ public abstract class BaseExcelImporter extends BaseImporter {
     private static int numberOption(Map<String, Object> options, String key, int defaultValue) {
         Object value = options.get(key);
         return value instanceof Number number ? Math.max(0, number.intValue()) : defaultValue;
+    }
+
+    private static ImportOptions importOptions(String sourceFile, ExcelTypeEnum excelType, Map<String, Object> options) {
+        String requestedSheetName = (String) options.get("sheetName");
+        int startRow = numberOption(options, "startRow", 0);
+        int headerRow = numberOption(options, "headerRow", 1);
+        String sheetName = resolveVisibleSheetName(sourceFile, excelType, requestedSheetName);
+        int rowsBeforeData = headerRow > 0 ? headerRow : 0;
+        int firstDataRowIndex = headerRow > 0 ? Math.max(headerRow, startRow) : startRow;
+        return new ImportOptions(sheetName, rowsBeforeData, firstDataRowIndex);
+    }
+
+    private static String resolveVisibleSheetName(String sourceFile, ExcelTypeEnum excelType, String requestedSheetName) {
+        if (excelType == ExcelTypeEnum.CSV) {
+            return StringUtils.isBlank(requestedSheetName) ? null : requestedSheetName;
+        }
+        try (FileInputStream input = new FileInputStream(sourceFile);
+                Workbook workbook = WorkbookFactory.create(input)) {
+            if (StringUtils.isNotBlank(requestedSheetName)) {
+                Sheet sheet = workbook.getSheet(requestedSheetName);
+                if (sheet == null) {
+                    throw new BusinessException("import.excel.sheetMissing", new Object[] {requestedSheetName});
+                }
+                int index = workbook.getSheetIndex(sheet);
+                if (workbook.isSheetHidden(index) || workbook.isSheetVeryHidden(index)) {
+                    throw new BusinessException("import.excel.noVisibleSheet");
+                }
+                return requestedSheetName;
+            }
+            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                if (!workbook.isSheetHidden(i) && !workbook.isSheetVeryHidden(i)) {
+                    return workbook.getSheetName(i);
+                }
+            }
+            throw new BusinessException("import.excel.noVisibleSheet");
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("import.excel.unreadable",
+                    new Object[] {new File(sourceFile).getName(), e.getMessage()}, e);
+        }
+    }
+
+    private record ImportOptions(String sheetName, int rowsBeforeData, int firstDataRowIndex) {
     }
 
 
@@ -88,8 +134,10 @@ public abstract class BaseExcelImporter extends BaseImporter {
 
         private final ImportSqlExecutor sqlExecutor;
 
+        private final int firstDataRowIndex;
+
         public NoModelDataListener(ImportTaskSpec spec, TaskExecutionContext taskContext,
-                List<TableColumn> columns) {
+                List<TableColumn> columns, int firstDataRowIndex) {
             this.spec = spec;
             this.columns = columns;
             this.taskContext = taskContext;
@@ -97,6 +145,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             this.connectInfo = Chat2DBContext.getConnectInfo();
             this.sqlBuilder = Chat2DBContext.getSqlBuilder();
             this.sqlExecutor = new ImportSqlExecutor(taskContext);
+            this.firstDataRowIndex = firstDataRowIndex;
         }
 
 
@@ -137,6 +186,9 @@ public abstract class BaseExcelImporter extends BaseImporter {
         @Override
         public void invoke(Map<Integer, String> data, AnalysisContext context) {
             this.taskContext.checkCancelled();
+            if (context.readRowHolder().getRowIndex() < firstDataRowIndex) {
+                return;
+            }
             if (data == null || data.isEmpty()) {
                 skippedCount++;
                 return;
@@ -249,20 +301,8 @@ public abstract class BaseExcelImporter extends BaseImporter {
         private void executeBatchInsert() {
             taskContext.checkCancelled();
             if (sqlList != null && !sqlList.isEmpty()) {
-                taskContext.logInfo(TaskEventCode.BATCH_EXECUTED.name(),
-                        String.format("Executing batch insert: %s", sqlList.size()));
-                for (RowSql row : sqlList) {
-                    try {
-                        // The connection's existing auto-commit policy is preserved: a failed row does not
-                        // roll back previously inserted rows, and the task continues with the next row.
-                        sqlExecutor.executeSql(row.sql());
-                        successCount++;
-                    } catch (Exception e) {
-                        failedCount++;
-                        taskContext.logError("IMPORT_ROW_FAILED", "Could not import row", Map.of(
-                                "row", row.number(), "message", StringUtils.defaultString(e.getMessage())));
-                    }
-                }
+                sqlExecutor.executeBatch(sqlList.stream().map(RowSql::sql).toList());
+                successCount += sqlList.size();
             }
             sqlList = new ArrayList<>();
         }

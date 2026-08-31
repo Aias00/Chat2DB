@@ -3,7 +3,9 @@ package ai.chat2db.community.web.api.controller;
 import ai.chat2db.community.domain.api.model.PageResponse;
 import ai.chat2db.community.domain.api.model.task.Task;
 import ai.chat2db.community.domain.api.model.task.TaskEvent;
+import ai.chat2db.community.domain.api.model.task.ImportTaskSpec;
 import ai.chat2db.community.domain.api.model.task.TaskQuery;
+import ai.chat2db.community.domain.api.model.task.TaskType;
 import ai.chat2db.community.domain.api.service.task.TaskService;
 import ai.chat2db.community.tools.wrapper.result.ActionResult;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
@@ -54,7 +56,11 @@ public class TaskController {
 
     @PostMapping("/import")
     public DataResult<TaskSubmitResponse> submitImport(@Valid @RequestBody TaskImportRequest request) {
-        Long taskId = taskService.submitImport(taskWebConverter.importRequest2spec(request));
+        ImportTaskSpec spec = taskWebConverter.importRequest2spec(request);
+        if (TaskType.DATA_FILE_IMPORT.name().equals(spec.getTaskType())) {
+            throw new IllegalArgumentException("Data file imports must use the staged import preview endpoint");
+        }
+        Long taskId = taskService.submitImport(spec);
         return DataResult.of(new TaskSubmitResponse(taskId));
     }
 
@@ -80,11 +86,6 @@ public class TaskController {
         }
         return DataResult.of(taskService.listEventsBefore(request.getTaskId(), request.getBeforeSequence(),
                 request.effectiveLimit()));
-    }
-
-    @PostMapping("/cancel")
-    public DataResult<Task> cancel(@Valid @RequestBody TaskIdRequest request) {
-        return DataResult.of(taskService.cancel(request.getTaskId()));
     }
 
     @DeleteMapping("/delete")
