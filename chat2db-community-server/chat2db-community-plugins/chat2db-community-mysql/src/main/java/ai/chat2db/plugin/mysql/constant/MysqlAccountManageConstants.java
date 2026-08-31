@@ -7,6 +7,7 @@ public final class MysqlAccountManageConstants {
     public static final String ERROR_KEY_ACCOUNT_GRANTS_UNAVAILABLE = "mysql.account.grantsUnavailable";
     public static final String ERROR_KEY_ACCOUNT_LIST_UNAVAILABLE = "mysql.account.listUnavailable";
     public static final String ERROR_KEY_ACCOUNT_PREVIEW_TOKEN_MISMATCH = "mysql.account.previewTokenMismatch";
+    public static final String ERROR_KEY_ACCOUNT_RENAME_READBACK_FAILED = "mysql.account.renameReadbackFailed";
     public static final String ERROR_KEY_ACCOUNT_RENAME_TARGET_EXISTS = "mysql.account.renameTargetExists";
     public static final String FIELD_ACCOUNT_LOCKED = "account_locked";
     public static final String FIELD_HOST = "Host";

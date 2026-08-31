@@ -265,6 +265,7 @@ export default {
   'workspace.databaseAccount.newHost': '新主机',
   'workspace.databaseAccount.renameDefinerWarning': '继续前请检查以该账号为 DEFINER 的视图、例程和事件。',
   'mysql.account.renameTargetExists': '目标用户名和主机已存在。',
+  'mysql.account.renameReadbackFailed': '重命名已执行，但无法在 mysql.user 中验证重命名后的账号。',
   'workspace.databaseAccount.selectUserFromTree': '请在左侧用户节点下选择账号',
   'workspace.databaseAccount.accountListUnreadable':
     '当前连接无法读取 mysql.user，用户列表可能无法加载，请使用有管理权限的账号连接。',

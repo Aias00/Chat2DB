@@ -150,16 +150,63 @@ class MysqlAccountSqlBuilderTest {
         assertEquals(List.of("SELECT 1 FROM mysql.user WHERE User = ? AND Host = ? LIMIT 1"), preparedSql);
     }
 
+    @Test
+    void renameUserFailsWhenTargetAccountCannotBeReadBackAfterExecution() {
+        List<String> preparedSql = new ArrayList<>();
+        Connection connection = (Connection) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    if ("prepareStatement".equals(method.getName())) {
+                        preparedSql.add((String) args[0]);
+                        return switch (preparedSql.size()) {
+                            case 1, 3, 4 -> accountLookupStatement(false);
+                            case 2 -> successfulExecutionStatement();
+                            default -> throw new AssertionError("Unexpected statement: " + args[0]);
+                        };
+                    }
+                    return defaultValue(method.getReturnType());
+                }
+        );
+        AccountOperationRequest command = base(AccountActionTypeEnum.RENAME_USER);
+        command.setNewUser("bob");
+        command.setNewHost("localhost");
+        command.setPreviewToken(MysqlAccountSqlBuilder.previewToken(MysqlAccountSqlBuilder.buildSql(command)));
+
+        var result = new MysqlAccountManager().execute(connection, command);
+
+        assertFalse(result.getSuccess());
+        assertEquals("mysql.account.renameReadbackFailed", result.getFailureCode());
+        assertEquals(List.of(
+                "SELECT 1 FROM mysql.user WHERE User = ? AND Host = ? LIMIT 1",
+                "RENAME USER 'alice''s'@'10.0.%' TO 'bob'@'localhost'",
+                "SELECT 1 FROM mysql.user WHERE User = ? AND Host = ? LIMIT 1",
+                "SELECT 1 FROM mysql.user WHERE User = ? AND Host = ? LIMIT 1"
+        ), preparedSql);
+    }
+
     private PreparedStatement existingAccountStatement() {
+        return accountLookupStatement(true);
+    }
+
+    private PreparedStatement accountLookupStatement(boolean hasAccount) {
         ResultSet resultSet = (ResultSet) Proxy.newProxyInstance(
                 getClass().getClassLoader(),
                 new Class<?>[]{ResultSet.class},
-                (proxy, method, args) -> "next".equals(method.getName()) ? true : defaultValue(method.getReturnType())
+                (proxy, method, args) -> "next".equals(method.getName()) ? hasAccount : defaultValue(method.getReturnType())
         );
         return (PreparedStatement) Proxy.newProxyInstance(
                 getClass().getClassLoader(),
                 new Class<?>[]{PreparedStatement.class},
                 (proxy, method, args) -> "executeQuery".equals(method.getName()) ? resultSet : defaultValue(method.getReturnType())
+        );
+    }
+
+    private PreparedStatement successfulExecutionStatement() {
+        return (PreparedStatement) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{PreparedStatement.class},
+                (proxy, method, args) -> defaultValue(method.getReturnType())
         );
     }
 

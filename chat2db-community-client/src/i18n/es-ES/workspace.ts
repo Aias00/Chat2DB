@@ -275,6 +275,8 @@ export default {
   'workspace.databaseAccount.renameDefinerWarning':
     'Revise las vistas, rutinas y eventos que usan esta cuenta como DEFINER antes de continuar.',
   'mysql.account.renameTargetExists': 'El usuario y host de destino ya existen.',
+  'mysql.account.renameReadbackFailed':
+    'El cambio de nombre se ejecutó, pero no se pudo verificar la cuenta renombrada en mysql.user.',
   'workspace.databaseAccount.selectUserFromTree': 'Seleccione una cuenta en Usuarios, en el árbol de la izquierda',
   'workspace.databaseAccount.accountListUnreadable':
     'La conexión actual no puede leer mysql.user, por lo que quizá no se cargue la lista de usuarios. Conéctese con una cuenta de administrador.',

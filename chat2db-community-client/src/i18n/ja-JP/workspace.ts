@@ -273,6 +273,7 @@ export default {
   'workspace.databaseAccount.newHost': '新しいホスト',
   'workspace.databaseAccount.renameDefinerWarning': '続行する前に、このアカウントを DEFINER とするビュー、ルーチン、イベントを確認してください。',
   'mysql.account.renameTargetExists': '変更先のユーザーとホストは既に存在します。',
+  'mysql.account.renameReadbackFailed': '名前変更は実行されましたが、mysql.user で変更後のアカウントを確認できませんでした。',
   'workspace.databaseAccount.selectUserFromTree': '左側のユーザーノードからアカウントを選択してください',
   'workspace.databaseAccount.accountListUnreadable':
     '現在の接続では mysql.user を読み取れないため、ユーザー一覧を読み込めない可能性があります。管理権限のあるアカウントで接続してください。',

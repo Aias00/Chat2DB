@@ -84,7 +84,7 @@ public class MysqlAccountManager implements IAccountManager {
         result.setSql(preview.getSql());
         String executionSql = MysqlAccountSqlBuilder.buildSql(command);
 
-        if (isRename(command) && targetAccountExists(connection, command)) {
+        if (isRename(command) && Boolean.TRUE.equals(accountExists(connection, command.getNewUser(), command.getNewHost()))) {
             result.setSuccess(Boolean.FALSE);
             result.setMessage(ERROR_KEY_ACCOUNT_RENAME_TARGET_EXISTS);
             result.setFailureCode(ERROR_KEY_ACCOUNT_RENAME_TARGET_EXISTS);
@@ -95,6 +95,7 @@ public class MysqlAccountManager implements IAccountManager {
             statement.execute();
             result.setSuccess(Boolean.TRUE);
             result.setMessage(MESSAGE_OK);
+            verifyRenameReadback(connection, command, result);
         } catch (SQLException e) {
             result.setSuccess(Boolean.FALSE);
             result.setMessage(e.getMessage());
@@ -105,20 +106,36 @@ public class MysqlAccountManager implements IAccountManager {
         return result;
     }
 
+    private void verifyRenameReadback(Connection connection, AccountOperationRequest command, AccountExecuteResponse result) {
+        if (!isRename(command) || !Boolean.TRUE.equals(result.getSuccess())) {
+            return;
+        }
+        Boolean sourceExists = accountExists(connection, command.getUser(), command.getHost());
+        Boolean targetExists = accountExists(connection, command.getNewUser(), command.getNewHost());
+        if (sourceExists == null || targetExists == null) {
+            return;
+        }
+        if (Boolean.TRUE.equals(sourceExists) || Boolean.FALSE.equals(targetExists)) {
+            result.setSuccess(Boolean.FALSE);
+            result.setMessage(ERROR_KEY_ACCOUNT_RENAME_READBACK_FAILED);
+            result.setFailureCode(ERROR_KEY_ACCOUNT_RENAME_READBACK_FAILED);
+        }
+    }
+
     private boolean isRename(AccountOperationRequest command) {
         return "RENAME_USER".equals(command.getActionType());
     }
 
-    private boolean targetAccountExists(Connection connection, AccountOperationRequest command) {
+    private Boolean accountExists(Connection connection, String user, String host) {
         try (PreparedStatement statement = connection.prepareStatement(SQL_SELECT_MYSQL_USER_BY_ACCOUNT)) {
-            statement.setString(1, command.getNewUser());
-            statement.setString(2, command.getNewHost());
+            statement.setString(1, user);
+            statement.setString(2, host);
             try (ResultSet resultSet = statement.executeQuery()) {
                 return resultSet.next();
             }
         } catch (SQLException ignored) {
             // A user with RENAME USER may not have mysql.user read access. MySQL remains the authority in that case.
-            return false;
+            return null;
         }
     }
 
