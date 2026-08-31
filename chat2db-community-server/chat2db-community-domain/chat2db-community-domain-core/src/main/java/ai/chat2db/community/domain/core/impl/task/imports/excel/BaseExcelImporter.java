@@ -60,7 +60,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
 
         private List<String> tableColumnList;
 
-        private List<RowSql> sqlList;
+        private List<String> sqlList;
 
         private long successCount;
 
@@ -142,7 +142,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             if (sqlList == null) {
                 sqlList = new ArrayList<>();
             }
-            sqlList.add(new RowSql(context.readRowHolder().getRowIndex() + 1, sql));
+            sqlList.add(sql);
             if (sqlList.size() >= BATCH_SIZE) {
                 executeBatchInsert();
             } else {
@@ -229,23 +229,18 @@ public abstract class BaseExcelImporter extends BaseImporter {
             if (sqlList != null && !sqlList.isEmpty()) {
                 taskContext.logInfo(TaskEventCode.BATCH_EXECUTED.name(),
                         String.format("Executing batch insert: %s", sqlList.size()));
-                for (RowSql row : sqlList) {
-                    try {
-                        // The connection's existing auto-commit policy is preserved: a failed row does not
-                        // roll back previously inserted rows, and the task continues with the next row.
-                        sqlExecutor.executeSql(row.sql());
-                        successCount++;
-                    } catch (Exception e) {
-                        failedCount++;
-                        taskContext.logError("IMPORT_ROW_FAILED", "Could not import row", Map.of(
-                                "row", row.number(), "message", StringUtils.defaultString(e.getMessage())));
-                    }
+                int statementCount = sqlList.size();
+                try {
+                    sqlExecutor.executeBatch(sqlList);
+                    successCount += statementCount;
+                } catch (Exception e) {
+                    failedCount += statementCount;
+                    taskContext.logError("IMPORT_BATCH_FAILED", "Could not import batch", Map.of(
+                            "statementCount", statementCount,
+                            "message", StringUtils.defaultString(e.getMessage())));
                 }
             }
             sqlList = new ArrayList<>();
-        }
-
-        private record RowSql(int number, String sql) {
         }
     }
 
