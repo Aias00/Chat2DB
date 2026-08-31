@@ -16,6 +16,7 @@ import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,6 +64,30 @@ class DbDatabaseServiceImplTest {
     }
 
     @Test
+    void databaseInfoUsesVersionStableInformationSchemaReadback() {
+        service.databaseInfo("app");
+
+        assertEquals("SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
+                + "FROM information_schema.schemata WHERE SCHEMA_NAME = ?", jdbc.preparedSql);
+        assertEquals("app", jdbc.boundDatabaseName);
+    }
+
+    @Test
+    void databaseInfoReportsPrivilegeFailure() {
+        jdbc.failQueries(new SQLException("SELECT command denied to user", "42000", 1142));
+
+        assertThrows(BusinessException.class, () -> service.databaseInfo("app"));
+    }
+
+    @Test
+    void previewAlterDatabaseReportsReadbackPrivilegeFailure() {
+        jdbc.failQueries(new SQLException("SELECT command denied to user", "42000", 1142));
+
+        assertThrows(BusinessException.class,
+                () -> service.previewAlterDatabaseSql("app", "utf8mb4", "utf8mb4_bin"));
+    }
+
+    @Test
     void previewAlterDatabaseRejectsUnsafeCharsetAndCollationNames() {
         assertThrows(BusinessException.class,
                 () -> service.previewAlterDatabaseSql("app", "utf8mb4;DROP DATABASE mysql", null));
@@ -81,6 +106,11 @@ class DbDatabaseServiceImplTest {
 
         private String preparedSql;
         private String boundDatabaseName;
+        private SQLException executeQueryFailure;
+
+        private void failQueries(SQLException failure) {
+            executeQueryFailure = failure;
+        }
 
         private Connection connection() {
             return (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class[]{Connection.class},
@@ -103,7 +133,12 @@ class DbDatabaseServiceImplTest {
                             boundDatabaseName = (String) args[1];
                             yield null;
                         }
-                        case "executeQuery" -> resultSet();
+                        case "executeQuery" -> {
+                            if (executeQueryFailure != null) {
+                                throw executeQueryFailure;
+                            }
+                            yield resultSet();
+                        }
                         case "close" -> null;
                         default -> null;
                     });

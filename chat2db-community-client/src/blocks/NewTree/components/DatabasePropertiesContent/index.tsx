@@ -34,7 +34,7 @@ const DatabasePropertiesContent = ({
     setLoading(true);
     Promise.all([
       sqlService.getDatabaseFieldTypeList({ dataSourceId, databaseName }),
-      sqlService.getDatabaseInfo({ name: databaseName }),
+      sqlService.getDatabaseInfo({ dataSourceId, databaseName }),
     ])
       .then(([field, info]) => {
         setOptions({
@@ -80,7 +80,7 @@ const DatabasePropertiesContent = ({
         return;
       }
       sqlService
-        .previewAlterDatabaseSql({ databaseName, charset: values.charset, collation: values.collation })
+        .previewAlterDatabaseSql({ dataSourceId, databaseName, charset: values.charset, collation: values.collation })
         .then((sql) => {
           if (!sql) {
             message.info(i18n('workspace.ops.noChange'));
@@ -93,9 +93,9 @@ const DatabasePropertiesContent = ({
             cancelText: i18n('common.button.cancel'),
             onOk: () =>
               sqlService
-                .executeDDL({ dataSourceId, sql } as never)
+                .executeDDL({ dataSourceId, sql })
                 .then(() => {
-                  message.success(i18n('common.text.successfullySaved'));
+                  message.success(i18n('common.tips.saveSuccessfully'));
                   load();
                 })
                 .catch((e) => message.error(e?.message || i18n('common.text.failure'))),

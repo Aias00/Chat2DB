@@ -431,13 +431,13 @@ const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', {
 
 
 /** Database charset/collation (MYSQL-OBJ-001). */
-const getDatabaseInfo = createRequest<{ name: string }, { charset: string | null; collation: string | null }>(
-  '/api/rdb/database/info',
-  { method: 'get' },
-);
+const getDatabaseInfo = createRequest<
+  { dataSourceId: number; databaseName: string },
+  { charset: string | null; collation: string | null }
+>('/api/rdb/database/info', { method: 'get' });
 
 const previewAlterDatabaseSql = createRequest<
-  { databaseName: string; charset?: string; collation?: string },
+  { dataSourceId: number; databaseName: string; charset?: string; collation?: string },
   string | null
 >('/api/rdb/database/alter_preview', { method: 'post' });
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');

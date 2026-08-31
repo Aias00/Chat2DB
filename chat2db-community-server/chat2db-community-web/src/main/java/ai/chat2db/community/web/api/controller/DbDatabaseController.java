@@ -25,10 +25,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
+
 import java.util.Map;
+
 import lombok.Data;
-import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -123,11 +123,11 @@ public class DbDatabaseController {
     /**
      * Returns the database default character set and collation.
      * <p>
-     * Endpoint: {@code GET /api/rdb/database/info?name=xxx}.
+     * Endpoint: {@code GET /api/rdb/database/info?dataSourceId=1&databaseName=xxx}.
      */
     @GetMapping("/info")
-    public DataResult<Map<String, String>> info(@RequestParam("name") String name) {
-        return DataResult.of(databaseService.databaseInfo(name));
+    public DataResult<Map<String, String>> info(@Valid DataSourceBaseRequest request) {
+        return DataResult.of(databaseService.databaseInfo(request.getDatabaseName()));
     }
 
     /**
@@ -142,10 +142,7 @@ public class DbDatabaseController {
     }
 
     @Data
-    public static class AlterDatabasePreviewRequest {
-        @NotBlank
-        private String databaseName;
-
+    public static class AlterDatabasePreviewRequest extends DataSourceBaseRequest {
         private String charset;
 
         private String collation;
