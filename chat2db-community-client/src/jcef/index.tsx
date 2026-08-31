@@ -126,7 +126,7 @@ const jcefApi = {
     return createJcefApi('kill-terminals', params);
   },
   // Select file
-  selectFile: (params: { fileTypeList: string[]; fileSize?: number; multiple?: boolean; stageLocalFile?: boolean }) => {
+  selectFile: (params: { fileTypeList: string[]; fileSize?: number; multiple?: boolean }) => {
     return createJcefApi('select-file', params);
   },
   // maximize
@@ -144,6 +144,9 @@ const jcefApi = {
   // close window
   closeWindow: () => {
     return createJcefApi('close-window');
+  },
+  acknowledgeApplicationExit: (data: { operationId: string }) => {
+    return createJcefApi<boolean>('acknowledge-application-exit', data);
   },
   confirmCloseWindow: (data: { operationId: string }) => {
     return createJcefApi<boolean>('confirm-close-window', data);

@@ -60,6 +60,7 @@ public class DbJdbcDriverController {
      */
     @GetMapping("/download")
     public ActionResult download(@RequestParam String dbType) {
+        jdbcDriverService.requireDriverManagementSupported();
         jdbcDriverService.downloadBuiltinDriversOrThrow(dbType);
         return ActionResult.isSuccess();
     }
@@ -73,7 +74,8 @@ public class DbJdbcDriverController {
      * @return list result containing string.
      */
     @PostMapping("/upload")
-    public ListResult<String> upload(@RequestParam MultipartFile[] multipartFiles) {
+    public ListResult<String> upload(@RequestParam("file") MultipartFile[] multipartFiles) {
+        jdbcDriverService.requireDriverManagementSupported();
         return ListResult.of(jdbcDriverUploadService.uploadOrThrow(multipartFiles));
     }
 
