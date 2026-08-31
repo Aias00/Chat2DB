@@ -110,6 +110,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             }
             script.append(SQLConstants.TAB).append(mysqlIndexTypeEnum.buildIndexScript(tableIndex)).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
+        appendCreateCheckConstraints(script, table.getCheckConstraintList());
 
 
         script = new StringBuilder(script.substring(0, script.length() - 2));
@@ -238,14 +239,25 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                     }
                     script.append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.MODIFY.name().equals(cc.getEditStatus())) {
-                    script.append(SQLConstants.TAB).append(SQL_ALTER_CHECK)
-                            .append(quoteMysqlIdentifier(cc.getName()));
-                    if (Boolean.FALSE.equals(cc.getEnforced())) {
-                        script.append(SQL_NOT_ENFORCED);
+                    if (isCheckExpressionChanged(oldTable, cc)) {
+                        script.append(SQLConstants.TAB).append(SQL_DROP_CHECK)
+                                .append(quoteMysqlIdentifier(cc.getName()))
+                                .append(SQLConstants.COMMA_LINE_SEPARATOR);
+                        script.append(SQLConstants.TAB).append(SQL_ADD_CONSTRAINT)
+                                .append(quoteMysqlIdentifier(cc.getName())).append(" ")
+                                .append(SQL_CHECK_PREFIX).append(cc.getExpression()).append(")")
+                                .append(Boolean.FALSE.equals(cc.getEnforced()) ? SQL_NOT_ENFORCED : SQL_ENFORCED)
+                                .append(SQLConstants.COMMA_LINE_SEPARATOR);
                     } else {
-                        script.append(SQL_ENFORCED);
+                        script.append(SQLConstants.TAB).append(SQL_ALTER_CHECK)
+                                .append(quoteMysqlIdentifier(cc.getName()));
+                        if (Boolean.FALSE.equals(cc.getEnforced())) {
+                            script.append(SQL_NOT_ENFORCED);
+                        } else {
+                            script.append(SQL_ENFORCED);
+                        }
+                        script.append(SQLConstants.COMMA_LINE_SEPARATOR);
                     }
-                    script.append(SQLConstants.COMMA_LINE_SEPARATOR);
                 }
             }
         }
@@ -271,18 +283,52 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             return;
         }
         String[] parts = dbVersion.trim().split("[^0-9]+");
-        if (parts.length < 2) {
+        if (parts.length < 3) {
             return;
         }
         try {
             int major = Integer.parseInt(parts[0]);
             int minor = Integer.parseInt(parts[1]);
-            if (major < 8 || (major == 8 && minor < 16)) {
+            int patch = Integer.parseInt(parts[2]);
+            if (major < 8 || (major == 8 && minor == 0 && patch < 16)) {
                 throw new BusinessException("mysql.checkConstraint.unsupportedVersion");
             }
         } catch (NumberFormatException e) {
             // Unparseable version string; let the server decide.
         }
+    }
+
+    private void appendCreateCheckConstraints(StringBuilder script, List<CheckConstraintInfo> checkConstraints) {
+        if (CollectionUtils.isEmpty(checkConstraints)) {
+            return;
+        }
+        for (CheckConstraintInfo checkConstraint : checkConstraints) {
+            if (StringUtils.isBlank(checkConstraint.getExpression())) {
+                continue;
+            }
+            script.append(SQLConstants.TAB);
+            if (StringUtils.isNotBlank(checkConstraint.getName())) {
+                script.append("CONSTRAINT ").append(quoteMysqlIdentifier(checkConstraint.getName())).append(" ");
+            }
+            script.append(SQL_CHECK_PREFIX).append(checkConstraint.getExpression()).append(")");
+            if (Boolean.FALSE.equals(checkConstraint.getEnforced())) {
+                script.append(SQL_NOT_ENFORCED);
+            } else {
+                script.append(SQL_ENFORCED);
+            }
+            script.append(SQLConstants.COMMA_LINE_SEPARATOR);
+        }
+    }
+
+    private boolean isCheckExpressionChanged(Table oldTable, CheckConstraintInfo newConstraint) {
+        if (CollectionUtils.isEmpty(oldTable.getCheckConstraintList())) {
+            return false;
+        }
+        return oldTable.getCheckConstraintList().stream()
+                .filter(oldConstraint -> StringUtils.equals(oldConstraint.getName(), newConstraint.getName()))
+                .findFirst()
+                .map(oldConstraint -> !StringUtils.equals(oldConstraint.getExpression(), newConstraint.getExpression()))
+                .orElse(false);
     }
 
     private String findPrevious(TableColumn tableColumn, Table newTable) {

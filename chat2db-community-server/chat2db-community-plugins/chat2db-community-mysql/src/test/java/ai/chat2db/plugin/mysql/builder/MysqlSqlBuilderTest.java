@@ -4,6 +4,7 @@ import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.config.TableBuilderConfig;
 import ai.chat2db.community.domain.api.enums.plugin.DataTypeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.EditStatusEnum;
+import ai.chat2db.community.domain.api.model.metadata.CheckConstraintInfo;
 import ai.chat2db.community.domain.api.model.metadata.Database;
 import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
@@ -12,9 +13,11 @@ import ai.chat2db.community.domain.api.model.metadata.TableIndexColumn;
 import ai.chat2db.community.domain.api.model.result.Header;
 import ai.chat2db.community.domain.api.model.result.QueryResponse;
 import ai.chat2db.community.domain.api.model.result.ResultOperation;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.plugin.mysql.enums.type.MysqlColumnTypeEnum;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -24,6 +27,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MysqlSqlBuilderTest {
+
+    @AfterEach
+    void removeContext() {
+        Chat2DBContext.removeContext();
+    }
 
     @Test
     void shouldUseEnumExtentInsteadOfColumnComment() {
@@ -107,6 +115,25 @@ class MysqlSqlBuilderTest {
         String sql = builder.ddl().table().buildCreateTable(table, TableBuilderConfig.defaultConfig());
 
         assertTrue(sql.contains("`amount` DECIMAL "));
+    }
+
+    @Test
+    void shouldBuildCreateTableWithCheckConstraints() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table table = Table.builder()
+                .databaseName("test_db")
+                .name("payment")
+                .columnList(List.of(TableColumn.builder()
+                        .name("amount")
+                        .columnType("DECIMAL")
+                        .build()))
+                .indexList(List.of())
+                .checkConstraintList(List.of(checkConstraint("ck_payment_amount", "amount >= 0", true, null)))
+                .build();
+
+        String sql = builder.ddl().table().buildCreateTable(table, TableBuilderConfig.defaultConfig());
+
+        assertTrue(sql.contains("CONSTRAINT `ck_payment_amount` CHECK (amount >= 0) ENFORCED"), sql);
     }
 
     @Test
@@ -268,6 +295,54 @@ class MysqlSqlBuilderTest {
         assertFalse(sql.contains(" AFTER "), sql);
     }
 
+    @Test
+    void shouldDropAndRecreateCheckConstraintWhenExpressionChanges() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("8.0.16");
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount >= 0", true, null)));
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount > 0", true,
+                EditStatusEnum.MODIFY.name())));
+
+        String sql = builder.ddl().table().buildAlterTable(oldTable, newTable);
+
+        assertEquals("ALTER TABLE `test_db`.`sample_table`\n"
+                + "\tDROP CHECK `ck_amount`,\n"
+                + "\tADD CONSTRAINT `ck_amount` CHECK (amount > 0) ENFORCED;", sql);
+    }
+
+    @Test
+    void shouldAllowMysqlEightZeroSixteenCheckConstraintAlterations() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("8.0.16");
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of());
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount >= 0", true,
+                EditStatusEnum.ADD.name())));
+
+        String sql = builder.ddl().table().buildAlterTable(oldTable, newTable);
+
+        assertTrue(sql.contains("ADD CONSTRAINT `ck_amount` CHECK (amount >= 0) ENFORCED"), sql);
+    }
+
+    @Test
+    void shouldRejectCheckConstraintAlterationsBeforeMysqlEightZeroSixteen() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("8.0.15");
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of());
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount >= 0", true,
+                EditStatusEnum.ADD.name())));
+
+        BusinessException exception = org.junit.jupiter.api.Assertions.assertThrows(BusinessException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+
+        assertEquals("mysql.checkConstraint.unsupportedVersion", exception.getMessage());
+    }
+
     private static Table mysqlTable(List<TableColumn> columns) {
         return Table.builder()
                 .databaseName("test_db")
@@ -285,6 +360,26 @@ class MysqlSqlBuilderTest {
                 .columnSize(255)
                 .editStatus(editStatus)
                 .build();
+    }
+
+    private static CheckConstraintInfo checkConstraint(String name, String expression, Boolean enforced,
+                                                       String editStatus) {
+        CheckConstraintInfo constraint = new CheckConstraintInfo();
+        constraint.setName(name);
+        constraint.setExpression(expression);
+        constraint.setEnforced(enforced);
+        constraint.setEditStatus(editStatus);
+        return constraint;
+    }
+
+    private static void withMysqlVersion(String version) {
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setDbType("MYSQL");
+        connectInfo.setDbVersion(version);
+        DriverConfig driverConfig = new DriverConfig();
+        driverConfig.setDbType("MYSQL");
+        connectInfo.setDriverConfig(driverConfig);
+        Chat2DBContext.putContext(connectInfo);
     }
 
     @Test

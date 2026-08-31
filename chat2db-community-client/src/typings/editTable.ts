@@ -83,8 +83,12 @@ export interface IEditTableInfo extends IBaseInfo {
 }
 
 export interface ICheckConstraintItem {
+  key?: string;
   name: string;
   expression: string;
   enforced?: boolean;
   editStatus?: EditColumnOperationType | null;
+  databaseName?: string | null;
+  schemaName?: string | null;
+  tableName?: string | null;
 }
