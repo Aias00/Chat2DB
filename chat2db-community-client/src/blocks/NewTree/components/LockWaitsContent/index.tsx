@@ -10,7 +10,21 @@ import sqlService, { ILockView } from '@/service/sql';
  * when instrumented. The feature never terminates sessions — termination belongs to the
  * session flow (MYSQL-OPS-001).
  */
-const LockWaitsContent = () => {
+interface LockWaitsContentProps {
+  dataSourceId: number;
+}
+
+const sourceLabel = (source: ILockView['source']) => {
+  if (source === 'performance_schema') {
+    return 'Performance Schema (8.0)';
+  }
+  if (source === 'information_schema') {
+    return 'information_schema (5.7)';
+  }
+  return i18n('workspace.ops.lockSourceUnavailable');
+};
+
+const LockWaitsContent = ({ dataSourceId }: LockWaitsContentProps) => {
   const [view, setView] = useState<ILockView | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,14 +33,18 @@ const LockWaitsContent = () => {
     setLoading(true);
     setError(null);
     sqlService
-      .getLockView({})
-      .then(setView)
+      .getLockView({ dataSourceId })
+      .then((result) => {
+        setView(result);
+        const firstError = result.errors?.[0];
+        setError(firstError ? `${firstError.section}: ${firstError.code}` : null);
+      })
       .catch((e) => {
         setView(null);
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [dataSourceId]);
 
   useEffect(() => {
     load();
@@ -63,7 +81,7 @@ const LockWaitsContent = () => {
       <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
         <span>
           {view
-            ? i18n('workspace.ops.lockSource', view.source === 'performance_schema' ? 'Performance Schema (8.0)' : 'information_schema (5.7)')
+            ? i18n('workspace.ops.lockSource', sourceLabel(view.source))
             : ''}
         </span>
         <Button size="small" onClick={load} loading={loading}>

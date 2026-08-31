@@ -317,6 +317,7 @@ export default {
   'workspace.ops.lockDuration': '기간',
   'workspace.ops.ownerThread': '소유 스레드',
   'workspace.ops.lockSource': '출처: {1}',
+  'workspace.ops.lockSourceUnavailable': '잠금 소스를 사용할 수 없습니다',
   'workspace.ops.noLockWaits': '활성 잠금 대기가 없습니다',
   'workspace.ops.metadataLocksUnavailable': '메타데이터 잠금 계측을 사용할 수 없습니다',
   'workspace.routine.button.invoke': '루틴 호출',

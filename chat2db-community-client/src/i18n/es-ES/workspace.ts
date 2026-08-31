@@ -321,6 +321,7 @@ export default {
   'workspace.ops.lockDuration': 'Duración',
   'workspace.ops.ownerThread': 'Hilo propietario',
   'workspace.ops.lockSource': 'Fuente: {1}',
+  'workspace.ops.lockSourceUnavailable': 'fuentes de bloqueo no disponibles',
   'workspace.ops.noLockWaits': 'Sin esperas de bloqueo activas',
   'workspace.ops.metadataLocksUnavailable': 'Instrumentación de bloqueos de metadatos no disponible',
   'workspace.routine.button.invoke': 'Invocar rutina',

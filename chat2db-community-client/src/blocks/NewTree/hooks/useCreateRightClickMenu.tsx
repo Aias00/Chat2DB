@@ -412,7 +412,7 @@ export const useCreateRightClickMenu = () => {
         handle: () => {
           staticModal.confirm({
             title: i18n('workspace.ops.lockWaits'),
-            content: <LockWaitsContent />,
+            content: <LockWaitsContent dataSourceId={dataSourceId!} />,
             footer: null,
             width: 1100,
           });

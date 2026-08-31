@@ -12,10 +12,11 @@ import java.util.Map;
 public interface IDbLockService {
 
     /**
-     * Returns the current lock snapshot.
+     * Returns the current lock snapshot for the requested datasource.
      *
      * @return view with {@code dataLocks}, {@code waits}, {@code metaLocks}, and
-     *         {@code waitChains}; unavailable sources degrade to empty lists.
+     *         {@code waitChains}; unavailable sources degrade to empty lists and
+     *         {@code errors} contains per-section status.
      */
-    Map<String, Object> lockView();
+    Map<String, Object> lockView(Long dataSourceId);
 }

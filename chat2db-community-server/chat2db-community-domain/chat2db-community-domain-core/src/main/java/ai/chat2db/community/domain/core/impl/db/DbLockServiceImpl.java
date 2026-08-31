@@ -1,12 +1,15 @@
 package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.service.db.IDbLockService;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.DefaultSQLExecutor;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -45,23 +48,49 @@ public class DbLockServiceImpl implements IDbLockService {
                     + "LEFT JOIN information_schema.processlist p ON t.trx_mysql_thread_id = p.ID";
 
     @Override
-    public Map<String, Object> lockView() {
+    public Map<String, Object> lockView(Long dataSourceId) {
+        requireDatasourceContext(dataSourceId);
         Connection connection = Chat2DBContext.getConnection();
         boolean ps = performanceSchemaLocksAvailable(connection);
+        List<Map<String, Object>> errors = new ArrayList<>();
 
-        List<Map<String, Object>> dataLocks = ps ? queryRows(connection, SQL_DATA_LOCKS_8) : queryRows(connection, SQL_DATA_LOCKS_57);
-        List<Map<String, Object>> waits = ps ? queryRows(connection, SQL_DATA_LOCK_WAITS_8) : queryRows(connection, SQL_DATA_LOCK_WAITS_57);
-        List<Map<String, Object>> metaLocks = queryMetaLocks(connection);
-        List<Map<String, Object>> sessions = queryRows(connection, SQL_SESSION_INFO);
+        List<Map<String, Object>> dataLocks = queryRows(connection, ps ? SQL_DATA_LOCKS_8 : SQL_DATA_LOCKS_57,
+                "dataLocks", errors);
+        List<Map<String, Object>> waits = queryRows(connection, ps ? SQL_DATA_LOCK_WAITS_8 : SQL_DATA_LOCK_WAITS_57,
+                "waits", errors);
+        List<Map<String, Object>> metaLocks = queryRows(connection, SQL_METADATA_LOCKS, "metaLocks", errors);
+        List<Map<String, Object>> sessions = queryRows(connection, SQL_SESSION_INFO, "sessions", errors);
         List<Map<String, Object>> waitChains = buildWaitChains(waits, sessions, ps);
 
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("source", ps ? "performance_schema" : "information_schema");
+        view.put("dataSourceId", dataSourceId);
+        view.put("source", lockSource(ps, errors));
         view.put("dataLocks", dataLocks);
         view.put("waits", waits);
         view.put("metaLocks", metaLocks);
         view.put("waitChains", waitChains);
+        view.put("errors", errors);
         return view;
+    }
+
+    private static void requireDatasourceContext(Long dataSourceId) {
+        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
+        if (connectInfo == null || connectInfo.getDataSourceId() == null) {
+            throw new BusinessException("datasource.context.required");
+        }
+        if (!connectInfo.getDataSourceId().equals(dataSourceId)) {
+            throw new BusinessException("datasource.context.mismatch");
+        }
+    }
+
+    private static String lockSource(boolean performanceSchema, List<Map<String, Object>> errors) {
+        boolean lockTablesUnavailable = errors.stream()
+                .map(error -> error.get("section"))
+                .anyMatch(section -> "dataLocks".equals(section) || "waits".equals(section));
+        if (lockTablesUnavailable) {
+            return "unavailable";
+        }
+        return performanceSchema ? "performance_schema" : "information_schema";
     }
 
     /**
@@ -77,14 +106,46 @@ public class DbLockServiceImpl implements IDbLockService {
         }
     }
 
-    private static List<Map<String, Object>> queryMetaLocks(Connection connection) {
+    private static List<Map<String, Object>> queryRows(Connection connection, String sql, String section,
+            List<Map<String, Object>> errors) {
         try {
-            return queryRows(connection, SQL_METADATA_LOCKS);
+            return queryRows(connection, sql);
         } catch (RuntimeException e) {
-            // metadata_locks instrumentation may be disabled or absent (5.7 without the
-            // performance_schema table); an empty list marks the source unavailable.
+            errors.add(error(section, e));
             return List.of();
         }
+    }
+
+    private static Map<String, Object> error(String section, RuntimeException exception) {
+        Throwable cause = rootCause(exception);
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("section", section);
+        error.put("code", isPrivilegeError(cause) ? "privilege_required" : "unavailable");
+        error.put("message", cause.getMessage());
+        return error;
+    }
+
+    private static Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private static boolean isPrivilegeError(Throwable throwable) {
+        if (throwable instanceof SQLException sqlException) {
+            String sqlState = sqlException.getSQLState();
+            if ("42000".equals(sqlState) || "28000".equals(sqlState)) {
+                return true;
+            }
+        }
+        String message = throwable.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("denied") || lower.contains("permission") || lower.contains("privilege");
     }
 
     private static List<Map<String, Object>> queryRows(Connection connection, String sql) {

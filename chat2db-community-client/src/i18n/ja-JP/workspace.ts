@@ -319,6 +319,7 @@ export default {
   'workspace.ops.lockDuration': '期間',
   'workspace.ops.ownerThread': '所有スレッド',
   'workspace.ops.lockSource': 'ソース: {1}',
+  'workspace.ops.lockSourceUnavailable': 'ロックソースを利用できません',
   'workspace.ops.noLockWaits': 'アクティブなロック待機はありません',
   'workspace.ops.metadataLocksUnavailable': 'メタデータロックの計装が利用できません',
   'workspace.routine.button.invoke': 'ルーチンを呼び出す',

@@ -319,6 +319,7 @@ export default {
   'workspace.ops.lockDuration': 'Duration',
   'workspace.ops.ownerThread': 'Owner Thread',
   'workspace.ops.lockSource': 'Source: {1}',
+  'workspace.ops.lockSourceUnavailable': 'lock sources unavailable',
   'workspace.ops.noLockWaits': 'No active lock waits',
   'workspace.ops.metadataLocksUnavailable': 'Metadata lock instrumentation unavailable',
   'workspace.routine.button.invoke': 'Invoke routine',

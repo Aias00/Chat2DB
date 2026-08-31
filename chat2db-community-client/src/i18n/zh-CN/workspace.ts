@@ -310,6 +310,7 @@ export default {
   'workspace.ops.lockDuration': '持续时间',
   'workspace.ops.ownerThread': '所属线程',
   'workspace.ops.lockSource': '数据源：{1}',
+  'workspace.ops.lockSourceUnavailable': '锁来源不可用',
   'workspace.ops.noLockWaits': '没有活动的锁等待',
   'workspace.ops.metadataLocksUnavailable': '元数据锁探针不可用',
   'workspace.routine.button.invoke': '调用例程',

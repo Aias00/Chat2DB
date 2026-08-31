@@ -432,7 +432,8 @@ const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', {
 
 /** Lock view (MYSQL-OPS-003). */
 export interface ILockView {
-  source: 'performance_schema' | 'information_schema';
+  dataSourceId?: number;
+  source: 'performance_schema' | 'information_schema' | 'unavailable';
   dataLocks: Record<string, string | null>[];
   waits: Record<string, string | null>[];
   metaLocks: Record<string, string | null>[];
@@ -449,9 +450,14 @@ export interface ILockView {
     blockerQuery: string | null;
     rootBlocker: boolean;
   }[];
+  errors?: {
+    section: string;
+    code: 'privilege_required' | 'unavailable';
+    message?: string;
+  }[];
 }
 
-const getLockView = createRequest<Record<string, never>, ILockView>('/api/rdb/lock/view', { method: 'get' });
+const getLockView = createRequest<{ dataSourceId: number }, ILockView>('/api/rdb/lock/view', { method: 'get' });
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
 
 const getDataSourceList = createRequest<IPageParams, IPageResponse<IConnectionDetails>>(
