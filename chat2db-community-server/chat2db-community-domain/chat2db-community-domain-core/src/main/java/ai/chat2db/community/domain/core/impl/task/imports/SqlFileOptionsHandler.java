@@ -33,6 +33,7 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
     private final int batchSize;
     private int statementNumber;
     private int successfulStatements;
+    private int committedStatements;
     private int failedStatements;
     private int statementsInTransaction;
     private boolean transactionStarted;
@@ -65,6 +66,16 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
 
     @Override
     public void handle(Statement statement) {
+        try {
+            handleStatement(statement);
+        } catch (RuntimeException e) {
+            rollback();
+            restoreAutoCommit();
+            throw e;
+        }
+    }
+
+    private void handleStatement(Statement statement) {
         context.checkCancelled();
         String sql = statement.getSql() == null ? "" : statement.getSql().trim();
         if (StringUtils.isBlank(sql) || ";".equals(sql)) {
@@ -81,13 +92,17 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
             context.onStatementCreated(jdbcStatement);
             jdbcStatement.execute(sql);
             successfulStatements++;
-            statementsInTransaction++;
-            if (MODE_BATCH.equals(commitMode) && statementsInTransaction >= batchSize) {
-                commit();
+            if (MODE_SCRIPT.equals(commitMode)) {
+                committedStatements++;
+            } else {
+                statementsInTransaction++;
+                if (MODE_BATCH.equals(commitMode) && statementsInTransaction >= batchSize) {
+                    commit();
+                }
             }
         } catch (SQLException e) {
             failedStatements++;
-            logFailure(sql, e);
+            logFailure(statement, e);
             if (POLICY_STOP.equals(errorPolicy) || MODE_SINGLE_TRANSACTION.equals(commitMode)) {
                 rollback();
                 throw fail("SQL import failed at statement " + statementNumber, e);
@@ -125,7 +140,9 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
             return;
         }
         try {
-            originalAutoCommit = connection.getAutoCommit();
+            if (originalAutoCommit == null) {
+                originalAutoCommit = connection.getAutoCommit();
+            }
             connection.setAutoCommit(false);
             transactionStarted = true;
         } catch (SQLException e) {
@@ -136,6 +153,7 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
     private void commit() {
         try {
             connection.commit();
+            committedStatements += statementsInTransaction;
             statementsInTransaction = 0;
             transactionStarted = false;
         } catch (SQLException e) {
@@ -168,7 +186,7 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
     }
 
     private void validateTransactionSafe(String sql) {
-        String upper = sql.toUpperCase(Locale.ROOT);
+        String upper = stripLeadingComments(sql).toUpperCase(Locale.ROOT);
         if (upper.startsWith("START TRANSACTION") || upper.startsWith("BEGIN") || upper.startsWith("COMMIT")
                 || upper.startsWith("ROLLBACK") || upper.startsWith("SET AUTOCOMMIT")) {
             throw fail("Transaction-control SQL requires SCRIPT commit mode", null);
@@ -183,10 +201,45 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
         }
     }
 
-    private void logFailure(String sql, SQLException e) {
+    private String stripLeadingComments(String sql) {
+        int index = 0;
+        while (index < sql.length()) {
+            while (index < sql.length() && Character.isWhitespace(sql.charAt(index))) {
+                index++;
+            }
+            if (index >= sql.length()) {
+                break;
+            }
+            if (sql.startsWith("--", index) || sql.charAt(index) == '#') {
+                int lineEnd = sql.indexOf('\n', index);
+                if (lineEnd < 0) {
+                    return "";
+                }
+                index = lineEnd + 1;
+                continue;
+            }
+            if (sql.startsWith("/*", index)) {
+                int commentEnd = sql.indexOf("*/", index + 2);
+                if (commentEnd < 0) {
+                    return "";
+                }
+                index = commentEnd + 2;
+                continue;
+            }
+            break;
+        }
+        return sql.substring(index).trim();
+    }
+
+    private void logFailure(Statement statement, SQLException e) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("statement", statementNumber);
-        details.put("sql", sql.length() <= 200 ? sql : sql.substring(0, 200) + "...");
+        if (statement.getFirstToken() != null) {
+            details.put("startLine", statement.getFirstToken().getLine());
+        }
+        if (statement.getLastToken() != null) {
+            details.put("endLine", statement.getLastToken().getLine());
+        }
         details.put("errorCode", e.getErrorCode());
         details.put("sqlState", e.getSQLState());
         details.put("message", e.getMessage());
@@ -195,7 +248,7 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
 
     private Map<String, Object> summary() {
         return Map.of("successfulStatements", successfulStatements, "failedStatements", failedStatements,
-                "commitMode", commitMode, "errorPolicy", errorPolicy);
+                "committedStatements", committedStatements, "commitMode", commitMode, "errorPolicy", errorPolicy);
     }
 
     private static String normalize(String value) {
