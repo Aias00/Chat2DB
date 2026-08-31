@@ -61,6 +61,7 @@ import clientExtension from '@client-extension';
 import { DataSourceIdentityColorRequestRegistry } from '../dataSourceIdentityColorRequest';
 import DataSourceColorMenuItem from '../components/DataSourceColorMenuItem';
 import { withDataSourceColorMenuOption } from '../dataSourceColorMenu';
+import { canShowTableMaintenanceOperation } from '../tableMaintenance';
 import { isDangerousTreeOperation } from '../treeMenuDanger';
 
 export interface MenuLabelRenderContext {
@@ -198,6 +199,7 @@ export const useCreateRightClickMenu = () => {
       databaseName,
       schemaName,
       tableName,
+      tableEngine,
       environmentId,
       environment,
       identityColor,
@@ -1169,6 +1171,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.AnalyzeTable]: {
         text: i18n('workspace.menu.analyzeTable'),
         icon: 'icon-table',
+        discard: !canShowTableMaintenanceOperation(OperationColumn.AnalyzeTable, databaseType, tableEngine),
         handle: () => {
           sqlService.maintenanceSql({
             dataSourceId: dataSourceId!,
@@ -1198,6 +1201,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.OptimizeTable]: {
         text: i18n('workspace.menu.optimizeTable'),
         icon: 'icon-table',
+        discard: !canShowTableMaintenanceOperation(OperationColumn.OptimizeTable, databaseType, tableEngine),
         handle: () => {
           sqlService.maintenanceSql({
             dataSourceId: dataSourceId!,
@@ -1227,6 +1231,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.CheckTable]: {
         text: i18n('workspace.menu.checkTable'),
         icon: 'icon-table',
+        discard: !canShowTableMaintenanceOperation(OperationColumn.CheckTable, databaseType, tableEngine),
         handle: () => {
           sqlService.maintenanceSql({
             dataSourceId: dataSourceId!,
@@ -1256,6 +1261,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.RepairTable]: {
         text: i18n('workspace.menu.repairTable'),
         icon: 'icon-table',
+        discard: !canShowTableMaintenanceOperation(OperationColumn.RepairTable, databaseType, tableEngine),
         handle: () => {
           sqlService.maintenanceSql({
             dataSourceId: dataSourceId!,

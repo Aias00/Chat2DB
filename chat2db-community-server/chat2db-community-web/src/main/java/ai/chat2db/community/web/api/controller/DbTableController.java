@@ -290,14 +290,12 @@ public class DbTableController {
      * Endpoint: {@code POST /api/rdb/table/maintenance/sql}.
      *
      * @param request request payload containing table info.
-     * @param operationType type of maintenance: ANALYZE, OPTIMIZE, CHECK, or REPAIR.
      * @return data result containing the generated SQL.
      */
     @PostMapping("/maintenance/sql")
-    public DataResult<String> maintenanceSql(@RequestBody TableDetailQueryRequest request,
-                                             @RequestParam String operationType) {
+    public DataResult<String> maintenanceSql(@RequestBody TableDetailQueryRequest request) {
         DbTableQueryRequest param = dbWebConverter.tableRequest2param(request);
-        return DataResult.of(tableService.maintenanceSql(param, operationType));
+        return DataResult.of(tableService.maintenanceSql(param, request.getOperationType()));
     }
 
     /**

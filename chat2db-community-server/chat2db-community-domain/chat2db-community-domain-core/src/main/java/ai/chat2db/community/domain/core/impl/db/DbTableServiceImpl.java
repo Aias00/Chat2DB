@@ -355,6 +355,7 @@ public class DbTableServiceImpl implements IDbTableService {
             String name = metaData.getMetaDataName(param.getTableName());
             IDbManager dbManager = Chat2DBContext.getDbManager();
             TableMaintenanceTypeEnum op = TableMaintenanceTypeEnum.from(operationType);
+            requireMaintenanceEngineSupport(metaData, connection, param, op);
             return switch (op) {
                 case ANALYZE -> dbManager.analyzeTable(connection, param.getDatabaseName(), param.getSchemaName(), name);
                 case OPTIMIZE -> dbManager.optimizeTable(connection, param.getDatabaseName(), param.getSchemaName(), name);
@@ -364,6 +365,27 @@ public class DbTableServiceImpl implements IDbTableService {
         } catch (SQLException e) {
             throw new BusinessException("maintenance sql error", new Object[]{e.getMessage()}, e);
         }
+    }
+
+    private void requireMaintenanceEngineSupport(IDbMetaData metaData, Connection connection, DbTableQueryRequest param,
+            TableMaintenanceTypeEnum operation) {
+        if (operation.supportsMysqlStorageEngine(resolveTableEngine(metaData, connection, param))) {
+            return;
+        }
+        throw new BusinessException("mysql.maintenance.engineUnsupported");
+    }
+
+    private String resolveTableEngine(IDbMetaData metaData, Connection connection, DbTableQueryRequest param) {
+        List<Table> tables = metaData.tables(connection,
+                new TablesRequest(param.getDatabaseName(), param.getSchemaName(), param.getTableName()));
+        if (CollectionUtils.isEmpty(tables)) {
+            return null;
+        }
+        return tables.stream()
+                .filter(table -> StringUtils.equalsIgnoreCase(table.getName(), param.getTableName()))
+                .findFirst()
+                .orElse(tables.get(0))
+                .getEngine();
     }
 
     @Override
