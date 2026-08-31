@@ -3,7 +3,9 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
+import java.io.StringReader;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -37,5 +39,47 @@ class CsvParserTest {
         CsvParser.CsvResult result = parser.parse("name\nAda\n".getBytes(Charset.forName("UTF-8")), 50);
 
         assertEquals("Ada", result.rows().get(1).get(0));
+    }
+
+    @Test
+    void rejectsCsvOptionsOutsideTheSupportedImportContract() {
+        assertEquals("import.preview.invalidCsvOptions",
+                assertThrows(BusinessException.class,
+                        () -> new CsvParser("UTF-8", ",,", "\"", "\"", true, true)).getCode());
+        assertEquals("import.preview.invalidCsvOptions",
+                assertThrows(BusinessException.class,
+                        () -> new CsvParser("UTF-8", ",", ",", ",", true, true)).getCode());
+        assertEquals("import.preview.invalidCsvOptions",
+                assertThrows(BusinessException.class,
+                        () -> new CsvParser("UTF-16", ",", "\"", "\"", true, true)).getCode());
+    }
+
+    @Test
+    void reportsSourceLineForMalformedEncodingAndQuoting() {
+        CsvParser parser = new CsvParser("UTF-8", ",", "\"", "\"", true, true);
+        byte[] validPrefix = "name\nAda\n".getBytes(StandardCharsets.UTF_8);
+        byte[] invalidUtf8 = java.util.Arrays.copyOf(validPrefix, validPrefix.length + 2);
+        invalidUtf8[invalidUtf8.length - 2] = (byte) 0xC3;
+        invalidUtf8[invalidUtf8.length - 1] = (byte) 0x28;
+
+        BusinessException encoding = assertThrows(BusinessException.class, () -> parser.parse(invalidUtf8, 50));
+        assertEquals("import.preview.invalidEncodingLine", encoding.getCode());
+        assertEquals(3, encoding.getArgs()[1]);
+
+        BusinessException quote = assertThrows(BusinessException.class,
+                () -> parser.parse(new StringReader("name,note\nAda,\"ok\"x\n"), 50));
+        assertEquals("import.preview.malformedCsv", quote.getCode());
+        assertEquals(2, quote.getArgs()[0]);
+    }
+
+    @Test
+    void appliesEmptyAsNullConsistentlyForCsvRows() {
+        CsvParser emptyAsNull = new CsvParser("UTF-8", ",", "\"", "\"", true, true);
+        assertEquals(null, emptyAsNull.parse("name,note\nAda,\n".getBytes(StandardCharsets.UTF_8), 50)
+                .rows().get(1).get(1));
+
+        CsvParser emptyAsText = new CsvParser("UTF-8", ",", "\"", "\"", true, false);
+        assertEquals("", emptyAsText.parse("name,note\nAda,\n".getBytes(StandardCharsets.UTF_8), 50)
+                .rows().get(1).get(1));
     }
 }

@@ -4,19 +4,17 @@ import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.util.ConfigUtils;
 import ai.chat2db.spi.sql.Chat2DBContext;
-import com.alibaba.excel.EasyExcel;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -25,12 +23,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
- * Bounded import preview with column mapping (MYSQL-IMPORT-001). CSV/XLS/XLSX are parsed
- * through EasyExcel with the same reader for preview and execution; the preview reads only
- * the first {@link #PREVIEW_ROW_LIMIT} rows and never writes.
+ * Bounded import preview with column mapping (MYSQL-IMPORT-001). CSV preview and
+ * execution share one parser/mapping contract; preview reads only the first
+ * {@link #PREVIEW_ROW_LIMIT} rows and never writes.
  */
 @Slf4j
 @Service
@@ -228,7 +225,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             List<Map<String, Object>> targetColumns, Map<Integer, String> sourceToTarget, String strategy)
             throws SQLException {
         int paramIndex = 1;
-        for (Map<String, Object> target : targetColumns) {
+        for (Map<String, Object> target : insertColumns(targetColumns, sourceToTarget, strategy)) {
             String targetName = (String) target.get("name");
             Integer sourceIndex = sourceToTarget.entrySet().stream()
                     .filter(entry -> StringUtils.equals(entry.getValue(), targetName))
@@ -294,12 +291,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         StringBuilder columns = new StringBuilder();
         StringBuilder placeholders = new StringBuilder();
         boolean first = true;
-        for (Map<String, Object> target : targetColumns) {
+        for (Map<String, Object> target : insertColumns(targetColumns, sourceToTarget, strategy)) {
             String name = (String) target.get("name");
-            boolean mapped = sourceToTarget.values().stream().anyMatch(t -> StringUtils.equals(t, name));
-            if (!mapped && DEFAULT_STRATEGY.equals(strategy)) {
-                continue;
-            }
             if (!first) {
                 columns.append(", ");
                 placeholders.append(", ");
@@ -313,6 +306,19 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         }
         return "INSERT INTO " + Chat2DBContext.getDbMetaData().getMetaDataName(tableName)
                 + " (" + columns + ") VALUES (" + placeholders + ")";
+    }
+
+    private static List<Map<String, Object>> insertColumns(List<Map<String, Object>> targetColumns,
+            Map<Integer, String> sourceToTarget, String strategy) {
+        List<Map<String, Object>> columns = new ArrayList<>();
+        for (Map<String, Object> target : targetColumns) {
+            String name = (String) target.get("name");
+            boolean mapped = sourceToTarget.values().stream().anyMatch(t -> StringUtils.equals(t, name));
+            if (mapped || NULL_STRATEGY.equals(strategy)) {
+                columns.add(target);
+            }
+        }
+        return columns;
     }
 
     private static void setValueByType(PreparedStatement statement, int index, String value, String dataType)
@@ -365,11 +371,6 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     }
 
     /**
-     * Parses the file with EasyExcel (same code path for preview and execution). The first
-     * row is treated as the header; without a header the columns are named column_1..N.
-     */
-    @SuppressWarnings("unchecked")
-    /**
      * Spreadsheet formula injection guard: values that Excel would interpret as formulas
      * (= + - @ or a control character) are prefixed with a single quote so a later export
      * cannot turn imported data into executable content.
@@ -391,7 +392,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                                 int firstDataRow, List<Map<String, Object>> sheets) {
     }
 
-    private static byte[] importFile(String filePath) {
+    private static Path importFile(String filePath) {
         if (StringUtils.isBlank(filePath)) {
             throw new BusinessException("import.preview.fileRequired");
         }
@@ -400,7 +401,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
                 throw new java.io.IOException("file is not readable");
             }
-            return Files.readAllBytes(path);
+            return path;
         } catch (Exception e) {
             log.warn("import preview cannot read file {}", filePath, e);
             throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
@@ -425,18 +426,26 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         return lower.endsWith(".csv");
     }
 
-    @SuppressWarnings("unchecked")
     private static ParseOutcome parseRows(String fileName, int limit,
                                           Map<String, Object> csvOptions) {
         if (isCsv(fileName)) {
+            Map<String, Object> options = csvOptions == null ? Map.of() : csvOptions;
             CsvParser parser = new CsvParser(
-                    (String) csvOptions.getOrDefault("encoding", CsvParser.DEFAULT_ENCODING),
-                    (String) csvOptions.getOrDefault("delimiter", ","),
-                    (String) csvOptions.getOrDefault("quote", "\""),
-                    (String) csvOptions.getOrDefault("escape", "\""),
-                    Boolean.TRUE.equals(csvOptions.getOrDefault("hasHeader", Boolean.TRUE)),
-                    Boolean.TRUE.equals(csvOptions.getOrDefault("emptyAsNull", Boolean.TRUE)));
-            CsvParser.CsvResult result = parser.parse(importFile(fileName), limit);
+                    csvStringOption(options, "encoding", CsvParser.DEFAULT_ENCODING),
+                    csvStringOption(options, "delimiter", ","),
+                    csvStringOption(options, "quote", "\""),
+                    csvStringOption(options, "escape", "\""),
+                    csvBooleanOption(options, "hasHeader", true),
+                    csvBooleanOption(options, "emptyAsNull", true));
+            Path importFile = importFile(fileName);
+            CsvParser.CsvResult result;
+            try (InputStream inputStream = Files.newInputStream(importFile)) {
+                result = parser.parse(inputStream, limit);
+            } catch (BusinessException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
+            }
             List<Map<Integer, String>> rows = result.rows();
             List<Map<Integer, ExcelParser.CellValue>> typedRows = new ArrayList<>();
             for (Map<Integer, String> row : rows) {
@@ -460,5 +469,21 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             return new ParseOutcome(typedRows, header, firstDataRow, List.of());
         }
         throw new BusinessException("import.preview.unsupportedFile");
+    }
+
+    private static String csvStringOption(Map<String, Object> csvOptions, String key, String defaultValue) {
+        Object value = csvOptions.getOrDefault(key, defaultValue);
+        if (!(value instanceof String stringValue)) {
+            throw new BusinessException("import.preview.invalidCsvOptions");
+        }
+        return stringValue;
+    }
+
+    private static boolean csvBooleanOption(Map<String, Object> csvOptions, String key, boolean defaultValue) {
+        Object value = csvOptions.getOrDefault(key, defaultValue);
+        if (!(value instanceof Boolean booleanValue)) {
+            throw new BusinessException("import.preview.invalidCsvOptions");
+        }
+        return booleanValue;
     }
 }
