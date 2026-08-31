@@ -29,6 +29,7 @@ public final class MysqlSqlGuards {
             "^([A-Za-z0-9_$]+|" + DEFINER_QUOTED_PART + ")@([A-Za-z0-9_.%:$-]+|" + DEFINER_QUOTED_PART + ")$");
     private static final Pattern COLUMN_TYPE_PATTERN = Pattern.compile(
             "^[A-Za-z][A-Za-z0-9_]*(?:\\s*\\(\\s*\\d+(?:\\s*,\\s*\\d+)?\\s*\\))?(?:\\s+[A-Za-z][A-Za-z0-9_]*)*$");
+    private static final Pattern MYSQL_VERSION_PATTERN = Pattern.compile("^(\\d+)\\.(\\d+).*");
 
     private MysqlSqlGuards() {
     }
@@ -103,6 +104,74 @@ public final class MysqlSqlGuards {
             throw new IllegalArgumentException("Invalid MySQL column type: " + value);
         }
         return trimmed;
+    }
+
+    public static boolean supportsGeneratedColumns(String dbVersion) {
+        String trimmed = StringUtils.trimToEmpty(dbVersion);
+        java.util.regex.Matcher matcher = MYSQL_VERSION_PATTERN.matcher(trimmed);
+        if (!matcher.matches()) {
+            return false;
+        }
+        int major = Integer.parseInt(matcher.group(1));
+        int minor = Integer.parseInt(matcher.group(2));
+        return major > 5 || (major == 5 && minor >= 7);
+    }
+
+    public static String requireGeneratedColumnExpression(String value) {
+        String expression = StringUtils.trimToEmpty(value);
+        if (expression.isEmpty() || expression.contains(";") || expression.contains("/*")
+                || expression.contains("*/") || expression.contains("--") || expression.contains("#")) {
+            throw new IllegalArgumentException("Invalid generated column expression");
+        }
+        validateBalancedExpression(expression);
+        return expression;
+    }
+
+    public static String requireGeneratedColumnStorageType(String value) {
+        String storage = StringUtils.defaultIfBlank(value, "VIRTUAL").trim();
+        if ("VIRTUAL".equalsIgnoreCase(storage)) {
+            return "VIRTUAL";
+        }
+        if ("STORED".equalsIgnoreCase(storage)) {
+            return "STORED";
+        }
+        throw new IllegalArgumentException("Invalid generated column storage type");
+    }
+
+    private static void validateBalancedExpression(String expression) {
+        int parentheses = 0;
+        char quote = 0;
+        for (int i = 0; i < expression.length(); i++) {
+            char current = expression.charAt(i);
+            if (Character.isISOControl(current)) {
+                throw new IllegalArgumentException("Invalid generated column expression");
+            }
+            if (quote != 0) {
+                if (current == '\\') {
+                    i++;
+                } else if (current == quote) {
+                    if (i + 1 < expression.length() && expression.charAt(i + 1) == quote) {
+                        i++;
+                    } else {
+                        quote = 0;
+                    }
+                }
+                continue;
+            }
+            if (current == '\'' || current == '"' || current == '`') {
+                quote = current;
+            } else if (current == '(') {
+                parentheses++;
+            } else if (current == ')') {
+                if (parentheses == 0) {
+                    throw new IllegalArgumentException("Invalid generated column expression");
+                }
+                parentheses--;
+            }
+        }
+        if (quote != 0 || parentheses != 0) {
+            throw new IllegalArgumentException("Invalid generated column expression");
+        }
     }
 
     /**

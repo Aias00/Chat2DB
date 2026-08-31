@@ -6,6 +6,8 @@ import ai.chat2db.spi.IColumnBuilder;
 import ai.chat2db.community.domain.api.enums.plugin.EditStatusEnum;
 import ai.chat2db.community.domain.api.model.metadata.ColumnType;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.spi.util.SqlUtils;
 import com.google.common.collect.Maps;
 import lombok.Getter;
@@ -175,16 +177,9 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             // MySQL column grammar: data_type [GENERATED ALWAYS] AS (expr) [VIRTUAL|STORED]
             // [NOT NULL] [UNIQUE ...] [COMMENT ...]. Generated columns cannot carry a
             // DEFAULT, AUTO_INCREMENT, or ON UPDATE clause, so those are skipped.
-            String expression = column.getGenerationExpression().trim();
-            if (expression.contains(";") || expression.contains("/*") || expression.contains("--")) {
-                throw new IllegalArgumentException("Invalid generated column expression");
-            }
-            String storage = StringUtils.isBlank(column.getGeneratedColumnType())
-                    ? "VIRTUAL"
-                    : column.getGeneratedColumnType().toUpperCase();
-            if (!"VIRTUAL".equals(storage) && !"STORED".equals(storage)) {
-                throw new IllegalArgumentException("Invalid generated column storage type");
-            }
+            requireGeneratedColumnSupported();
+            String expression = MysqlSqlGuards.requireGeneratedColumnExpression(column.getGenerationExpression());
+            String storage = MysqlSqlGuards.requireGeneratedColumnStorageType(column.getGeneratedColumnType());
             script.append("GENERATED ALWAYS AS (").append(expression).append(") ")
                     .append(storage).append(" ");
         }
@@ -251,6 +246,17 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             return "";
         }
         return StringUtils.join("CHARACTER SET ", MysqlSqlGuards.requireMysqlName(column.getCharSetName(), "charset"));
+    }
+
+    private void requireGeneratedColumnSupported() {
+        String dbVersion = null;
+        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
+        if (connectInfo != null) {
+            dbVersion = Chat2DBContext.getDbVersion();
+        }
+        if (!MysqlSqlGuards.supportsGeneratedColumns(dbVersion)) {
+            throw new IllegalArgumentException("Generated columns require MySQL 5.7 or newer");
+        }
     }
 
     private String buildCollation(TableColumn column, MysqlColumnTypeEnum type) {
