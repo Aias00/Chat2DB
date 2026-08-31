@@ -50,7 +50,6 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_RENAME;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SECURITY;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_UNDEFINED;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_FOREIGN_KEY;
-import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ADD_CONSTRAINT;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_FOREIGN_KEY_PREFIX;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_REFERENCES;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ON_DELETE;
@@ -109,6 +108,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             }
             script.append(SQLConstants.TAB).append(mysqlIndexTypeEnum.buildIndexScript(tableIndex)).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
+        appendCreateForeignKeys(script, table.getForeignKeyList());
 
 
         script = new StringBuilder(script.substring(0, script.length() - 2));
@@ -215,10 +215,9 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
         List<ForeignKeyInfo> foreignKeyList = newTable.getForeignKeyList();
         if (CollectionUtils.isNotEmpty(foreignKeyList)) {
-            Map<String, List<ForeignKeyInfo>> foreignKeys = foreignKeyList.stream()
-                    .collect(Collectors.groupingBy(this::foreignKeyGroupKey, LinkedHashMap::new, Collectors.toList()));
+            Map<String, List<ForeignKeyInfo>> foreignKeys = groupForeignKeys(foreignKeyList);
             for (List<ForeignKeyInfo> foreignKeyColumns : foreignKeys.values()) {
-                foreignKeyColumns.sort(Comparator.comparingInt(ForeignKeyInfo::getKeySeq));
+                sortForeignKeyColumns(foreignKeyColumns);
                 ForeignKeyInfo fk = foreignKeyColumns.get(0);
                 if (StringUtils.isBlank(fk.getEditStatus())) {
                     continue;
@@ -250,17 +249,40 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
     }
 
+    private void appendCreateForeignKeys(StringBuilder script, List<ForeignKeyInfo> foreignKeyList) {
+        if (CollectionUtils.isEmpty(foreignKeyList)) {
+            return;
+        }
+        for (List<ForeignKeyInfo> foreignKeyColumns : groupForeignKeys(foreignKeyList).values()) {
+            sortForeignKeyColumns(foreignKeyColumns);
+            script.append(SQLConstants.TAB).append(buildForeignKeyDefinition(foreignKeyColumns))
+                    .append(SQLConstants.COMMA_LINE_SEPARATOR);
+        }
+    }
+
+    private Map<String, List<ForeignKeyInfo>> groupForeignKeys(List<ForeignKeyInfo> foreignKeyList) {
+        return foreignKeyList.stream()
+                .collect(Collectors.groupingBy(this::foreignKeyGroupKey, LinkedHashMap::new, Collectors.toList()));
+    }
+
+    private void sortForeignKeyColumns(List<ForeignKeyInfo> foreignKeyColumns) {
+        foreignKeyColumns.sort(Comparator.comparingInt(ForeignKeyInfo::getKeySeq));
+    }
+
     private String foreignKeyGroupKey(ForeignKeyInfo foreignKey) {
         return StringUtils.defaultString(foreignKey.getFkName()) + '\u0000'
                 + StringUtils.defaultString(foreignKey.getPkTableName());
     }
 
     private String buildAddForeignKey(List<ForeignKeyInfo> foreignKeyColumns) {
+        return "ADD " + buildForeignKeyDefinition(foreignKeyColumns);
+    }
+
+    private String buildForeignKeyDefinition(List<ForeignKeyInfo> foreignKeyColumns) {
         ForeignKeyInfo fk = foreignKeyColumns.get(0);
         StringBuilder sb = new StringBuilder();
-        sb.append(SQL_ADD_CONSTRAINT);
         if (StringUtils.isNotBlank(fk.getFkName())) {
-            sb.append(quoteMysqlIdentifier(fk.getFkName())).append(" ");
+            sb.append("CONSTRAINT ").append(quoteMysqlIdentifier(fk.getFkName())).append(" ");
         }
         sb.append(SQL_FOREIGN_KEY_PREFIX);
         sb.append(foreignKeyColumns.stream().map(ForeignKeyInfo::getFkColumnName)

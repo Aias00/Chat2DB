@@ -40,13 +40,41 @@ class MysqlSqlBuilderTest {
                 + "\tADD CONSTRAINT `fk_child_parent` FOREIGN KEY (`child_a`, `child_b`) REFERENCES `parent`(`parent_a`, `parent_b`) ON DELETE RESTRICT ON UPDATE RESTRICT;", sql);
     }
 
+    @Test
+    void shouldRoundTripCompositeForeignKeyOnceWhenBuildingCreateTable() {
+        ForeignKeyInfo first = foreignKey("child_a", "parent_a", (short) 1, (short) 3, (short) 2);
+        ForeignKeyInfo second = foreignKey("child_b", "parent_b", (short) 2, (short) 3, (short) 2);
+        Table table = Table.builder()
+                .databaseName("test_db")
+                .name("child")
+                .columnList(List.of(
+                        mysqlBigintColumn("child_a"),
+                        mysqlBigintColumn("child_b")))
+                .indexList(List.of())
+                .foreignKeyList(List.of(second, first))
+                .build();
+
+        String sql = new MysqlSqlBuilder().ddl().table().buildCreateTable(table, TableBuilderConfig.defaultConfig());
+
+        assertEquals(1, sql.split("CONSTRAINT `fk_child_parent`", -1).length - 1, sql);
+        assertTrue(sql.contains("\tCONSTRAINT `fk_child_parent` FOREIGN KEY (`child_a`, `child_b`) "
+                + "REFERENCES `parent`(`parent_a`, `parent_b`) ON DELETE SET NULL ON UPDATE NO ACTION"), sql);
+    }
+
     private static ForeignKeyInfo foreignKey(String fkColumn, String pkColumn, short keySeq) {
+        return foreignKey(fkColumn, pkColumn, keySeq, null, null);
+    }
+
+    private static ForeignKeyInfo foreignKey(String fkColumn, String pkColumn, short keySeq,
+                                             Short updateRule, Short deleteRule) {
         ForeignKeyInfo foreignKey = new ForeignKeyInfo();
         foreignKey.setFkName("fk_child_parent");
         foreignKey.setFkColumnName(fkColumn);
         foreignKey.setPkTableName("parent");
         foreignKey.setPkColumnName(pkColumn);
         foreignKey.setKeySeq(keySeq);
+        foreignKey.setUpdateRule(updateRule);
+        foreignKey.setDeleteRule(deleteRule);
         foreignKey.setEditStatus(EditStatusEnum.ADD.name());
         return foreignKey;
     }
@@ -310,6 +338,13 @@ class MysqlSqlBuilderTest {
                 .columnType("VARCHAR")
                 .columnSize(255)
                 .editStatus(editStatus)
+                .build();
+    }
+
+    private static TableColumn mysqlBigintColumn(String name) {
+        return TableColumn.builder()
+                .name(name)
+                .columnType("BIGINT")
                 .build();
     }
 
