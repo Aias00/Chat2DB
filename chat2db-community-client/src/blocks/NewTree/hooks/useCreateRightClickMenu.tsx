@@ -55,6 +55,7 @@ import accountAdminService, { AccountActionType, formatAccountExecuteMessage } f
 import CreateAccountContent, { CreateAccountValues } from '../components/CreateAccountContent';
 import DeleteDatabaseSchemaConfirmContent from '../components/DeleteDatabaseSchemaConfirmContent';
 import PartitionsContent from '../components/PartitionsContent';
+import { PARTITION_REQUIRED_OPERATIONS } from '../components/PartitionsContent/partitionPrivileges';
 import { buildWorkspaceObjectTabTitle } from '@/utils/workspaceObjectTabTitle';
 import { allowsResourceOperations } from '@/client-extension/resourceOperationCapabilities';
 import type { ResourceOperation, ResourceOperationCapabilities } from '@/client-extension/types';
@@ -409,6 +410,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.Partitions]: {
         text: i18n('workspace.ops.partitions'),
         icon: 'icon-table',
+        requiredOperations: PARTITION_REQUIRED_OPERATIONS,
         handle: () => {
           staticModal.confirm({
             title: i18n('workspace.ops.partitions'),

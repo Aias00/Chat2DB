@@ -3,6 +3,7 @@ import { Button, InputNumber, Modal, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
 import sqlService, { IPartitionItem } from '@/service/sql';
+import { executePartitionPreviewSql } from './partitionOperations';
 
 const RANGE_LIST_METHODS = ['RANGE', 'RANGE COLUMNS', 'LIST', 'LIST COLUMNS'];
 const HASH_KEY_METHODS = ['HASH', 'LINEAR HASH', 'KEY', 'LINEAR KEY'];
@@ -37,7 +38,7 @@ const PartitionsContent = ({
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, [databaseName, tableName]);
+  }, [dataSourceId, databaseName, tableName]);
 
   useEffect(() => {
     load();
@@ -56,11 +57,12 @@ const PartitionsContent = ({
         okText: i18n('common.button.execute'),
         cancelText: i18n('common.button.cancel'),
         onOk: () =>
-          sqlService
-            .executeDDL({ dataSourceId, sql: preview } as never)
-            .then(() => {
-              load();
-            })
+          executePartitionPreviewSql({
+            context: { dataSourceId, databaseName, tableName },
+            sql: preview,
+            executeDDL: sqlService.executeDDL,
+            refresh: load,
+          })
             .catch((e) => Modal.error({ title: i18n('workspace.ops.partitionFailed'), content: e?.message })),
       });
     }).catch((e) => Modal.error({ title: i18n('workspace.ops.partitionFailed'), content: e?.message }));
