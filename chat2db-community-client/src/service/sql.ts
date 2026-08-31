@@ -439,7 +439,8 @@ export interface IVariableItem {
 export interface IVariableEditMeta {
   name: string;
   type: 'STRING' | 'NUMBER' | 'ONOFF';
-  scope: 'SESSION' | 'GLOBAL' | 'BOTH';
+  dynamicScopes: Array<'SESSION' | 'GLOBAL'>;
+  persistScopes: Array<'PERSIST' | 'PERSIST_ONLY'>;
   highRisk: boolean;
 }
 

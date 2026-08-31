@@ -35,7 +35,8 @@ public interface IDbVariableService {
      *
      * @param variableName the registered variable name.
      * @param value        the new value.
-     * @param scope        SESSION, GLOBAL, PERSIST, or PERSIST_ONLY (MySQL 8.0 only).
+     * @param scope        one of the scopes returned by {@link EditMeta#dynamicScopes()} or
+     *                     {@link EditMeta#persistScopes()}.
      * @return the SET SQL preview.
      */
     String previewSetVariableSql(String variableName, String value, String scope);
@@ -43,6 +44,7 @@ public interface IDbVariableService {
     /**
      * Edit metadata for a registered variable.
      */
-    record EditMeta(String name, String type, String scope, boolean highRisk) {
+    record EditMeta(String name, String type, List<String> dynamicScopes, List<String> persistScopes,
+                    boolean highRisk) {
     }
 }

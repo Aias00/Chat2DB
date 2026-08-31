@@ -18,6 +18,9 @@ import java.util.Map;
 public class DbVariableServiceImpl implements IDbVariableService {
 
     private static final String SCOPE_GLOBAL = "GLOBAL";
+    private static final String SCOPE_SESSION = "SESSION";
+    private static final String SCOPE_PERSIST = "PERSIST";
+    private static final String SCOPE_PERSIST_ONLY = "PERSIST_ONLY";
     private static final String KIND_VARIABLES = "VARIABLES";
 
     @Override
@@ -42,12 +45,8 @@ public class DbVariableServiceImpl implements IDbVariableService {
         if (variable == null) {
             return null;
         }
-        String scope = switch (variable.getScope()) {
-            case SESSION -> "SESSION";
-            case GLOBAL_ONLY -> "GLOBAL";
-            case BOTH -> "BOTH";
-        };
-        return new EditMeta(variable.getName(), variable.getType().name(), scope,
+        return new EditMeta(variable.getName(), variable.getType().name(), dynamicScopes(variable),
+                persistScopes(variable, mysqlSupportsPersist()),
                 variable.getRisk() == EditableVariable.Risk.HIGH);
     }
 
@@ -63,15 +62,61 @@ public class DbVariableServiceImpl implements IDbVariableService {
         }
         validateValue(variable, value);
         String normalizedScope = scope.trim().toUpperCase(Locale.ROOT);
-        if ("SESSION".equals(normalizedScope) && variable.getScope() == EditableVariable.Scope.GLOBAL_ONLY) {
-            throw new BusinessException("mysql.variables.globalOnly");
-        }
+        validateScope(variable, normalizedScope);
         String setKeyword = switch (normalizedScope) {
-            case "SESSION", "GLOBAL" -> "SET " + normalizedScope;
-            case "PERSIST", "PERSIST_ONLY" -> "SET " + normalizedScope;
+            case SCOPE_SESSION, SCOPE_GLOBAL, SCOPE_PERSIST, SCOPE_PERSIST_ONLY -> "SET " + normalizedScope;
             default -> throw new BusinessException("mysql.variables.unsupportedScope");
         };
         return setKeyword + " " + variable.getName() + " = " + literalValue(variable, value);
+    }
+
+    private static void validateScope(EditableVariable variable, String normalizedScope) {
+        if (dynamicScopes(variable).contains(normalizedScope)) {
+            return;
+        }
+        if (persistScopes(variable, mysqlSupportsPersist()).contains(normalizedScope)) {
+            return;
+        }
+        throw new BusinessException("mysql.variables.unsupportedScope");
+    }
+
+    private static List<String> dynamicScopes(EditableVariable variable) {
+        return switch (variable.getScope()) {
+            case SESSION -> List.of(SCOPE_SESSION);
+            case GLOBAL_ONLY -> List.of(SCOPE_GLOBAL);
+            case BOTH -> List.of(SCOPE_SESSION, SCOPE_GLOBAL);
+        };
+    }
+
+    static List<String> persistScopes(EditableVariable variable, boolean mysqlSupportsPersist) {
+        if (!mysqlSupportsPersist || variable.getPersistCapability() == EditableVariable.PersistCapability.NONE) {
+            return List.of();
+        }
+        return List.of(SCOPE_PERSIST, SCOPE_PERSIST_ONLY);
+    }
+
+    private static boolean mysqlSupportsPersist() {
+        String version = Chat2DBContext.getConnectInfo() == null ? null : Chat2DBContext.getConnectInfo().getDbVersion();
+        return mysqlSupportsPersistVersion(version);
+    }
+
+    static boolean mysqlSupportsPersistVersion(String version) {
+        if (StringUtils.isBlank(version)) {
+            return false;
+        }
+        String trimmed = version.trim();
+        int majorEnd = 0;
+        while (majorEnd < trimmed.length() && Character.isDigit(trimmed.charAt(majorEnd))) {
+            majorEnd++;
+        }
+        if (majorEnd == 0) {
+            return false;
+        }
+        try {
+            return Integer.parseInt(trimmed.substring(0, majorEnd)) >= 8;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     private static String buildShowSql(String scope, String kind) {

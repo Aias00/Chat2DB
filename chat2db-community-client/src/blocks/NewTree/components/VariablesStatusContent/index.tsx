@@ -4,6 +4,19 @@ import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
 import sqlService, { IVariableItem, IVariableEditMeta } from '@/service/sql';
 
+const SCOPE_LABELS = {
+  SESSION: 'workspace.ops.scopeSession',
+  GLOBAL: 'workspace.ops.scopeGlobal',
+  PERSIST: 'workspace.ops.scopePersist',
+  PERSIST_ONLY: 'workspace.ops.scopePersistOnly',
+};
+
+export const getVariableScopeOptions = (meta: IVariableEditMeta) =>
+  [...(meta.dynamicScopes || []), ...(meta.persistScopes || [])].map((scope) => ({
+    value: scope,
+    label: i18n(SCOPE_LABELS[scope]),
+  }));
+
 const VIEWS: { key: string; scope: 'GLOBAL' | 'SESSION'; kind: 'VARIABLES' | 'STATUS' }[] = [
   { key: 'globalVariables', scope: 'GLOBAL', kind: 'VARIABLES' },
   { key: 'sessionVariables', scope: 'SESSION', kind: 'VARIABLES' },
@@ -76,7 +89,8 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
     setEditMeta(meta || null);
     setConfirmName('');
     form.resetFields();
-    form.setFieldsValue({ value: record.value ?? '', scope: 'SESSION' });
+    const scopeOptions = meta ? getVariableScopeOptions(meta) : [];
+    form.setFieldsValue({ value: record.value ?? '', scope: scopeOptions[0]?.value });
   };
 
   const submitEdit = () => {
@@ -177,14 +191,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
               <Input />
             </Form.Item>
             <Form.Item label={i18n('workspace.ops.variableScope')} name="scope">
-              <Select
-                options={[
-                  { value: 'SESSION', label: i18n('workspace.ops.scopeSession'), disabled: editMeta.scope === 'GLOBAL' },
-                  { value: 'GLOBAL', label: i18n('workspace.ops.scopeGlobal'), disabled: editMeta.scope === 'SESSION' },
-                  { value: 'PERSIST', label: i18n('workspace.ops.scopePersist') },
-                  { value: 'PERSIST_ONLY', label: i18n('workspace.ops.scopePersistOnly') },
-                ]}
-              />
+              <Select options={getVariableScopeOptions(editMeta)} />
             </Form.Item>
             {isHighRisk && (
               <Form.Item label={i18n('workspace.ops.highRiskConfirm')}>
