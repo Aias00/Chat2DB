@@ -934,10 +934,10 @@ export const useCreateRightClickMenu = () => {
                   dataSourceId: ep.dataSourceId,
                   databaseName: ep.databaseName,
                   schemaName: ep.schemaName,
-                  tableName: viewName,
+                  viewName,
                 })
                 .then(() => {
-                  handleLoadData();
+                  handleLoadData(treeNodeData);
                 })
                 .catch((error) => {
                   staticMessage.error(error?.message || i18n('common.text.failure'));

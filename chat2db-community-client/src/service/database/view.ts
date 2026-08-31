@@ -1,6 +1,8 @@
 import createRequest from '../base';
 import { IDBContextInfo } from '@/typings/database';
 
+export type DropViewRequest = IDBContextInfo & { viewName: string };
+
 const getViewMeta = createRequest<IDBContextInfo & { viewName: string }, any>('/api/rdb/view/view_meta', {});
 
 const createView = createRequest<IDBContextInfo & {
@@ -13,7 +15,11 @@ const createView = createRequest<IDBContextInfo & {
   useOrReplace?: boolean;
 }, any>('/api/rdb/view/create', { method: 'post' });
 
-const dropView = createRequest<IDBContextInfo & { tableName: string }, any>('/api/rdb/view/drop', { method: 'post' });
+export function buildDropViewRequest(request: DropViewRequest): DropViewRequest {
+  return request;
+}
+
+const dropView = createRequest<DropViewRequest, any>('/api/rdb/view/drop', { method: 'post' });
 
 export default {
   getViewMeta,
