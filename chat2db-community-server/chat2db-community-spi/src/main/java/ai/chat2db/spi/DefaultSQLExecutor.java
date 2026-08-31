@@ -71,7 +71,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -563,7 +562,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String
             tableName,
                                      String columnName) {
-        // codeql[java/sql-injection]
         try (ResultSet resultSet = connection.getMetaData().getColumns(databaseName, schemaName, tableName,
                 columnName)) {
             return ResultSetUtils.toObjectList(resultSet, TableColumn.class);

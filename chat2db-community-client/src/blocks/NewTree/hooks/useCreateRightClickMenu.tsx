@@ -962,7 +962,7 @@ export const useCreateRightClickMenu = () => {
                 dataSourceId: ep.dataSourceId,
                 databaseName: ep.databaseName,
                 schemaName: ep.schemaName,
-                tableName: trgName,
+                triggerName: trgName,
               }).then(() => {
                 handleLoadData();
               });
