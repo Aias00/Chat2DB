@@ -104,6 +104,13 @@ export interface IBoundInfo {
   tableName?: string;
   user?: string;
   host?: string;
+  passwordExpired?: boolean;
+  passwordLastChanged?: string;
+  passwordLifetime?: number;
+  maxQueriesPerHour?: number;
+  maxUpdatesPerHour?: number;
+  maxConnectionsPerHour?: number;
+  maxUserConnections?: number;
   popoverContent?: string;
   ddl?: string;
   loadSQL?: any;

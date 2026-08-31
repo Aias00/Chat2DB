@@ -29,6 +29,8 @@ public class MysqlAccountManager implements IAccountManager {
         capability.setEditablePrivileges(MysqlPrivilege.names());
         capability.setAccountListReadable(canReadMysqlUser(connection));
         capability.setAccountLockSupported(canReadAccountLocked(connection));
+        capability.setPasswordExpirationSupported(canReadPasswordExpiration(connection));
+        capability.setResourceLimitsSupported(canReadResourceLimits(connection));
         try {
             DatabaseMetaData metaData = connection.getMetaData();
             capability.setProductName(metaData.getDatabaseProductName());
@@ -45,12 +47,16 @@ public class MysqlAccountManager implements IAccountManager {
     @Override
     public List<AccountInfo> listAccounts(Connection connection) {
         try {
-            return queryAccounts(connection, true);
-        } catch (SQLException lockedColumnError) {
+            return queryAccounts(connection, AccountQueryMode.SETTINGS);
+        } catch (SQLException settingsColumnError) {
             try {
-                return queryAccounts(connection, false);
-            } catch (SQLException e) {
-                throw new BusinessException(ERROR_KEY_ACCOUNT_LIST_UNAVAILABLE, null, e);
+                return queryAccounts(connection, AccountQueryMode.LOCKED);
+            } catch (SQLException lockedColumnError) {
+                try {
+                    return queryAccounts(connection, AccountQueryMode.BASIC);
+                } catch (SQLException e) {
+                    throw new BusinessException(ERROR_KEY_ACCOUNT_LIST_UNAVAILABLE, null, e);
+                }
             }
         }
     }
@@ -119,9 +125,13 @@ public class MysqlAccountManager implements IAccountManager {
         return !productName.contains("mariadb") && metadata.getDatabaseMajorVersion() >= 8;
     }
 
-    private List<AccountInfo> queryAccounts(Connection connection, boolean includeLocked) throws SQLException {
+    private List<AccountInfo> queryAccounts(Connection connection, AccountQueryMode queryMode) throws SQLException {
         List<AccountInfo> accounts = new ArrayList<>();
-        String sql = includeLocked ? SQL_SELECT_MYSQL_USERS_WITH_LOCK : SQL_SELECT_MYSQL_USERS;
+        String sql = switch (queryMode) {
+            case SETTINGS -> SQL_SELECT_MYSQL_USERS_WITH_SETTINGS;
+            case LOCKED -> SQL_SELECT_MYSQL_USERS_WITH_LOCK;
+            case BASIC -> SQL_SELECT_MYSQL_USERS;
+        };
         try (PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
@@ -129,9 +139,20 @@ public class MysqlAccountManager implements IAccountManager {
                 account.setUser(resultSet.getString(FIELD_USER));
                 account.setHost(resultSet.getString(FIELD_HOST));
                 account.setAuthenticationPlugin(safeGetString(resultSet, FIELD_PLUGIN));
-                if (includeLocked) {
+                if (queryMode != AccountQueryMode.BASIC) {
                     String accountLocked = safeGetString(resultSet, FIELD_ACCOUNT_LOCKED);
                     account.setLocked(StringUtils.isBlank(accountLocked) ? null : VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(accountLocked));
+                }
+                if (queryMode == AccountQueryMode.SETTINGS) {
+                    String passwordExpired = safeGetString(resultSet, FIELD_PASSWORD_EXPIRED);
+                    account.setPasswordExpired(StringUtils.isBlank(passwordExpired) ? null
+                            : VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(passwordExpired));
+                    account.setPasswordLastChanged(safeGetString(resultSet, FIELD_PASSWORD_LAST_CHANGED));
+                    account.setPasswordLifetime(safeGetInteger(resultSet, FIELD_PASSWORD_LIFETIME));
+                    account.setMaxQueriesPerHour(safeGetInteger(resultSet, FIELD_MAX_QUESTIONS));
+                    account.setMaxUpdatesPerHour(safeGetInteger(resultSet, FIELD_MAX_UPDATES));
+                    account.setMaxConnectionsPerHour(safeGetInteger(resultSet, FIELD_MAX_CONNECTIONS));
+                    account.setMaxUserConnections(safeGetInteger(resultSet, FIELD_MAX_USER_CONNECTIONS));
                 }
                 account.setDisplayName(account.getUser() + ACCOUNT_DISPLAY_NAME_SEPARATOR + account.getHost());
                 accounts.add(account);
@@ -170,6 +191,24 @@ public class MysqlAccountManager implements IAccountManager {
         }
     }
 
+    private boolean canReadPasswordExpiration(Connection connection) {
+        try (PreparedStatement statement = connection.prepareStatement(SQL_SELECT_PASSWORD_EXPIRATION_MYSQL_USER);
+             ResultSet ignored = statement.executeQuery()) {
+            return true;
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    private boolean canReadResourceLimits(Connection connection) {
+        try (PreparedStatement statement = connection.prepareStatement(SQL_SELECT_RESOURCE_LIMITS_MYSQL_USER);
+             ResultSet ignored = statement.executeQuery()) {
+            return true;
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
     private String querySingleString(Connection connection, String sql) {
         try (PreparedStatement statement = connection.prepareStatement(sql); ResultSet resultSet = statement.executeQuery()) {
             if (resultSet.next()) {
@@ -187,5 +226,20 @@ public class MysqlAccountManager implements IAccountManager {
         } catch (SQLException e) {
             return null;
         }
+    }
+
+    private Integer safeGetInteger(ResultSet resultSet, String column) {
+        try {
+            int value = resultSet.getInt(column);
+            return resultSet.wasNull() ? null : value;
+        } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    private enum AccountQueryMode {
+        SETTINGS,
+        LOCKED,
+        BASIC
     }
 }

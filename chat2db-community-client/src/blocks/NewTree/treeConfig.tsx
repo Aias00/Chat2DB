@@ -404,6 +404,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
           isLeaf: true,
           extraParams: {
             ...extraParams,
+            ...account,
             user: account.user,
             host: account.host,
             popoverContent: account.displayName,

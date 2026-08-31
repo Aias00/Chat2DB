@@ -295,6 +295,22 @@ export default {
   'workspace.databaseAccount.revokePrivilege': 'Revoke privileges',
   'workspace.databaseAccount.lockUnsupported':
     'Account lock is not supported by this MySQL version or current account privileges',
+  'workspace.databaseAccount.passwordExpiration': 'Password Expiration',
+  'workspace.databaseAccount.passwordExpirationUnsupported':
+    'Password expiration is not supported by this MySQL version or current account privileges',
+  'workspace.databaseAccount.passwordExpirePolicy': 'Password expiration policy',
+  'workspace.databaseAccount.passwordExpireDefault': 'Default',
+  'workspace.databaseAccount.passwordExpireNever': 'Never expire',
+  'workspace.databaseAccount.passwordExpireImmediate': 'Expire now',
+  'workspace.databaseAccount.passwordExpireInterval': 'Expire after days',
+  'workspace.databaseAccount.passwordExpireDays': 'Days',
+  'workspace.databaseAccount.resourceLimits': 'Resource Limits',
+  'workspace.databaseAccount.resourceLimitsUnsupported':
+    'Resource limits are not supported by this MySQL version or current account privileges',
+  'workspace.databaseAccount.maxQueriesPerHour': 'Max queries per hour',
+  'workspace.databaseAccount.maxUpdatesPerHour': 'Max updates per hour',
+  'workspace.databaseAccount.maxConnectionsPerHour': 'Max connections per hour',
+  'workspace.databaseAccount.maxUserConnections': 'Max user connections',
   'workspace.routine.button.invoke': 'Invoke routine',
   'workspace.routine.button.apply': 'Apply changes',
   'workspace.routine.button.refresh': 'Reload DDL',
