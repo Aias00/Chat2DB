@@ -102,8 +102,9 @@ public interface IDbConnectionContextService {
      * connection changes; rolls back any open transaction first.
      *
      * @param dbConnectionContextRequest connection context parameters (consoleId required).
+     * @return resulting transaction state, including the release-time rollback outcome.
      */
-    void releaseBoundConnection(DbConnectionContextRequest dbConnectionContextRequest);
+    TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest dbConnectionContextRequest);
 
     /**
      * Checks whether the console currently has an open (uncommitted) manual transaction.

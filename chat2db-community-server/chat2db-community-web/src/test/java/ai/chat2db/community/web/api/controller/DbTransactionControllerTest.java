@@ -23,11 +23,13 @@ import org.springframework.context.support.StaticMessageSource;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DbTransactionControllerTest {
@@ -75,6 +77,46 @@ class DbTransactionControllerTest {
     }
 
     @Test
+    void releaseEndpointReturnsTransactionStateAndKeepsRequestDatabaseAndSchemaOutOfContext() throws Exception {
+        AtomicReference<DbConnectionContextRequest> received = new AtomicReference<>();
+        DbTransactionController controller = controller(new RecordingConnectionContextService(received, null));
+        ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest request =
+                new ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest();
+        request.setDataSourceId(42L);
+        request.setDatabaseName("shop");
+        request.setSchemaName("public");
+        request.setConsoleId(7002L);
+
+        DataResult<TransactionStateResponse> result = controller.release(request);
+
+        assertTrue(result.success());
+        assertFalse(result.getData().isInTransaction());
+        assertEquals("auto", result.getData().getMode());
+        assertEquals("ROLLED_BACK", result.getData().getOutcome());
+        assertEquals(42L, received.get().getDataSourceId());
+        assertEquals(7002L, received.get().getConsoleId());
+        assertNull(received.get().getDatabaseName());
+        assertNull(received.get().getSchemaName());
+    }
+
+    @Test
+    void transactionEndpointClearsContextInFinallyWhenServiceFails() throws Exception {
+        AtomicInteger clears = new AtomicInteger();
+        DbTransactionController controller = controller(
+                new RecordingConnectionContextService(new AtomicReference<>(), new RuntimeException("boom"), clears));
+        ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest request =
+                new ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest();
+        request.setDataSourceId(42L);
+        request.setDatabaseName("tainted_db");
+        request.setSchemaName("tainted_schema");
+        request.setConsoleId(7003L);
+
+        assertThrows(RuntimeException.class, () -> controller.begin(request));
+
+        assertEquals(1, clears.get());
+    }
+
+    @Test
     void exceptionHandlerReturnsBusinessErrorWhenDatasourceIsNotVisible() {
         EasyControllerExceptionHandler exceptionHandler = new EasyControllerExceptionHandler();
 
@@ -94,7 +136,12 @@ class DbTransactionControllerTest {
     }
 
     private record RecordingConnectionContextService(AtomicReference<DbConnectionContextRequest> received,
-            RuntimeException failure) implements IDbConnectionContextService {
+            RuntimeException failure, AtomicInteger clears) implements IDbConnectionContextService {
+
+        private RecordingConnectionContextService(AtomicReference<DbConnectionContextRequest> received,
+                RuntimeException failure) {
+            this(received, failure, new AtomicInteger());
+        }
 
         @Override
         public void bind(DbConnectionContextRequest dbConnectionContextRequest) {
@@ -115,6 +162,7 @@ class DbTransactionControllerTest {
 
         @Override
         public void clear() {
+            clears.incrementAndGet();
         }
 
         @Override
@@ -146,11 +194,14 @@ class DbTransactionControllerTest {
         }
 
         @Override
-        public void releaseBoundConnection(DbConnectionContextRequest request) {
+        public TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest request) {
             received.set(request);
             if (failure != null) {
                 throw failure;
             }
+            TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+            response.setOutcome("ROLLED_BACK");
+            return response;
         }
 
         @Override

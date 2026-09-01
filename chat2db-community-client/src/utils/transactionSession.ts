@@ -5,13 +5,7 @@ import i18n from '@/i18n';
 import transactionServer from '@/service/transaction';
 import { useWorkspaceStore } from '@/store/workspace';
 import type { IWorkspaceTab } from '@/typings';
-
-interface TxConsole {
-  consoleId: number;
-  dataSourceId: number;
-  databaseName?: string;
-  schemaName?: string;
-}
+import { releaseTransactionConsoles, type CloseAction, type TxConsole } from './transactionSessionCore';
 
 /**
  * For each console being closed that has an open (uncommitted) transaction, prompt the user
@@ -54,36 +48,13 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
       resolve(value);
     };
 
-    const releaseAll = async (action: 'commit' | 'rollback') => {
-      const store = useWorkspaceStore.getState();
-      const results = await Promise.all(
-        consoles.map(async (c) => {
-          const request = {
-            dataSourceId: c.dataSourceId,
-            databaseName: c.databaseName,
-            schemaName: c.schemaName,
-            consoleId: c.consoleId,
-          };
-          try {
-            const result =
-              action === 'commit'
-                ? await transactionServer.commitTransaction(request)
-                : await transactionServer.rollbackTransaction(request);
-            store.setTransactionState(c.consoleId, {
-              inTransaction: false,
-              lastOutcome: result?.outcome,
-              lastError: result?.lastError,
-            });
-            return true;
-          } catch (error) {
-            // The server still holds the open transaction; keep the console open so the user
-            // can retry, otherwise the transaction would be silently abandoned.
-            store.setTransactionState(c.consoleId, { inTransaction: true, lastError: String(error) });
-            return false;
-          }
-        }),
-      );
-      if (results.some((ok) => !ok)) {
+    const releaseAll = async (action: CloseAction) => {
+      const success = await releaseTransactionConsoles(consoles, action, {
+        store: useWorkspaceStore.getState(),
+        commitTransaction: transactionServer.commitTransaction,
+        releaseTransaction: transactionServer.releaseTransaction,
+      });
+      if (!success) {
         staticMessage.error(i18n('workspace.transaction.releaseFailed'));
         finish(false);
         return;

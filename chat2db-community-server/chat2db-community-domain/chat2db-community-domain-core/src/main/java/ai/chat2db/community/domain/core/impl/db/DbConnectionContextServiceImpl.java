@@ -126,41 +126,45 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse beginManualTransaction(DbConnectionContextRequest param) {
-        DbConnectionContextRequest trustedParam = resolveTransactionBeginContext(param);
-        bind(trustedParam);
-        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
-        if (connectInfo == null) {
-            throw new BusinessException("connection error");
-        }
-        // If a transaction is already open for this console, this is idempotent.
-        if (ConsoleTransactionRegistry.isInTransaction(trustedParam.getConsoleId())) {
-            return TransactionStateResponse.of(true, "manual");
-        }
-        // Open a fresh, isolated connection (not borrowed from the pool) and switch it to
-        // manual commit. The connection is owned by the registry for the console's lifetime.
-        Connection connection = Chat2DBContext.getDbManager().getConnection(connectInfo);
-        connectInfo.setConnection(connection);
-        connectInfo.setConsoleOwn(Boolean.TRUE);
         try {
-            connection.setAutoCommit(false);
-        } catch (SQLException e) {
-            log.error("Failed to disable autoCommit for consoleId={}", param.getConsoleId(), e);
-            connectInfo.setConsoleOwn(Boolean.FALSE);
-            connectInfo.setConnection(null);
-            quietlyClose(connection);
-            TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
-            response.setLastError(e.getMessage());
-            return response;
-        }
-        if (!ConsoleTransactionRegistry.registerIfAbsent(trustedParam.getConsoleId(), connectInfo)) {
-            // Another request opened the transaction concurrently; drop this request's fresh
-            // connection and report the existing open transaction.
-            connectInfo.setConsoleOwn(Boolean.FALSE);
-            connectInfo.setConnection(null);
-            quietlyClose(connection);
+            DbConnectionContextRequest trustedParam = resolveTransactionBeginContext(param);
+            bind(trustedParam);
+            ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
+            if (connectInfo == null) {
+                throw new BusinessException("connection error");
+            }
+            // If a transaction is already open for this console, this is idempotent.
+            if (ConsoleTransactionRegistry.isInTransaction(trustedParam.getConsoleId())) {
+                return TransactionStateResponse.of(true, "manual");
+            }
+            // Open a fresh, isolated connection (not borrowed from the pool) and switch it to
+            // manual commit. The connection is owned by the registry for the console's lifetime.
+            Connection connection = Chat2DBContext.getDbManager().getConnection(connectInfo);
+            connectInfo.setConnection(connection);
+            connectInfo.setConsoleOwn(Boolean.TRUE);
+            try {
+                connection.setAutoCommit(false);
+            } catch (SQLException e) {
+                log.error("Failed to disable autoCommit for consoleId={}", param.getConsoleId(), e);
+                connectInfo.setConsoleOwn(Boolean.FALSE);
+                connectInfo.setConnection(null);
+                quietlyClose(connection);
+                TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+                response.setLastError(e.getMessage());
+                return response;
+            }
+            if (!ConsoleTransactionRegistry.registerIfAbsent(trustedParam.getConsoleId(), connectInfo)) {
+                // Another request opened the transaction concurrently; drop this request's fresh
+                // connection and report the existing open transaction.
+                connectInfo.setConsoleOwn(Boolean.FALSE);
+                connectInfo.setConnection(null);
+                quietlyClose(connection);
+                return TransactionStateResponse.of(true, "manual");
+            }
             return TransactionStateResponse.of(true, "manual");
+        } finally {
+            clear();
         }
-        return TransactionStateResponse.of(true, "manual");
     }
 
     @Override
@@ -207,13 +211,16 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     }
 
     @Override
-    public void releaseBoundConnection(DbConnectionContextRequest param) {
+    public TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest param) {
         try {
-            ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
-                validateTransactionRequest(param);
-                ConsoleTransactionRegistry.release(param.getConsoleId(), true);
-                return null;
-            });
+            ConsoleTransactionRegistry.TransactionOutcome outcome =
+                    ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+                        validateTransactionRequest(param);
+                        return ConsoleTransactionRegistry.release(param.getConsoleId(), true);
+                    });
+            TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+            response.setOutcome(outcome.name());
+            return response;
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {

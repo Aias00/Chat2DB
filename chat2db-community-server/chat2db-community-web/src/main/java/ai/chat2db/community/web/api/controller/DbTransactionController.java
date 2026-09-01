@@ -36,7 +36,11 @@ public class DbTransactionController {
      */
     @RequestMapping(value = "/begin", method = {RequestMethod.POST, RequestMethod.PUT})
     public DataResult<TransactionStateResponse> begin(@Valid @RequestBody ConsoleCloseRequest request) {
-        return DataResult.of(connectionContextService.beginManualTransaction(toContext(request)));
+        try {
+            return DataResult.of(connectionContextService.beginManualTransaction(toContext(request)));
+        } finally {
+            connectionContextService.clear();
+        }
     }
 
     /**
@@ -46,7 +50,11 @@ public class DbTransactionController {
      */
     @RequestMapping(value = "/commit", method = {RequestMethod.POST, RequestMethod.PUT})
     public DataResult<TransactionStateResponse> commit(@Valid @RequestBody ConsoleCloseRequest request) {
-        return DataResult.of(connectionContextService.commitTransaction(toContext(request)));
+        try {
+            return DataResult.of(connectionContextService.commitTransaction(toContext(request)));
+        } finally {
+            connectionContextService.clear();
+        }
     }
 
     /**
@@ -56,7 +64,11 @@ public class DbTransactionController {
      */
     @RequestMapping(value = "/rollback", method = {RequestMethod.POST, RequestMethod.PUT})
     public DataResult<TransactionStateResponse> rollback(@Valid @RequestBody ConsoleCloseRequest request) {
-        return DataResult.of(connectionContextService.rollbackTransaction(toContext(request)));
+        try {
+            return DataResult.of(connectionContextService.rollbackTransaction(toContext(request)));
+        } finally {
+            connectionContextService.clear();
+        }
     }
 
     /**
@@ -66,7 +78,11 @@ public class DbTransactionController {
      */
     @RequestMapping(value = "/state", method = {RequestMethod.POST, RequestMethod.PUT})
     public DataResult<TransactionStateResponse> state(@Valid @RequestBody ConsoleCloseRequest request) {
-        return DataResult.of(connectionContextService.getTransactionState(toContext(request)));
+        try {
+            return DataResult.of(connectionContextService.getTransactionState(toContext(request)));
+        } finally {
+            connectionContextService.clear();
+        }
     }
 
     /**
@@ -76,9 +92,12 @@ public class DbTransactionController {
      * Endpoint: {@code POST /api/rdb/transaction/release}.
      */
     @RequestMapping(value = "/release", method = {RequestMethod.POST, RequestMethod.PUT})
-    public DataResult<Void> release(@Valid @RequestBody ConsoleCloseRequest request) {
-        connectionContextService.releaseBoundConnection(toContext(request));
-        return DataResult.empty();
+    public DataResult<TransactionStateResponse> release(@Valid @RequestBody ConsoleCloseRequest request) {
+        try {
+            return DataResult.of(connectionContextService.releaseBoundConnection(toContext(request)));
+        } finally {
+            connectionContextService.clear();
+        }
     }
 
     private DbConnectionContextRequest toContext(ConsoleCloseRequest request) {

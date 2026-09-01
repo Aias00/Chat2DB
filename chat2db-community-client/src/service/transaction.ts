@@ -39,10 +39,13 @@ const getTransactionState = createRequest<ITransactionRequest, ITransactionState
 );
 
 /** Release the console's bound connection (rolls back any open transaction first). */
-const releaseTransaction = createRequest<ITransactionRequest, void>('/api/rdb/transaction/release', {
-  method: 'post',
-  errorLevel: false,
-});
+const releaseTransaction = createRequest<ITransactionRequest, ITransactionStateResponse>(
+  '/api/rdb/transaction/release',
+  {
+    method: 'post',
+    errorLevel: false,
+  },
+);
 
 export default {
   beginTransaction,

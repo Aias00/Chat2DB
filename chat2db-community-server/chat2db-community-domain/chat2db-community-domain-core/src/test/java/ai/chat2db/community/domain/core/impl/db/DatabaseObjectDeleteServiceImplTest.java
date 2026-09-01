@@ -351,8 +351,9 @@ class DatabaseObjectDeleteServiceImplTest {
         }
 
         @Override
-        public void releaseBoundConnection(DbConnectionContextRequest param) {
+        public TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest param) {
             // No-op mock: the delete flow does not bind console-owned connections.
+            return TransactionStateResponse.of(false, "auto");
         }
 
         @Override

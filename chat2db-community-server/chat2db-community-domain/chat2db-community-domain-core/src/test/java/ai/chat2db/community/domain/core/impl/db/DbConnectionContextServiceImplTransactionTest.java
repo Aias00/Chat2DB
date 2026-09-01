@@ -16,11 +16,13 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -92,6 +94,36 @@ class DbConnectionContextServiceImplTransactionTest {
         assertThrows(BusinessException.class, () -> service.getTransactionState(request(consoleId, 11L)));
     }
 
+    @Test
+    void releaseReturnsRolledBackOutcomeAndClearsBoundTransaction() {
+        long consoleId = 9005L;
+        AtomicInteger rollbacks = new AtomicInteger();
+        registerBound(consoleId, 10L, proxyConnection(new AtomicInteger(), rollbacks));
+        DbConnectionContextServiceImpl service = service(Set.of(10L));
+
+        var response = service.releaseBoundConnection(request(consoleId, 10L));
+
+        assertFalse(response.isInTransaction());
+        assertEquals("auto", response.getMode());
+        assertEquals("ROLLED_BACK", response.getOutcome());
+        assertEquals(1, rollbacks.get());
+        assertFalse(ConsoleTransactionRegistry.isInTransaction(consoleId));
+    }
+
+    @Test
+    void releaseReturnsUnknownOutcomeWhenRollbackCannotBeConfirmed() {
+        long consoleId = 9006L;
+        registerBound(consoleId, 10L, rollbackFailingConnection());
+        DbConnectionContextServiceImpl service = service(Set.of(10L));
+
+        var response = service.releaseBoundConnection(request(consoleId, 10L));
+
+        assertFalse(response.isInTransaction());
+        assertEquals("auto", response.getMode());
+        assertEquals("UNKNOWN", response.getOutcome());
+        assertFalse(ConsoleTransactionRegistry.isInTransaction(consoleId));
+    }
+
     private static DbConnectionContextServiceImpl service(Set<Long> visibleDatasourceIds) {
         DbConnectionContextServiceImpl service = new DbConnectionContextServiceImpl();
         setField(service, "workspaceDataSourceService",
@@ -131,6 +163,18 @@ class DbConnectionContextServiceImplTransactionTest {
                         yield null;
                     }
                     case "setAutoCommit", "close", "abort" -> null;
+                    case "isClosed" -> false;
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Connection rollbackFailingConnection() {
+        return (Connection) Proxy.newProxyInstance(
+                DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "rollback" -> throw new SQLException("rollback failed");
+                    case "close", "abort" -> null;
                     case "isClosed" -> false;
                     default -> defaultValue(method.getReturnType());
                 });

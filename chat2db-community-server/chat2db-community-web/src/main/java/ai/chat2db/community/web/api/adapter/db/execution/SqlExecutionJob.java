@@ -220,7 +220,7 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
         Long consoleId = param == null ? null : param.getConsoleId();
         if (consoleId == null
                 || !connectionContextService.isInTransaction(consoleId)
-                || !isImplicitCommitStatement(param.getSql())) {
+                || !containsImplicitCommitStatement(param.getSql())) {
             return;
         }
         // A DDL/implicit-commit statement is about to run while a manual transaction is open.
@@ -235,8 +235,16 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
         }
     }
 
-    private boolean isImplicitCommitStatement(String sql) {
-        String firstToken = firstSqlToken(sql);
+    static boolean containsImplicitCommitStatement(String sql) {
+        for (String firstToken : firstSqlTokens(sql)) {
+            if (isImplicitCommitToken(firstToken)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isImplicitCommitToken(String firstToken) {
         return switch (firstToken) {
             case "CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME", "SET", "START", "CHANGE", "SLAVE", "PURGE",
                  "RESET", "CACHE", "GRANT", "REVOKE", "FLUSH", "LOCK", "UNLOCK", "OPTIMIZE", "REPAIR",
@@ -245,20 +253,146 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
         };
     }
 
-    private String firstSqlToken(String sql) {
+    private static List<String> firstSqlTokens(String sql) {
         if (sql == null) {
-            return "";
+            return List.of();
         }
+        List<String> tokens = new ArrayList<>();
         int length = sql.length();
-        int index = 0;
-        while (index < length && Character.isWhitespace(sql.charAt(index))) {
+        int statementStart = 0;
+        boolean singleQuote = false;
+        boolean doubleQuote = false;
+        boolean backtick = false;
+        boolean bracketQuote = false;
+        boolean lineComment = false;
+        boolean blockComment = false;
+        for (int index = 0; index < length; index++) {
+            char current = sql.charAt(index);
+            char next = index + 1 < length ? sql.charAt(index + 1) : '\0';
+            if (lineComment) {
+                if (current == '\n' || current == '\r') {
+                    lineComment = false;
+                }
+                continue;
+            }
+            if (blockComment) {
+                if (current == '*' && next == '/') {
+                    blockComment = false;
+                    index++;
+                }
+                continue;
+            }
+            if (singleQuote) {
+                if (current == '\'' && next == '\'') {
+                    index++;
+                } else if (current == '\'') {
+                    singleQuote = false;
+                }
+                continue;
+            }
+            if (doubleQuote) {
+                if (current == '"' && next == '"') {
+                    index++;
+                } else if (current == '"') {
+                    doubleQuote = false;
+                }
+                continue;
+            }
+            if (backtick) {
+                if (current == '`') {
+                    backtick = false;
+                }
+                continue;
+            }
+            if (bracketQuote) {
+                if (current == ']') {
+                    bracketQuote = false;
+                }
+                continue;
+            }
+            if (current == '-' && next == '-') {
+                lineComment = true;
+                index++;
+                continue;
+            }
+            if (current == '#') {
+                lineComment = true;
+                continue;
+            }
+            if (current == '/' && next == '*') {
+                blockComment = true;
+                index++;
+                continue;
+            }
+            if (current == '\'') {
+                singleQuote = true;
+                continue;
+            }
+            if (current == '"') {
+                doubleQuote = true;
+                continue;
+            }
+            if (current == '`') {
+                backtick = true;
+                continue;
+            }
+            if (current == '[') {
+                bracketQuote = true;
+                continue;
+            }
+            if (current == ';') {
+                addFirstSqlToken(tokens, sql, statementStart, index);
+                statementStart = index + 1;
+            }
+        }
+        addFirstSqlToken(tokens, sql, statementStart, length);
+        return tokens;
+    }
+
+    private static void addFirstSqlToken(List<String> tokens, String sql, int startInclusive, int endExclusive) {
+        String token = firstSqlToken(sql, startInclusive, endExclusive);
+        if (!token.isEmpty()) {
+            tokens.add(token);
+        }
+    }
+
+    private static String firstSqlToken(String sql, int startInclusive, int endExclusive) {
+        int index = startInclusive;
+        while (index < endExclusive) {
+            while (index < endExclusive && Character.isWhitespace(sql.charAt(index))) {
+                index++;
+            }
+            if (index + 1 < endExclusive && sql.charAt(index) == '-' && sql.charAt(index + 1) == '-') {
+                index = skipLineComment(sql, index + 2, endExclusive);
+                continue;
+            }
+            if (index < endExclusive && sql.charAt(index) == '#') {
+                index = skipLineComment(sql, index + 1, endExclusive);
+                continue;
+            }
+            if (index + 1 < endExclusive && sql.charAt(index) == '/' && sql.charAt(index + 1) == '*') {
+                int blockEnd = sql.indexOf("*/", index + 2);
+                index = blockEnd < 0 || blockEnd >= endExclusive ? endExclusive : blockEnd + 2;
+                continue;
+            }
+            break;
+        }
+        int tokenStart = index;
+        while (index < endExclusive && Character.isLetter(sql.charAt(index))) {
             index++;
         }
-        int start = index;
-        while (index < length && Character.isLetter(sql.charAt(index))) {
+        return sql.substring(tokenStart, index).toUpperCase(Locale.ROOT);
+    }
+
+    private static int skipLineComment(String sql, int index, int endExclusive) {
+        while (index < endExclusive) {
+            char current = sql.charAt(index);
+            if (current == '\n' || current == '\r') {
+                return index + 1;
+            }
             index++;
         }
-        return sql.substring(start, index).toUpperCase(Locale.ROOT);
+        return endExclusive;
     }
 
     private void recordTerminalStatus(SqlExecutionLogConsumer logConsumer, String status, String message) {

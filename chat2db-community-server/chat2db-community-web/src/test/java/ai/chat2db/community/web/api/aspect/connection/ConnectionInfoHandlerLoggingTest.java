@@ -1,17 +1,28 @@
 package ai.chat2db.community.web.api.aspect.connection;
 
+import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
+import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
+import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
 import ai.chat2db.community.web.api.util.ApplicationContextUtil;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import org.aspectj.lang.ProceedingJoinPoint;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConnectionInfoHandlerLoggingTest {
@@ -44,5 +55,93 @@ class ConnectionInfoHandlerLoggingTest {
             logger.detachAppender(appender);
             new ApplicationContextUtil().setApplicationContext(original);
         }
+    }
+
+    @Test
+    void clearsConnectionContextWhenProceededControllerThrows() throws Throwable {
+        AtomicInteger clears = new AtomicInteger();
+        AtomicReference<DbConnectionContextRequest> bound = new AtomicReference<>();
+        ConnectionInfoHandler handler = new ConnectionInfoHandler();
+        setConnectionContextService(handler, proxyConnectionContextService(bound, clears));
+        DataSourceBaseRequest request = new DataSourceBaseRequest();
+        request.setDataSourceId(42L);
+        request.setDatabaseName("request_db");
+        request.setSchemaName("request_schema");
+
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> handler.connectionInfoHandler(joinPoint(new Object[]{request}, () -> {
+                    assertEquals("request_db", bound.get().getDatabaseName());
+                    throw new IllegalStateException("boom");
+                })));
+
+        assertEquals("boom", thrown.getMessage());
+        assertEquals(1, clears.get());
+    }
+
+    private static void setConnectionContextService(ConnectionInfoHandler handler,
+            IDbConnectionContextService service) throws Exception {
+        Field field = ConnectionInfoHandler.class.getDeclaredField("connectionContextService");
+        field.setAccessible(true);
+        field.set(handler, service);
+    }
+
+    private static IDbConnectionContextService proxyConnectionContextService(
+            AtomicReference<DbConnectionContextRequest> bound, AtomicInteger clears) {
+        return (IDbConnectionContextService) Proxy.newProxyInstance(
+                ConnectionInfoHandlerLoggingTest.class.getClassLoader(),
+                new Class<?>[]{IDbConnectionContextService.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "bind" -> {
+                        bound.set((DbConnectionContextRequest) args[0]);
+                        yield null;
+                    }
+                    case "clear" -> {
+                        clears.incrementAndGet();
+                        yield null;
+                    }
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static ProceedingJoinPoint joinPoint(Object[] args, Callable<Object> proceed) {
+        return (ProceedingJoinPoint) Proxy.newProxyInstance(
+                ConnectionInfoHandlerLoggingTest.class.getClassLoader(),
+                new Class<?>[]{ProceedingJoinPoint.class},
+                (proxy, method, methodArgs) -> switch (method.getName()) {
+                    case "getArgs" -> args;
+                    case "proceed" -> proceed.call();
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Object defaultValue(Class<?> returnType) {
+        if (!returnType.isPrimitive()) {
+            return null;
+        }
+        if (returnType == boolean.class) {
+            return false;
+        }
+        if (returnType == int.class) {
+            return 0;
+        }
+        if (returnType == long.class) {
+            return 0L;
+        }
+        if (returnType == double.class) {
+            return 0D;
+        }
+        if (returnType == float.class) {
+            return 0F;
+        }
+        if (returnType == short.class) {
+            return (short) 0;
+        }
+        if (returnType == byte.class) {
+            return (byte) 0;
+        }
+        if (returnType == char.class) {
+            return '\0';
+        }
+        return null;
     }
 }
