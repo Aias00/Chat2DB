@@ -11,6 +11,7 @@ import { keyboardKey } from '../../helper/utils';
 import { useZoerStore } from '@/store/zoer';
 import { isTemporaryId } from '@/utils';
 import { buildConsoleDefaultTabName } from '@/store/workspace/utils/consoleTabName';
+import type { IExplainCapability } from '@/service/sql';
 
 interface OperationLineProps {
   active: boolean;
@@ -21,6 +22,7 @@ interface OperationLineProps {
   action: (type: SQLOptType, params?: any) => void;
   isConsole?: boolean;
   contentDiffEnabled?: boolean;
+  explainCapability?: IExplainCapability | null;
 }
 
 const OperationLine = ({
@@ -32,6 +34,7 @@ const OperationLine = ({
   action,
   isConsole = true,
   contentDiffEnabled = false,
+  explainCapability,
 }: OperationLineProps) => {
   const { styles, cx } = useStyles();
 
@@ -46,6 +49,9 @@ const OperationLine = ({
   const showMysqlExplainButtons = useMemo(() => {
     return showRunButton && dbInfo.databaseType?.toUpperCase() === 'MYSQL';
   }, [dbInfo.databaseType, showRunButton]);
+
+  const disableExplainJson = explainCapability?.explainJsonSupported === false;
+  const disableExplainAnalyze = explainCapability?.explainAnalyzeSupported === false;
 
   const showRoutineButtons = useMemo(() => {
     return isRoutineOperationSupportedDatabaseType(dbInfo.databaseType)
@@ -160,16 +166,24 @@ const OperationLine = ({
               className={styles.operatingButtonIcon}
               code="icon-sort-ascending1"
               size="sm"
-              disabled={shouldDisableActionButton}
-              title={i18n('common.button.explainJson')}
+              disabled={shouldDisableActionButton || disableExplainJson}
+              title={
+                disableExplainJson
+                  ? i18n('common.explain.jsonUnsupported')
+                  : i18n('common.button.explainJson')
+              }
               onClick={() => action(SQLOptType.EXPLAIN_JSON)}
             />
             <IconButton
               className={styles.operatingButtonIcon}
               code="icon-play1"
               size="sm"
-              disabled={shouldDisableActionButton}
-              title={i18n('common.button.explainAnalyze')}
+              disabled={shouldDisableActionButton || disableExplainAnalyze}
+              title={
+                disableExplainAnalyze
+                  ? i18n('common.explain.analyzeUnsupported')
+                  : i18n('common.button.explainAnalyze')
+              }
               onClick={() => action(SQLOptType.EXPLAIN_ANALYZE)}
             />
           </>

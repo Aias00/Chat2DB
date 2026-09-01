@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useRef, useCallback, useState, 
 import { useSize } from 'ahooks';
 import { useStyles } from './style';
 import { OperationLine, MonacoEditorErrorTips } from '../../components';
+import ExplainResultModal from '../../components/ExplainResultModal';
 import SQLEditor, { SQLEditorRef } from '../SQLEditor';
 import RoutineOperationModals from './RoutineOperationModals';
 import InitialSaveNameModal from './InitialSaveNameModal';
@@ -19,7 +20,12 @@ import { useGlobalStore } from '@/store/global';
 import { ChatSourceType, QuestionType } from '@/constants/chat';
 import { useWorkspaceStore } from '@/store/workspace';
 import { useAIStore } from '@/store/ai';
-import sqlService, { type IRoutineMigrationParams } from '@/service/sql';
+import sqlService, {
+  type IExplainCapability,
+  type IExplainRequest,
+  type IExplainResult,
+  type IRoutineMigrationParams,
+} from '@/service/sql';
 import { isRoutineOperationSupportedDatabaseType, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
 import { EditorTableIdentifier } from '../../helper/tableIdentifier';
 import { useTreeStore } from '@/store/tree';
@@ -121,6 +127,15 @@ export interface IContextMenuInfo {
   position: CSSProperties;
 }
 
+interface ExplainModalState {
+  open: boolean;
+  loading: boolean;
+  mode: 'json' | 'analyze';
+  requestId: string;
+  result: IExplainResult | null;
+  errorMessage: string | null;
+}
+
 const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditorWithOperationProps>((props, ref) => {
   const {
     id,
@@ -146,11 +161,24 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
   const [contextMenuInfo, setContextMenuInfo] = useState<IContextMenuInfo>(contextMenuDefaultConfig);
   const [contextTableIdentifier, setContextTableIdentifier] = useState<EditorTableIdentifier | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [explainCapability, setExplainCapability] = useState<IExplainCapability | null>(null);
+  const [explainModal, setExplainModal] = useState<ExplainModalState>({
+    open: false,
+    loading: false,
+    mode: 'json',
+    requestId: '',
+    result: null,
+    errorMessage: null,
+  });
   const [hasEditorContent, setHasEditorContent] = useState<boolean>(!!defaultSQL?.trim());
   const [initialSaveNameModalOpen, setInitialSaveNameModalOpen] = useState(false);
   const [initialSaveName, setInitialSaveName] = useState('');
   const [initialSaveLoading, setInitialSaveLoading] = useState(false);
   const pendingCloseSaveResolveRef = useRef<((saved: boolean) => void) | null>(null);
+  const explainAbortRef = useRef<AbortController | null>(null);
+  const activeExplainRequestIdRef = useRef<string>('');
+  const activeExplainRequestRef = useRef<IExplainRequest | null>(null);
+  const explainCapabilitySequenceRef = useRef(0);
   const handleEditorContentChange = useCallback((value: string) => {
     setHasEditorContent(!!value.trim());
   }, []);
@@ -872,17 +900,116 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       staticMessage.warning(i18n('common.placeholder.select', 'SQL'));
       return;
     }
-    try {
-      const result = mode === 'json' ? await sqlService.getExplainJson(sql) : await sqlService.getExplainAnalyze(sql);
-      modal.info({
-        title: mode === 'json' ? i18n('common.button.explainJson') : i18n('common.button.explainAnalyze'),
-        width: 860,
-        content: <pre style={{ maxHeight: 560, margin: 0, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{result}</pre>,
-      });
-    } catch (error: any) {
-      setErrorMessage(error?.errorMessage || '');
+    const requestId = createExplainRequestId(id);
+    const request = buildExplainRequest(sql, requestId, dbInfo);
+    if (!request) {
+      staticMessage.warning(i18n('common.placeholder.select', i18n('common.database.title')));
+      return;
     }
+
+    const runExplain = async () => {
+      const controller = new AbortController();
+      explainAbortRef.current = controller;
+      activeExplainRequestIdRef.current = requestId;
+      activeExplainRequestRef.current = request;
+      setExplainModal({
+        open: true,
+        loading: true,
+        mode,
+        requestId,
+        result: null,
+        errorMessage: null,
+      });
+
+      try {
+        const capability =
+          explainCapability || (await sqlService.getExplainCapability(request, { signal: controller.signal }));
+        setExplainCapability(capability);
+        if (mode === 'analyze' && !capability.explainAnalyzeSupported) {
+          setExplainModal((state) =>
+            state.requestId === requestId
+              ? {
+                  ...state,
+                  loading: false,
+                  errorMessage: i18n('common.explain.analyzeUnsupportedWithVersion', capability.serverVersion || '-'),
+                }
+              : state,
+          );
+          return;
+        }
+
+        const result =
+          mode === 'json'
+            ? await sqlService.getExplainJson(request, { signal: controller.signal })
+            : await sqlService.getExplainAnalyze(request, { signal: controller.signal });
+        if (activeExplainRequestIdRef.current !== requestId) {
+          return;
+        }
+        setExplainCapability(result.capability);
+        setExplainModal({
+          open: true,
+          loading: false,
+          mode,
+          requestId,
+          result,
+          errorMessage: null,
+        });
+      } catch (error: any) {
+        if (activeExplainRequestIdRef.current !== requestId) {
+          return;
+        }
+        const abortMessage = error?.name === 'AbortError' ? i18n('common.explain.cancelled') : '';
+        setExplainModal((state) => ({
+          ...state,
+          loading: false,
+          errorMessage: abortMessage || error?.errorMessage || error?.message || i18n('common.text.failure'),
+        }));
+      } finally {
+        if (activeExplainRequestIdRef.current === requestId) {
+          explainAbortRef.current = null;
+          activeExplainRequestRef.current = null;
+        }
+      }
+    };
+
+    if (mode === 'analyze') {
+      modal.confirm({
+        title: i18n('common.button.explainAnalyze'),
+        content: i18n('common.explain.analyzeWarning'),
+        okText: i18n('common.button.execute'),
+        cancelText: i18n('common.button.cancel'),
+        onOk: runExplain,
+      });
+      return;
+    }
+
+    await runExplain();
   };
+
+  const handleCancelExplainRequest = useCallback(async () => {
+    const request = activeExplainRequestRef.current;
+    if (!request) {
+      return;
+    }
+    const { sql: _sql, ...cancelRequest } = request;
+    explainAbortRef.current?.abort();
+    activeExplainRequestIdRef.current = '';
+    activeExplainRequestRef.current = null;
+    try {
+      await sqlService.cancelExplain(cancelRequest);
+    } catch {
+      // The local request is already abandoned; the backend cancel endpoint is best effort.
+    }
+    setExplainModal((state) => ({
+      ...state,
+      loading: false,
+      errorMessage: i18n('common.explain.cancelled'),
+    }));
+  }, []);
+
+  const handleCloseExplainModal = useCallback(() => {
+    setExplainModal((state) => ({ ...state, open: false }));
+  }, []);
 
   /**
    * Execute one SQL statement.
@@ -1080,9 +1207,40 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     () => () => {
       pendingCloseSaveResolveRef.current?.(false);
       pendingCloseSaveResolveRef.current = null;
+      explainAbortRef.current?.abort();
+      const request = activeExplainRequestRef.current;
+      if (request) {
+        const { sql: _sql, ...cancelRequest } = request;
+        void sqlService.cancelExplain(cancelRequest).catch(() => undefined);
+      }
+      activeExplainRequestIdRef.current = '';
+      activeExplainRequestRef.current = null;
     },
     [],
   );
+
+  useEffect(() => {
+    const sequence = ++explainCapabilitySequenceRef.current;
+    const mysql = dbInfo.databaseType?.toUpperCase() === 'MYSQL';
+    const request = mysql ? buildExplainRequest('SELECT 1', createExplainRequestId(id, 'capability'), dbInfo) : null;
+    if (!request) {
+      setExplainCapability(null);
+      return;
+    }
+
+    sqlService
+      .getExplainCapability(request)
+      .then((capability) => {
+        if (explainCapabilitySequenceRef.current === sequence) {
+          setExplainCapability(capability);
+        }
+      })
+      .catch(() => {
+        if (explainCapabilitySequenceRef.current === sequence) {
+          setExplainCapability(null);
+        }
+      });
+  }, [dbInfo.consoleId, dbInfo.dataSourceId, dbInfo.databaseName, dbInfo.databaseType, dbInfo.schemaName, id]);
 
   const handleSaveFileToDesktop = () => {
     const { dataSourceName, databaseName, schemaName } = dbInfo;
@@ -1191,6 +1349,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
           isConsole={isConsole}
           setDBInfo={setDBInfo}
           contentDiffEnabled={enableContentDiffHints}
+          explainCapability={explainCapability}
           action={handleAction}
         />
       )}
@@ -1253,6 +1412,15 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         )}
       </div>
       <MonacoEditorErrorTips errorMessage={errorMessage} handleClose={() => setErrorMessage(null)} />
+      <ExplainResultModal
+        open={explainModal.open}
+        loading={explainModal.loading}
+        mode={explainModal.mode}
+        result={explainModal.result}
+        errorMessage={explainModal.errorMessage}
+        onCancelRequest={handleCancelExplainRequest}
+        onClose={handleCloseExplainModal}
+      />
       <RoutineOperationModals
         editorId={id}
         dbInfo={dbInfo}
@@ -1286,6 +1454,31 @@ const getContentDiffSourceTitle = (params: {
   const { workspaceTabsTitle, sqlFileName, dbInfo } = params;
   const title = workspaceTabsTitle || sqlFileName || dbInfo.viewName || dbInfo.tableName || 'diff';
   return title.replace(/\[.*?\]/g, '').trim() || 'diff';
+};
+
+const createExplainRequestId = (editorId: string, prefix = 'explain') => {
+  const randomValue =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`;
+  return `${prefix}-${editorId}-${randomValue}`
+    .slice(0, 80);
+};
+
+const buildExplainRequest = (sql: string, requestId: string, dbInfo: IBoundInfo): IExplainRequest | null => {
+  if (!dbInfo.dataSourceId) {
+    return null;
+  }
+  return {
+    dataSourceId: dbInfo.dataSourceId,
+    databaseName: dbInfo.databaseName,
+    schemaName: dbInfo.schemaName,
+    consoleId: dbInfo.consoleId,
+    sql,
+    requestId,
+  };
 };
 
 const createTableTreeNode = (tableIdentifier?: EditorTableIdentifier | null): TreeNodeData | null => {

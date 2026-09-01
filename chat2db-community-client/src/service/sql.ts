@@ -17,6 +17,7 @@ import { DatabaseTypeCode } from '@/constants';
 import { ExportSizeEnum, ExportTypeEnum } from '@/typings/resultTable';
 import type {
   IDdlExecuteRequest,
+  IDataSourceExecutionContext,
   ISqlEditorExecuteRequest,
   ITableBrowseRequest,
   ITableEditExecuteRequest,
@@ -63,6 +64,29 @@ export interface IRoutineMigrationParams extends IRoutineOperationParams {
 
 export interface IRoutineOperationPreview {
   sql: string;
+}
+
+export interface IExplainCapability {
+  databaseType?: string | null;
+  serverVersion?: string | null;
+  explainJsonSupported: boolean;
+  explainAnalyzeSupported: boolean;
+}
+
+export interface IExplainRequest extends IDataSourceExecutionContext {
+  sql: string;
+  requestId: string;
+  consoleId?: number;
+}
+
+export type IExplainCancelRequest = Omit<IExplainRequest, 'sql'>;
+
+export interface IExplainResult {
+  requestId: string;
+  mode: 'json' | 'analyze';
+  normalizedSql: string;
+  rawPlan?: string | null;
+  capability: IExplainCapability;
 }
 
 const getTableList = createRequest<IGetTableListParams, IPageResponse<ITable>>('/api/rdb/table/list', {
@@ -423,10 +447,28 @@ const getCreateSchemaSql = createRequest<
 const truncateTable = createRequest<ITableParams, void>('/api/rdb/table/truncate', { method: 'post' });
 
 // EXPLAIN FORMAT=JSON
-const getExplainJson = createRequest<string, string>('/api/sql/explain_json', { method: 'post' });
+const getExplainJson = createRequest<IExplainRequest, IExplainResult>('/api/sql/explain_json', {
+  method: 'post',
+  errorLevel: false,
+  timeout: false,
+});
 
 // EXPLAIN ANALYZE
-const getExplainAnalyze = createRequest<string, string>('/api/sql/explain_analyze', { method: 'post' });
+const getExplainAnalyze = createRequest<IExplainRequest, IExplainResult>('/api/sql/explain_analyze', {
+  method: 'post',
+  errorLevel: false,
+  timeout: false,
+});
+
+const getExplainCapability = createRequest<IExplainRequest, IExplainCapability>('/api/sql/explain_capability', {
+  method: 'post',
+  errorLevel: false,
+});
+
+const cancelExplain = createRequest<IExplainCancelRequest, boolean>('/api/sql/explain_cancel', {
+  method: 'post',
+  errorLevel: false,
+});
 
 export interface ICopyTableParams extends ITableParams {
   copyData: boolean;
@@ -451,6 +493,8 @@ export default {
   truncateTable,
   getExplainJson,
   getExplainAnalyze,
+  getExplainCapability,
+  cancelExplain,
   getCreateSchemaSql,
   getCreateDatabaseSql,
   executeUpdateDataSql,
