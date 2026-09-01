@@ -463,6 +463,14 @@ const getPartitionDropSql = createRequest<
   IPartitionRequest & { partitionName: string },
   string
 >('/api/rdb/partition/drop_sql', { method: 'post' });
+const getPartitionAddSql = createRequest<
+  IPartitionRequest & { partitionName?: string; partitionDefinition?: string; count?: number },
+  string
+>('/api/rdb/partition/add_sql', { method: 'post' });
+const getPartitionReorganizeSql = createRequest<
+  IPartitionRequest & { partitionName: string; partitionDefinitions: string },
+  string
+>('/api/rdb/partition/reorganize_sql', { method: 'post' });
 const getPartitionCoalesceSql = createRequest<
   IPartitionRequest & { count: number },
   string
@@ -532,6 +540,8 @@ export default {
   getPartitionList,
   getPartitionTruncateSql,
   getPartitionDropSql,
+  getPartitionAddSql,
+  getPartitionReorganizeSql,
   getPartitionCoalesceSql,
   getPartitionMaintainSql,
   getDataSourceList,

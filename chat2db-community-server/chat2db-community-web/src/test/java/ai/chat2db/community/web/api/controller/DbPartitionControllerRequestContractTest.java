@@ -12,6 +12,8 @@ class DbPartitionControllerRequestContractTest {
     void partitionEndpointRequestsCarryDatasourceBindingContext() {
         assertPartitionRequestContext(new DbPartitionController.PartitionListRequest());
         assertPartitionRequestContext(new DbPartitionController.PartitionRequest());
+        assertPartitionRequestContext(new DbPartitionController.AddRequest());
+        assertPartitionRequestContext(new DbPartitionController.ReorganizeRequest());
         assertPartitionRequestContext(new DbPartitionController.CoalesceRequest());
         assertPartitionRequestContext(new DbPartitionController.MaintainRequest());
     }

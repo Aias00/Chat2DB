@@ -309,8 +309,18 @@ export default {
   'workspace.ops.partitionCheck': 'CHECK',
   'workspace.ops.partitionOptimize': 'OPTIMIZE',
   'workspace.ops.partitionCoalesce': 'COALESCE',
+  'workspace.ops.partitionAdd': 'ADD',
+  'workspace.ops.partitionReorganize': 'REORGANIZE',
   'workspace.ops.partitionDestructiveHint': 'DROP/TRUNCATE permanently removes the partition data.',
+  'workspace.ops.partitionOperationRiskHint':
+    'Preview this SQL carefully. Partition DDL can lock or rebuild the table and may take time on large data.',
   'workspace.ops.partitionFailed': 'Partition operation failed',
+  'workspace.ops.partitionInputRequired': 'Enter the required partition information and try again.',
+  'workspace.ops.partitionNewName': 'New partition name',
+  'workspace.ops.partitionDefinitionPlaceholder': 'VALUES LESS THAN (...) or VALUES IN (...)',
+  'workspace.ops.partitionDefinitionsPlaceholder':
+    'PARTITION p_new VALUES LESS THAN (...), PARTITION p_next VALUES LESS THAN (...)',
+  'workspace.ops.partitionConfirmName': 'Type {1} to confirm',
   'workspace.ops.partitionMethodHint': 'Method: {1}',
   'workspace.ops.partitionEmpty': 'The table is not partitioned.',
   'workspace.routine.button.invoke': 'Invoke routine',

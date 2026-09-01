@@ -12,10 +12,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * MySQL partition inspection and maintenance (MYSQL-OBJ-009). Works on 5.7/8.0 across
@@ -34,6 +36,8 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
                     + "ORDER BY PARTITION_ORDINAL_POSITION";
 
     private static final String TABLE_NOT_PARTITIONED = "table.notPartitioned";
+    private static final Set<String> RANGE_LIST_METHODS = Set.of("RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS");
+    private static final Set<String> HASH_KEY_METHODS = Set.of("HASH", "LINEAR HASH", "KEY", "LINEAR KEY");
 
     @Override
     public List<Map<String, Object>> list(String databaseName, String tableName) {
@@ -48,19 +52,24 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
             try (ResultSet resultSet = statement.executeQuery()) {
                 List<Map<String, Object>> partitions = new ArrayList<>();
                 while (resultSet.next()) {
-                        Map<String, Object> row = new LinkedHashMap<>();
-                        row.put("partitionName", resultSet.getString("PARTITION_NAME"));
-                        row.put("subpartitionName", resultSet.getString("SUBPARTITION_NAME"));
-                        row.put("ordinalPosition", resultSet.getLong("PARTITION_ORDINAL_POSITION"));
-                        row.put("method", resultSet.getString("PARTITION_METHOD"));
-                        row.put("subpartitionMethod", resultSet.getString("SUBPARTITION_METHOD"));
-                        row.put("expression", resultSet.getString("PARTITION_EXPRESSION"));
-                        row.put("description", resultSet.getString("PARTITION_DESCRIPTION"));
-                        row.put("tableRows", resultSet.getLong("TABLE_ROWS"));
-                        row.put("dataLength", resultSet.getLong("DATA_LENGTH"));
-                        row.put("indexLength", resultSet.getLong("INDEX_LENGTH"));
-                        row.put("comment", resultSet.getString("PARTITION_COMMENT"));
-                        partitions.add(row);
+                    String partitionName = resultSet.getString("PARTITION_NAME");
+                    String subpartitionName = resultSet.getString("SUBPARTITION_NAME");
+                    if (StringUtils.isBlank(partitionName) && StringUtils.isBlank(subpartitionName)) {
+                        continue;
+                    }
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("partitionName", partitionName);
+                    row.put("subpartitionName", subpartitionName);
+                    row.put("ordinalPosition", resultSet.getLong("PARTITION_ORDINAL_POSITION"));
+                    row.put("method", resultSet.getString("PARTITION_METHOD"));
+                    row.put("subpartitionMethod", resultSet.getString("SUBPARTITION_METHOD"));
+                    row.put("expression", resultSet.getString("PARTITION_EXPRESSION"));
+                    row.put("description", resultSet.getString("PARTITION_DESCRIPTION"));
+                    row.put("tableRows", resultSet.getLong("TABLE_ROWS"));
+                    row.put("dataLength", resultSet.getLong("DATA_LENGTH"));
+                    row.put("indexLength", resultSet.getLong("INDEX_LENGTH"));
+                    row.put("comment", resultSet.getString("PARTITION_COMMENT"));
+                    partitions.add(row);
                 }
                 return partitions;
             }
@@ -73,6 +82,7 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
     public String truncatePartitionSql(String databaseName, String tableName, String partitionName) {
         requireSupportedMysql();
         requirePartition(databaseName, tableName, partitionName);
+        requireRangeListPartition(databaseName, tableName, partitionName);
         return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
                 + " TRUNCATE PARTITION " + quote(partitionName);
     }
@@ -81,8 +91,45 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
     public String dropPartitionSql(String databaseName, String tableName, String partitionName) {
         requireSupportedMysql();
         requirePartition(databaseName, tableName, partitionName);
+        requireRangeListPartition(databaseName, tableName, partitionName);
         return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
                 + " DROP PARTITION " + quote(partitionName);
+    }
+
+    @Override
+    public String addPartitionSql(String databaseName, String tableName, String partitionName,
+            String partitionDefinition, Integer count) {
+        requireSupportedMysql();
+        String method = requirePartitionedTable(databaseName, tableName).method;
+        if (HASH_KEY_METHODS.contains(method)) {
+            requirePositiveCount(count);
+            return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
+                    + " ADD PARTITION PARTITIONS " + count;
+        }
+        if (!RANGE_LIST_METHODS.contains(method)) {
+            throw new BusinessException("partition.typeUnsupported");
+        }
+        if (StringUtils.isBlank(partitionName) || StringUtils.isBlank(partitionDefinition)) {
+            throw new BusinessException("partition.name.required");
+        }
+        String definition = sanitizePartitionDefinition(partitionDefinition);
+        requireAddDefinitionMatchesMethod(method, definition);
+        return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
+                + " ADD PARTITION (PARTITION " + quote(partitionName) + " " + definition + ")";
+    }
+
+    @Override
+    public String reorganizePartitionSql(String databaseName, String tableName, String partitionName,
+            String partitionDefinitions) {
+        requireSupportedMysql();
+        requirePartition(databaseName, tableName, partitionName);
+        requireRangeListPartition(databaseName, tableName, partitionName);
+        String definitions = sanitizePartitionDefinition(partitionDefinitions);
+        if (!definitions.toUpperCase(Locale.ROOT).contains("PARTITION ")) {
+            throw new BusinessException("partition.definitionInvalid");
+        }
+        return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
+                + " REORGANIZE PARTITION " + quote(partitionName) + " INTO (" + definitions + ")";
     }
 
     @Override
@@ -91,8 +138,10 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
         if (StringUtils.isBlank(databaseName) || StringUtils.isBlank(tableName)) {
             throw new BusinessException("partition.name.required");
         }
-        if (count < 1) {
-            throw new BusinessException("partition.coalesceCountInvalid");
+        requirePositiveCount(count);
+        String method = requirePartitionedTable(databaseName, tableName).method;
+        if (!HASH_KEY_METHODS.contains(method)) {
+            throw new BusinessException("partition.typeUnsupported");
         }
         return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
                 + " COALESCE PARTITION " + count;
@@ -108,10 +157,67 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
         if (!"ANALYZE".equals(op) && !"CHECK".equals(op) && !"OPTIMIZE".equals(op)) {
             throw new BusinessException("partition.operationUnsupported");
         }
+        requirePartitionedTable(databaseName, tableName);
         String target = StringUtils.isBlank(partitionName)
                 ? "PARTITION ALL"
                 : "PARTITION " + quote(partitionName);
         return op + " TABLE " + qualifiedTable(databaseName, tableName) + " " + target;
+    }
+
+    private PartitionedTable requirePartitionedTable(String databaseName, String tableName) {
+        if (StringUtils.isBlank(databaseName) || StringUtils.isBlank(tableName)) {
+            throw new BusinessException("partition.name.required");
+        }
+        List<Map<String, Object>> rows = list(databaseName, tableName);
+        if (rows.isEmpty()) {
+            throw new BusinessException(TABLE_NOT_PARTITIONED);
+        }
+        String method = StringUtils.upperCase(String.valueOf(rows.get(0).get("method")), Locale.ROOT);
+        if (!RANGE_LIST_METHODS.contains(method) && !HASH_KEY_METHODS.contains(method)) {
+            throw new BusinessException("partition.typeUnsupported");
+        }
+        Set<String> partitionNames = new HashSet<>();
+        for (Map<String, Object> row : rows) {
+            Object name = row.get("partitionName");
+            if (name != null && StringUtils.isNotBlank(String.valueOf(name))) {
+                partitionNames.add(String.valueOf(name));
+            }
+        }
+        return new PartitionedTable(method, partitionNames);
+    }
+
+    private void requireRangeListPartition(String databaseName, String tableName, String partitionName) {
+        PartitionedTable table = requirePartitionedTable(databaseName, tableName);
+        if (!RANGE_LIST_METHODS.contains(table.method)) {
+            throw new BusinessException("partition.typeUnsupported");
+        }
+        if (!table.partitionNames.contains(partitionName)) {
+            throw new BusinessException("partition.name.required");
+        }
+    }
+
+    private static void requirePositiveCount(Integer count) {
+        if (count == null || count < 1) {
+            throw new BusinessException("partition.coalesceCountInvalid");
+        }
+    }
+
+    private static void requireAddDefinitionMatchesMethod(String method, String definition) {
+        String normalized = definition.toUpperCase(Locale.ROOT);
+        if (method.contains("RANGE") && !normalized.startsWith("VALUES LESS THAN ")) {
+            throw new BusinessException("partition.definitionInvalid");
+        }
+        if (method.contains("LIST") && !normalized.startsWith("VALUES IN ")) {
+            throw new BusinessException("partition.definitionInvalid");
+        }
+    }
+
+    private static String sanitizePartitionDefinition(String definition) {
+        String trimmed = StringUtils.trimToEmpty(definition);
+        if (StringUtils.isBlank(trimmed) || trimmed.contains(";") || trimmed.indexOf('\0') >= 0) {
+            throw new BusinessException("partition.definitionInvalid");
+        }
+        return trimmed;
     }
 
     private static void requirePartition(String databaseName, String tableName, String partitionName) {
@@ -148,5 +254,8 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
 
     private static String quote(String name) {
         return Chat2DBContext.getDbMetaData().getMetaDataName(name);
+    }
+
+    private record PartitionedTable(String method, Set<String> partitionNames) {
     }
 }

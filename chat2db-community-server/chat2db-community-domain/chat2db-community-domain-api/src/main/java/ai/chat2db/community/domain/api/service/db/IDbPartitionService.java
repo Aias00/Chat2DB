@@ -6,8 +6,9 @@ import java.util.Map;
 /**
  * MySQL table partition inspection and maintenance (MYSQL-OBJ-009). Partition definitions
  * and statistics come from information_schema.PARTITIONS; maintenance statements are
- * generated per partition type (DROP/TRUNCATE for RANGE/LIST, COALESCE for HASH/KEY,
- * ANALYZE/CHECK/OPTIMIZE for all) and previewed before execution.
+ * generated per partition type (ADD for RANGE/LIST/HASH/KEY, DROP/TRUNCATE/REORGANIZE
+ * for RANGE/LIST, COALESCE for HASH/KEY, ANALYZE/CHECK/OPTIMIZE for all) and previewed
+ * before execution.
  */
 public interface IDbPartitionService {
 
@@ -39,6 +40,31 @@ public interface IDbPartitionService {
      * @return the DROP PARTITION SQL.
      */
     String dropPartitionSql(String databaseName, String tableName, String partitionName);
+
+    /**
+     * Generates the ADD PARTITION statement for RANGE/LIST/HASH/KEY partitioned tables.
+     *
+     * @param databaseName        the database name.
+     * @param tableName           the table name.
+     * @param partitionName       the partition name for RANGE/LIST.
+     * @param partitionDefinition the VALUES clause for RANGE/LIST.
+     * @param count               the partition count to add for HASH/KEY.
+     * @return the ADD PARTITION SQL.
+     */
+    String addPartitionSql(String databaseName, String tableName, String partitionName,
+            String partitionDefinition, Integer count);
+
+    /**
+     * Generates the REORGANIZE PARTITION statement for RANGE/LIST partitioned tables.
+     *
+     * @param databaseName         the database name.
+     * @param tableName            the table name.
+     * @param partitionName        the existing partition to reorganize.
+     * @param partitionDefinitions replacement partition definitions.
+     * @return the REORGANIZE PARTITION SQL.
+     */
+    String reorganizePartitionSql(String databaseName, String tableName, String partitionName,
+            String partitionDefinitions);
 
     /**
      * Generates the COALESCE PARTITION statement (HASH/KEY partitions only).

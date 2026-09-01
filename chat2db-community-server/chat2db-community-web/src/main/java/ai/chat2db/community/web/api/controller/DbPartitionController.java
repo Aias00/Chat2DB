@@ -46,6 +46,20 @@ public class DbPartitionController {
                 request.getDatabaseName(), request.getTableName(), request.getPartitionName()));
     }
 
+    @RequestMapping(value = "/add_sql", method = {RequestMethod.POST, RequestMethod.PUT})
+    public DataResult<String> addSql(@Valid @RequestBody AddRequest request) {
+        return DataResult.of(partitionService.addPartitionSql(
+                request.getDatabaseName(), request.getTableName(), request.getPartitionName(),
+                request.getPartitionDefinition(), request.getCount()));
+    }
+
+    @RequestMapping(value = "/reorganize_sql", method = {RequestMethod.POST, RequestMethod.PUT})
+    public DataResult<String> reorganizeSql(@Valid @RequestBody ReorganizeRequest request) {
+        return DataResult.of(partitionService.reorganizePartitionSql(
+                request.getDatabaseName(), request.getTableName(), request.getPartitionName(),
+                request.getPartitionDefinitions()));
+    }
+
     @RequestMapping(value = "/coalesce_sql", method = {RequestMethod.POST, RequestMethod.PUT})
     public DataResult<String> coalesceSql(@Valid @RequestBody CoalesceRequest request) {
         return DataResult.of(partitionService.coalescePartitionSql(
@@ -78,6 +92,23 @@ public class DbPartitionController {
 
         @NotNull
         private Integer count;
+    }
+
+    @Data
+    public static class AddRequest extends PartitionListRequest {
+
+        private String partitionName;
+
+        private String partitionDefinition;
+
+        private Integer count;
+    }
+
+    @Data
+    public static class ReorganizeRequest extends PartitionRequest {
+
+        @NotBlank
+        private String partitionDefinitions;
     }
 
     @Data

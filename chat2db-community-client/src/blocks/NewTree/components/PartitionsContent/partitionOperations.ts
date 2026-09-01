@@ -7,6 +7,50 @@ export interface PartitionOperationContext {
   tableName: string;
 }
 
+export const RANGE_LIST_METHODS = ['RANGE', 'RANGE COLUMNS', 'LIST', 'LIST COLUMNS'];
+export const HASH_KEY_METHODS = ['HASH', 'LINEAR HASH', 'KEY', 'LINEAR KEY'];
+
+export interface PartitionOperationAvailability {
+  add: boolean;
+  drop: boolean;
+  truncate: boolean;
+  reorganize: boolean;
+  coalesce: boolean;
+  maintain: boolean;
+}
+
+export function normalizePartitionMethod(method?: string | null) {
+  return (method || '').trim().toUpperCase();
+}
+
+export function getPartitionOperationAvailability(method?: string | null): PartitionOperationAvailability {
+  const normalized = normalizePartitionMethod(method);
+  const isRangeList = RANGE_LIST_METHODS.includes(normalized);
+  const isHashKey = HASH_KEY_METHODS.includes(normalized);
+  return {
+    add: isRangeList || isHashKey,
+    drop: isRangeList,
+    truncate: isRangeList,
+    reorganize: isRangeList,
+    coalesce: isHashKey,
+    maintain: isRangeList || isHashKey,
+  };
+}
+
+export function defaultPartitionDefinition(method?: string | null) {
+  return normalizePartitionMethod(method).includes('LIST') ? 'VALUES IN (...)' : 'VALUES LESS THAN (...)';
+}
+
+export function defaultReorganizePartitionDefinitions(method?: string | null) {
+  return normalizePartitionMethod(method).includes('LIST')
+    ? 'PARTITION p_new VALUES IN (...), PARTITION p_next VALUES IN (...)'
+    : 'PARTITION p_new VALUES LESS THAN (...), PARTITION p_next VALUES LESS THAN (...)';
+}
+
+export function isPartitionDropConfirmationValid(partitionName: string, confirmedName: string) {
+  return partitionName === confirmedName.trim();
+}
+
 export function buildPartitionDdlExecuteRequest(
   context: PartitionOperationContext,
   sql: string,

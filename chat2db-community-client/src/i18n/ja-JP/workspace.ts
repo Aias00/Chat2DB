@@ -309,8 +309,18 @@ export default {
   'workspace.ops.partitionCheck': 'CHECK',
   'workspace.ops.partitionOptimize': 'OPTIMIZE',
   'workspace.ops.partitionCoalesce': 'COALESCE',
+  'workspace.ops.partitionAdd': 'ADD',
+  'workspace.ops.partitionReorganize': 'REORGANIZE',
   'workspace.ops.partitionDestructiveHint': 'DROP/TRUNCATE はパーティションのデータを完全に削除します。',
+  'workspace.ops.partitionOperationRiskHint':
+    'SQL プレビューを慎重に確認してください。パーティション DDL はテーブルをロックまたは再構築し、大きなデータでは時間がかかる場合があります。',
   'workspace.ops.partitionFailed': 'パーティション操作に失敗しました',
+  'workspace.ops.partitionInputRequired': '必要なパーティション情報を入力してから再試行してください。',
+  'workspace.ops.partitionNewName': '新しいパーティション名',
+  'workspace.ops.partitionDefinitionPlaceholder': 'VALUES LESS THAN (...) または VALUES IN (...)',
+  'workspace.ops.partitionDefinitionsPlaceholder':
+    'PARTITION p_new VALUES LESS THAN (...), PARTITION p_next VALUES LESS THAN (...)',
+  'workspace.ops.partitionConfirmName': '確認するには {1} と入力',
   'workspace.ops.partitionMethodHint': '方法: {1}',
   'workspace.ops.partitionEmpty': 'テーブルはパーティション化されていません。',
   'workspace.routine.button.invoke': 'ルーチンを呼び出す',

@@ -307,8 +307,18 @@ export default {
   'workspace.ops.partitionCheck': 'CHECK',
   'workspace.ops.partitionOptimize': 'OPTIMIZE',
   'workspace.ops.partitionCoalesce': 'COALESCE',
+  'workspace.ops.partitionAdd': 'ADD',
+  'workspace.ops.partitionReorganize': 'REORGANIZE',
   'workspace.ops.partitionDestructiveHint': 'DROP/TRUNCATE는 파티션 데이터를 영구 삭제합니다.',
+  'workspace.ops.partitionOperationRiskHint':
+    'SQL 미리보기를 주의해서 확인하세요. 파티션 DDL은 테이블을 잠그거나 재구성할 수 있고 큰 데이터에서는 오래 걸릴 수 있습니다.',
   'workspace.ops.partitionFailed': '파티션 작업 실패',
+  'workspace.ops.partitionInputRequired': '필수 파티션 정보를 입력한 뒤 다시 시도하세요.',
+  'workspace.ops.partitionNewName': '새 파티션 이름',
+  'workspace.ops.partitionDefinitionPlaceholder': 'VALUES LESS THAN (...) 또는 VALUES IN (...)',
+  'workspace.ops.partitionDefinitionsPlaceholder':
+    'PARTITION p_new VALUES LESS THAN (...), PARTITION p_next VALUES LESS THAN (...)',
+  'workspace.ops.partitionConfirmName': '확인하려면 {1}을 입력하세요',
   'workspace.ops.partitionMethodHint': '방식: {1}',
   'workspace.ops.partitionEmpty': '테이블이 파티션되지 않았습니다.',
   'workspace.routine.button.invoke': '루틴 호출',

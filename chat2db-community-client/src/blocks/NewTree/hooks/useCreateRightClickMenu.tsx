@@ -418,7 +418,8 @@ export const useCreateRightClickMenu = () => {
               <PartitionsContent
                 dataSourceId={dataSourceId!}
                 databaseName={extraParams.databaseName}
-                tableName={originalTitle}
+                schemaName={extraParams.schemaName}
+                tableName={treeNodeData.originalTitle}
               />
             ),
             footer: null,
