@@ -436,19 +436,34 @@ export interface ILockView {
   source: 'performance_schema' | 'information_schema' | 'unavailable';
   dataLocks: Record<string, string | null>[];
   waits: Record<string, string | null>[];
-  metaLocks: Record<string, string | null>[];
+  metaLocks: Record<string, string | null | boolean | number>[];
+  sessions: Record<string, string | null>[];
   waitChains: {
+    dataSourceId?: number;
+    waiterTransactionId: string | null;
+    waiterLockId: string | null;
     waiterThreadId: string | null;
+    waiterEngineThreadId: string | null;
     waiterState: string | null;
     waiterUser: string | null;
     waiterHost: string | null;
+    waiterDatabase: string | null;
     waiterQuery: string | null;
+    waiterSessionAvailable: boolean;
+    waiterMetadataLockCount: number;
+    blockerTransactionId: string | null;
+    blockerLockId: string | null;
     blockerThreadId: string | null;
+    blockerEngineThreadId: string | null;
     blockerState: string | null;
     blockerUser: string | null;
     blockerHost: string | null;
+    blockerDatabase: string | null;
     blockerQuery: string | null;
+    blockerSessionAvailable: boolean;
+    blockerMetadataLockCount: number;
     rootBlocker: boolean;
+    cycle?: boolean;
   }[];
   errors?: {
     section: string;
