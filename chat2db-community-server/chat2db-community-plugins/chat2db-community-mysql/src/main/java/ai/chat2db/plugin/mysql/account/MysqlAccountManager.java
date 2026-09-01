@@ -130,7 +130,7 @@ public class MysqlAccountManager implements IAccountManager {
     }
 
     // MySQL does not parameterize account identifiers in SHOW GRANTS; the builder quotes both literals.
-    @SuppressWarnings("codeql[java/sql-injection]")
+    @SuppressWarnings("lgtm[java/sql-injection]")
     private List<String> queryGrants(Connection connection, String user, String host) throws SQLException {
         List<String> grants = new ArrayList<>();
         String sql = MysqlAccountSqlBuilder.showGrantsSql(user, host);
