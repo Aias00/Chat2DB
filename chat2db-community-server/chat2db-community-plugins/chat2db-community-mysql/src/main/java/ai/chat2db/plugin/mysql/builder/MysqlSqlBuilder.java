@@ -224,14 +224,14 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                 }
                 if (EditStatusEnum.DELETE.name().equals(fk.getEditStatus())) {
                     script.append(SQLConstants.TAB).append(SQL_DROP_FOREIGN_KEY)
-                            .append(quoteMysqlIdentifier(fk.getFkName()))
+                            .append(quoteMysqlIdentifier(dropForeignKeyName(fk)))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.ADD.name().equals(fk.getEditStatus())) {
                     script.append(SQLConstants.TAB).append(buildAddForeignKey(foreignKeyColumns))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.MODIFY.name().equals(fk.getEditStatus())) {
                     script.append(SQLConstants.TAB).append(SQL_DROP_FOREIGN_KEY)
-                            .append(quoteMysqlIdentifier(fk.getFkName()))
+                            .append(quoteMysqlIdentifier(dropForeignKeyName(fk)))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
                     script.append(SQLConstants.TAB).append(buildAddForeignKey(foreignKeyColumns))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
@@ -276,6 +276,10 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
     private String buildAddForeignKey(List<ForeignKeyInfo> foreignKeyColumns) {
         return "ADD " + buildForeignKeyDefinition(foreignKeyColumns);
+    }
+
+    private String dropForeignKeyName(ForeignKeyInfo foreignKey) {
+        return StringUtils.defaultIfBlank(foreignKey.getOldName(), foreignKey.getFkName());
     }
 
     private String buildForeignKeyDefinition(List<ForeignKeyInfo> foreignKeyColumns) {

@@ -23,14 +23,65 @@ CREATE TABLE IF NOT EXISTS `obj007_employees` (
 ) ENGINE=InnoDB;
 
 -- Child table with composite FK
-CREATE TABLE IF NOT EXISTS `obj007_project_members` (
+CREATE TABLE IF NOT EXISTS `obj007_projects` (
     `project_id` BIGINT NOT NULL,
-    `emp_id` BIGINT NOT NULL,
+    `department_id` BIGINT NOT NULL,
+    `project_name` VARCHAR(128) NOT NULL,
+    PRIMARY KEY (`project_id`, `department_id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `obj007_project_members` (
+    `member_id` BIGINT NOT NULL AUTO_INCREMENT,
+    `project_id` BIGINT NOT NULL,
+    `department_id` BIGINT NOT NULL,
+    `emp_id` BIGINT NULL,
     `role` VARCHAR(32) DEFAULT 'member',
-    PRIMARY KEY (`project_id`, `emp_id`),
+    PRIMARY KEY (`member_id`),
+    UNIQUE KEY `uk_pm_project_emp` (`project_id`, `department_id`, `emp_id`),
+    CONSTRAINT `fk_pm_project` FOREIGN KEY (`project_id`, `department_id`)
+        REFERENCES `obj007_projects` (`project_id`, `department_id`)
+        ON DELETE NO ACTION ON UPDATE CASCADE,
     CONSTRAINT `fk_pm_emp` FOREIGN KEY (`emp_id`)
         REFERENCES `obj007_employees` (`emp_id`)
         ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Negative cases for actionable FK errors
+CREATE TABLE IF NOT EXISTS `obj007_type_mismatch_parent` (
+    `id` BIGINT NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `obj007_type_mismatch_child` (
+    `parent_id` VARCHAR(32) NOT NULL,
+    INDEX `idx_obj007_type_mismatch_child_parent` (`parent_id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `obj007_missing_index_parent` (
+    `code` BIGINT NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `obj007_orphan_parent` (
+    `id` BIGINT NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `obj007_orphan_child` (
+    `parent_id` BIGINT NOT NULL,
+    INDEX `idx_obj007_orphan_child_parent` (`parent_id`)
+) ENGINE=InnoDB;
+
+INSERT INTO `obj007_orphan_child` (`parent_id`) VALUES (404);
+
+CREATE TABLE IF NOT EXISTS `obj007_partition_parent` (
+    `id` BIGINT NOT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB
+PARTITION BY HASH(`id`) PARTITIONS 2;
+
+CREATE TABLE IF NOT EXISTS `obj007_partition_child` (
+    `parent_id` BIGINT NOT NULL,
+    INDEX `idx_obj007_partition_child_parent` (`parent_id`)
 ) ENGINE=InnoDB;
 
 -- Self-referencing table

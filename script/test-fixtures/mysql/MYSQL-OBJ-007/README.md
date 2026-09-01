@@ -2,11 +2,13 @@
 
 ## Fixture
 
-- `init.sql` creates 4 tables with different FK patterns:
+- `init.sql` creates tables with different FK patterns:
   - `obj007_departments` — parent table
   - `obj007_employees` — single-column FK with CASCADE DELETE, RESTRICT UPDATE
-  - `obj007_project_members` — FK with SET NULL DELETE, CASCADE UPDATE
+  - `obj007_projects` / `obj007_project_members` — composite FK with NO ACTION DELETE, CASCADE UPDATE
+  - `obj007_project_members` — nullable single-column FK with SET NULL DELETE, CASCADE UPDATE
   - `obj007_categories` — self-referencing FK with SET NULL DELETE, NO ACTION UPDATE
+- Negative-case tables cover missing referenced indexes, type mismatch, orphan data, and partitioned tables.
 - `grants.sql` grants ALTER, INDEX, REFERENCES
 - `cleanup.sql` drops all tables in reverse dependency order
 

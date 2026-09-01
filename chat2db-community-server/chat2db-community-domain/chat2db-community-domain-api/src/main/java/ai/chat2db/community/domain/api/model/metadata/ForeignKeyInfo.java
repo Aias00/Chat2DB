@@ -45,6 +45,8 @@ public class ForeignKeyInfo implements Serializable {
     @JsonAlias("FK_NAME")
     private String fkName;
 
+    private String oldName;
+
     @JsonAlias("PK_NAME")
     private String pkName;
 
