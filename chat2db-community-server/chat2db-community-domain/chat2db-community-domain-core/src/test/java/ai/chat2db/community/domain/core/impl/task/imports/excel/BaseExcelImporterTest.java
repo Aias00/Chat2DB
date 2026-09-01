@@ -7,6 +7,7 @@ import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.task.ArtifactDraft;
 import ai.chat2db.community.domain.api.model.task.ImportTaskSpec;
 import ai.chat2db.community.domain.api.model.task.TaskEventCode;
+import ai.chat2db.community.domain.api.model.task.TaskExecutionException;
 import ai.chat2db.community.domain.api.model.task.TaskTargetSnapshot;
 import ai.chat2db.community.domain.api.service.task.TaskCancelable;
 import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
@@ -51,6 +52,7 @@ class BaseExcelImporterTest {
         connection = DriverManager.getConnection("jdbc:h2:mem:excel_import_policy;MODE=MySQL;DB_CLOSE_DELAY=-1");
         ConnectInfo connectInfo = new ConnectInfo();
         connectInfo.setDbType(TEST_DB_TYPE);
+        connectInfo.setDataSourceId(10L);
         connectInfo.setConnection(connection);
         connectInfo.setDriverConfig(new DriverConfig());
         Chat2DBContext.putContext(connectInfo);
@@ -141,6 +143,61 @@ class BaseExcelImporterTest {
         assertEquals(List.of(1000, 1), context.batchStatementCounts());
     }
 
+    @Test
+    void queuedXlsxImportLoadsMetadataFromContextAndImports(@TempDir Path directory) throws Exception {
+        createOrdersTable("CREATE TABLE orders (id INT PRIMARY KEY, name VARCHAR(20) DEFAULT 'guest')");
+        Path input = writeWorkbook(directory, workbook -> {
+            var sheet = workbook.createSheet("visible");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("id");
+            header.createCell(1).setCellValue("name");
+            Row row = sheet.createRow(1);
+            row.createCell(0).setCellValue("1");
+            row.createCell(1).setCellValue("alice");
+        });
+        RecordingTaskExecutionContext context = new RecordingTaskExecutionContext();
+
+        new XLSXImporter().run(spec(input, Map.of("sheetName", "visible", "headerRow", 1),
+                List.of(Map.of("sourceColumn", "id", "targetColumn", "id"),
+                        Map.of("sourceColumn", "name", "targetColumn", "name")), "DEFAULT"), context);
+
+        assertEquals(1, countRows());
+        try (Statement statement = connection.createStatement();
+                ResultSet resultSet = statement.executeQuery("SELECT name FROM orders WHERE id = 1")) {
+            assertTrue(resultSet.next());
+            assertEquals("alice", resultSet.getString(1));
+        }
+    }
+
+    @Test
+    void queuedXlsxImportRejectsRequestDatabaseMismatchBeforeMetadataLookup(@TempDir Path directory) {
+        Chat2DBContext.getConnectInfo().setDatabaseName("trusted_db");
+        ImportTaskSpec spec = spec(directory.resolve("missing.xlsx"), Map.of(),
+                List.of(Map.of("sourceColumn", "id", "targetColumn", "id")), "DEFAULT");
+        spec.getTarget().setDatabaseName("other_db");
+
+        TaskExecutionException exception = assertThrows(TaskExecutionException.class,
+                () -> new XLSXImporter().run(spec, new RecordingTaskExecutionContext()));
+
+        assertEquals("IMPORT_FAILED", exception.getCode());
+        assertTrue(exception.getCause() instanceof BusinessException);
+        assertEquals("import.target.contextMismatch", exception.getCause().getMessage());
+    }
+
+    @Test
+    void queuedXlsxImportRejectsWildcardTableNameBeforeMetadataLookup(@TempDir Path directory) {
+        ImportTaskSpec spec = spec(directory.resolve("missing.xlsx"), Map.of(),
+                List.of(Map.of("sourceColumn", "id", "targetColumn", "id")), "DEFAULT");
+        spec.getTarget().setTableName("orders%");
+
+        TaskExecutionException exception = assertThrows(TaskExecutionException.class,
+                () -> new XLSXImporter().run(spec, new RecordingTaskExecutionContext()));
+
+        assertEquals("IMPORT_FAILED", exception.getCode());
+        assertTrue(exception.getCause() instanceof BusinessException);
+        assertEquals("import.target.unsafeTableName", exception.getCause().getMessage());
+    }
+
     private void createOrdersTable(String ddl) throws Exception {
         try (Statement statement = connection.createStatement()) {
             statement.execute("DROP TABLE IF EXISTS orders");
@@ -162,7 +219,7 @@ class BaseExcelImporterTest {
             String unmappedTarget) {
         return ImportTaskSpec.builder()
                 .sourceFile(input.toString())
-                .target(TaskTargetSnapshot.builder().tableName("orders").build())
+                .target(TaskTargetSnapshot.builder().dataSourceId(10L).tableName("orders").build())
                 .columnMappings(mappings)
                 .unmappedTarget(unmappedTarget)
                 .importOptions(options)
