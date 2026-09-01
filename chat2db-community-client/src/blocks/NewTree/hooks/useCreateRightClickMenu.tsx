@@ -28,7 +28,15 @@ import { staticMessage, staticModal } from '@chat2db/ui';
 import { deleteTable } from '../functions/deleteTable';
 import { generateJavaClass } from '../functions/generateJavaClass';
 import { neatenMoveToGroup } from '../functions/moveToGroup';
-import { editView, openFunction, openProcedure, openTrigger, openView } from '../functions/openAsyncSql';
+import {
+  createView,
+  editView,
+  formatQuotedQualifiedName,
+  openFunction,
+  openProcedure,
+  openTrigger,
+  openView,
+} from '../functions/openAsyncSql';
 import { handelPinTable } from '../functions/pinTable';
 import { openSchemaSyncModal } from '../functions/schemaSync';
 import { viewDDL } from '../functions/viewDDL';
@@ -912,7 +920,14 @@ export const useCreateRightClickMenu = () => {
         text: i18n('workspace.menu.createView'),
         icon: 'icon-table-view',
         handle: () => {
-          editView({ treeNodeData, addWorkspaceTab });
+          createView({
+            treeNodeData,
+            addWorkspaceTab,
+            title: i18n('workspace.menu.createView'),
+            submitCallback: () => {
+              handleLoadData(treeNodeData, { refresh: true });
+            },
+          });
         },
       },
 
@@ -924,7 +939,7 @@ export const useCreateRightClickMenu = () => {
           const ep = treeNodeData.extraParams;
           staticModal.confirm({
             title: i18n('workspace.menu.dropView'),
-            content: `"${viewName}"`,
+            content: formatQuotedQualifiedName([ep.databaseName, viewName]),
             okText: i18n('common.button.confirm'),
             cancelText: i18n('common.button.cancel'),
             okType: 'danger',
@@ -937,7 +952,8 @@ export const useCreateRightClickMenu = () => {
                   viewName,
                 })
                 .then(() => {
-                  handleLoadData(treeNodeData);
+                  const parentNode = getParentNode(treeNodeData.key, treeData);
+                  handleLoadData(parentNode || treeNodeData, { refresh: true });
                 })
                 .catch((error) => {
                   staticMessage.error(error?.message || i18n('common.text.failure'));
