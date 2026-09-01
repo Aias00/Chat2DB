@@ -72,6 +72,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
     @Override
     public String buildCreateTable(Table table, TableBuilderConfig tableBuilderConfig) {
+        MysqlSqlGuards.requireCompatibleCharsetAndCollation(table.getCharset(), table.getCollate());
         StringBuilder script = new StringBuilder();
         script.append(SQLConstants.CREATE_TABLE_SQL_PREFIX);
         if (StringUtils.isNotBlank(table.getDatabaseName())) {
@@ -144,6 +145,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
     @Override
     public String buildAlterTable(Table oldTable, Table newTable) {
+        MysqlSqlGuards.requireCompatibleCharsetAndCollation(newTable.getCharset(), newTable.getCollate());
         StringBuilder tableBuilder = new StringBuilder();
         tableBuilder.append(SQLConstants.ALTER_TABLE_SQL_PREFIX);
         if (StringUtils.isNotBlank(oldTable.getDatabaseName())) {

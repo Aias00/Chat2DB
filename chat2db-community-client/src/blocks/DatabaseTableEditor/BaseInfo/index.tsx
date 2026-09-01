@@ -1,4 +1,4 @@
-import { useContext, useEffect, useImperativeHandle, ForwardedRef, forwardRef, memo } from 'react';
+import { useContext, useEffect, useImperativeHandle, ForwardedRef, forwardRef, memo, useMemo } from 'react';
 import classnames from 'classnames';
 import { Form, Input } from 'antd';
 import { Context } from '../index';
@@ -7,6 +7,7 @@ import { shouldShowMysqlTableBaseInfo } from '@/utils/databaseJudgments';
 import i18n from '@/i18n';
 import CustomSelect from '@/components/CustomSelect';
 import { useStyles } from './style';
+import { buildBaseInfoFormValues, filterCollationsByCharset, isCharsetCollationCompatible } from '../baseInfoModel';
 
 export interface IBaseInfoRef {
   getBaseInfo: () => IBaseInfo;
@@ -25,17 +26,25 @@ const BaseInfo = forwardRef((props: IProps, ref: ForwardedRef<IBaseInfoRef>) => 
     databaseBaseInfo: { databaseType },
   } = useContext(Context);
   const [form] = Form.useForm();
+  const selectedCharset = Form.useWatch('charset', form);
+  const selectedCollation = Form.useWatch('collation', form);
+  const filteredCollationOptions = useMemo(
+    () => filterCollationsByCharset(databaseSupportField.collations, selectedCharset),
+    [databaseSupportField.collations, selectedCharset],
+  );
 
   useEffect(() => {
-    form.setFieldsValue({
-      name: tableDetails.name,
-      comment: tableDetails.comment,
-      charset: tableDetails.charset,
-      collation: tableDetails.collation,
-      engine: tableDetails.engine,
-      incrementValue: tableDetails.incrementValue,
-    });
+    form.setFieldsValue(buildBaseInfoFormValues(tableDetails));
   }, [tableDetails]);
+
+  useEffect(() => {
+    if (
+      selectedCollation &&
+      !isCharsetCollationCompatible(selectedCharset, selectedCollation, databaseSupportField.collations)
+    ) {
+      form.setFieldValue('collation', null);
+    }
+  }, [databaseSupportField.collations, form, selectedCharset, selectedCollation]);
 
   function getBaseInfo(): IBaseInfo {
     const values = form.getFieldsValue();
@@ -63,7 +72,7 @@ const BaseInfo = forwardRef((props: IProps, ref: ForwardedRef<IBaseInfoRef>) => 
                 <CustomSelect options={databaseSupportField.charsets} />
               </Form.Item>
               <Form.Item label={`${i18n('editTable.label.collation')}:`} name="collation">
-                <CustomSelect options={databaseSupportField.collations} />
+                <CustomSelect options={filteredCollationOptions} />
               </Form.Item>
               <Form.Item label={`${i18n('editTable.label.engine')}:`} name="engine">
                 <CustomSelect options={databaseSupportField.engineTypes} />

@@ -21,6 +21,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MysqlSqlBuilderTest {
@@ -138,6 +139,54 @@ class MysqlSqlBuilderTest {
         assertEquals("ALTER TABLE `test_db`.`settlement_record`\n"
                 + "\tDEFAULT CHARACTER SET=utf8mb4,\n"
                 + "\tCOLLATE=utf8mb4_general_ci;", sql);
+    }
+
+    @Test
+    void shouldRejectTableCollationOutsideSelectedCharsetBeforeBuildingSql() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table oldTable = Table.builder()
+                .databaseName("test_db")
+                .name("settlement_record")
+                .charset("utf8")
+                .collate("utf8_general_ci")
+                .engine("InnoDB")
+                .incrementValue(1L)
+                .columnList(List.of())
+                .indexList(List.of())
+                .build();
+        Table newTable = Table.builder()
+                .databaseName("test_db")
+                .name("settlement_record")
+                .charset("utf8mb4")
+                .collate("utf8_general_ci")
+                .engine("InnoDB")
+                .incrementValue(1L)
+                .columnList(List.of())
+                .indexList(List.of())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+
+        assertEquals("MySQL collation utf8_general_ci is not compatible with charset utf8mb4",
+                error.getMessage());
+    }
+
+    @Test
+    void shouldRejectColumnCollationOutsideSelectedCharsetBeforeBuildingSql() {
+        TableColumn column = TableColumn.builder()
+                .name("memo")
+                .columnType("VARCHAR")
+                .columnSize(64)
+                .charSetName("utf8mb4")
+                .collationName("utf8_general_ci")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> MysqlColumnTypeEnum.VARCHAR.buildCreateColumnSql(column));
+
+        assertEquals("MySQL collation utf8_general_ci is not compatible with charset utf8mb4",
+                error.getMessage());
     }
 
     @Test
