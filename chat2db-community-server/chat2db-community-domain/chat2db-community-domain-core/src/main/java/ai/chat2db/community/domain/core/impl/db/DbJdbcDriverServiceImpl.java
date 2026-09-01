@@ -23,8 +23,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -201,14 +203,20 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
         boolean exists = true;
         StringBuilder driverNames = new StringBuilder();
         for (String driverPath : driverPaths) {
-            File file = new File(driverPath);
-            if (!file.exists()) {
+            Path source = resolveReadableSourceDriver(driverPath);
+            if (source == null) {
                 exists = false;
                 break;
             }
-            File target = new File(JdbcDriverConstants.DRIVER_LIB_PATH + file.getName());
-            FileUtil.copyFile(file, target, StandardCopyOption.REPLACE_EXISTING);
-            driverNames.append(file.getName()).append(",");
+            String fileName = source.getFileName().toString();
+            Path target = resolveDriverLibJar(fileName);
+            try {
+                Files.createDirectories(target.getParent());
+                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException exception) {
+                throw new BusinessException("jdbc.driver.copyFailed", new Object[]{fileName}, exception);
+            }
+            driverNames.append(fileName).append(",");
         }
         if (!driverNames.isEmpty()) {
             driverNames.deleteCharAt(driverNames.length() - 1);
@@ -274,12 +282,12 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
             if (StringUtils.isBlank(jar) || isJarReferenced(jar)) {
                 continue;
             }
-            File file = new File(JdbcDriverConstants.DRIVER_LIB_PATH + jar);
-            if (file.exists()) {
+            Path file = resolveDriverLibJarOrNull(jar);
+            if (file != null && Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
                 try {
-                    FileUtil.del(file);
+                    Files.deleteIfExists(file);
                 } catch (Exception e) {
-                    log.warn("Delete driver jar file failed: {}", file.getAbsolutePath(), e);
+                    log.warn("Delete driver jar file failed: {}", file, e);
                 }
             }
         }
@@ -351,11 +359,58 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
             return false;
         }
         for (String jarPath : driverConfig.getJdbcDriver().split(",")) {
-            File file = new File(JdbcDriverConstants.DRIVER_LIB_PATH + jarPath);
-            if (!file.exists()) {
+            Path file = resolveDriverLibJarOrNull(jarPath);
+            if (file == null || !Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static Path resolveReadableSourceDriver(String driverPath) {
+        if (StringUtils.isBlank(driverPath) || driverPath.indexOf('\0') >= 0) {
+            return null;
+        }
+        try {
+            Path source = Paths.get(new String(driverPath.toCharArray())).toRealPath(LinkOption.NOFOLLOW_LINKS);
+            if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) || !Files.isReadable(source)) {
+                return null;
+            }
+            String fileName = source.getFileName().toString();
+            return isSafeJarName(fileName) ? source : null;
+        } catch (IOException | RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private static Path resolveDriverLibJar(String jarName) {
+        Path resolved = resolveDriverLibJarOrNull(jarName);
+        if (resolved == null) {
+            throw new BusinessException("jdbc.driver.invalidJarName", new Object[]{jarName});
+        }
+        return resolved;
+    }
+
+    private static Path resolveDriverLibJarOrNull(String jarName) {
+        if (!isSafeJarName(jarName)) {
+            return null;
+        }
+        String trustedJarName = new String(jarName.toCharArray());
+        Path base = Paths.get(new String(JdbcDriverConstants.DRIVER_LIB_PATH.toCharArray()))
+                .toAbsolutePath().normalize();
+        Path resolved = base.resolve(trustedJarName).normalize();
+        return resolved.getParent() != null && resolved.getParent().equals(base) ? resolved : null;
+    }
+
+    private static boolean isSafeJarName(String jarName) {
+        return StringUtils.isNotBlank(jarName)
+                && jarName.length() <= 255
+                && jarName.toLowerCase(java.util.Locale.ROOT).endsWith(".jar")
+                && jarName.indexOf('/') < 0
+                && jarName.indexOf('\\') < 0
+                && jarName.indexOf(':') < 0
+                && jarName.indexOf('\0') < 0
+                && !".".equals(jarName)
+                && !"..".equals(jarName);
     }
 }
