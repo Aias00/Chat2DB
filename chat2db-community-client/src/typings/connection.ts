@@ -25,6 +25,9 @@ export interface IMysqlTlsConfig {
   clientCertPem?: string;
   clientPrivateKeyPem?: string;
   clientKeyPassword?: string;
+  trustStoreType?: 'JKS' | 'PKCS12' | '';
+  trustStoreBytes?: string;
+  trustStorePassword?: string;
   keyStoreType?: 'JKS' | 'PKCS12' | '';
   keyStoreBytes?: string;
   keyStorePassword?: string;

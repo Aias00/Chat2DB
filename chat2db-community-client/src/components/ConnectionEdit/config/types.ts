@@ -45,6 +45,7 @@ export interface IFormItem {
   rows?: number;
   hidden?: boolean;
   fileTypes?: string[];
+  fileContentMode?: 'text' | 'base64';
   maxLength?: number;
   helpKey?: 'workspace.identityColor.help' | 'workspace.watermark.help';
   visibleWhen?: {

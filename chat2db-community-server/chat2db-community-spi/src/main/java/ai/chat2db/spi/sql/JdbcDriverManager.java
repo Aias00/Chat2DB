@@ -71,31 +71,35 @@ public class JdbcDriverManager {
 
     public static Connection getConnection(String url, Properties info, DriverConfig driver)
             throws SQLException {
-        if (Objects.isNull(url)) {
-            throw new SQLException("The url cannot be null", SQL_STATE_CODE);
-        }
-
-        DriverEntry driverEntry = DRIVER_ENTRY_MAP.get(driver.getJdbcDriver());
-        if (Objects.isNull(driverEntry)) {
-            driverEntry = getJDBCDriver(driver);
-        }
-        Connection connection;
         try {
-            connection = driverEntry.getDriver().connect(url, info);
-            if (Objects.isNull(connection)) {
-                throw new SQLException(String.format("driver.connect return null , No suitable driver found for url %s", url), SQL_STATE_CODE);
-
-            }
-            return connection;
-        } catch (SQLException sqlException) {
-            Connection con = tryConnectionAgain(driverEntry, url, info);
-
-            if (Objects.isNull(con)) {
-                throw new SQLException(String.format("Cannot create connection (%s)", sqlException.getMessage()), SQL_STATE_CODE,
-                        sqlException);
+            if (Objects.isNull(url)) {
+                throw new SQLException("The url cannot be null", SQL_STATE_CODE);
             }
 
-            return con;
+            DriverEntry driverEntry = DRIVER_ENTRY_MAP.get(driver.getJdbcDriver());
+            if (Objects.isNull(driverEntry)) {
+                driverEntry = getJDBCDriver(driver);
+            }
+            try {
+                Connection connection = driverEntry.getDriver().connect(url, info);
+                if (Objects.isNull(connection)) {
+                    throw new SQLException(String.format(
+                            "driver.connect return null , No suitable driver found for url %s", url), SQL_STATE_CODE);
+                }
+                return connection;
+            } catch (SQLException sqlException) {
+                Connection con = tryConnectionAgain(driverEntry, url, info);
+
+                if (Objects.isNull(con)) {
+                    throw new SQLException(String.format("Cannot create connection (%s)",
+                                    MySqlTlsTranslator.diagnosticMessage(sqlException, info)), SQL_STATE_CODE,
+                            sqlException);
+                }
+
+                return con;
+            }
+        } finally {
+            MySqlTlsTranslator.cleanupTemporaryStores(info);
         }
     }
 

@@ -7,14 +7,24 @@ import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.io.BufferedReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
+import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -56,14 +66,14 @@ class MySqlTlsTranslatorTest {
     private static DriverConfig connectorJ8() {
         DriverConfig cfg = new DriverConfig();
         cfg.setJdbcDriverClass("com.mysql.cj.jdbc.Driver");
-        cfg.setJdbcDriver("mysql-connector-java-8.0.33.jar");
+        cfg.setJdbcDriver("mysql-connector-java-8.0.30.jar");
         return cfg;
     }
 
     private static DriverConfig connectorJ5() {
         DriverConfig cfg = new DriverConfig();
         cfg.setJdbcDriverClass("com.mysql.jdbc.Driver");
-        cfg.setJdbcDriver("mysql-connector-java-5.1.49.jar");
+        cfg.setJdbcDriver("mysql-connector-java-5.1.47.jar");
         return cfg;
     }
 
@@ -215,10 +225,10 @@ class MySqlTlsTranslatorTest {
         assertFalse(p.containsKey("clientCertificateKeyStoreUrl"));
     }
 
-    // ---- pre-built keystore overrides PEM ----------------------------------------------
+    // ---- PEM and pre-built store sources are mutually exclusive ------------------------
 
     @Test
-    void keystoreOverridesClientPemStoresOnly() {
+    void clientPemAndKeyStoreCannotBeSuppliedTogether() {
         SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
         ssl.setCaPem(PEM_CA);
         ssl.setClientCertPem(PEM_CLIENT_CERT);
@@ -227,14 +237,123 @@ class MySqlTlsTranslatorTest {
         ssl.setKeyStoreBytes(base64KeyStore("PKCS12", "storepass"));
         ssl.setKeyStorePassword("storepass");
         Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.conflictingClientMaterial", exception.getCode());
+        assertFalse(p.containsKey("trustCertificateKeyStoreUrl"));
+        assertFalse(p.containsKey("clientCertificateKeyStoreUrl"));
+    }
+
+    @Test
+    void caPemAndTrustStoreCannotBeSuppliedTogether() {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setCaPem(PEM_CA);
+        ssl.setTrustStoreType("JKS");
+        ssl.setTrustStoreBytes(base64KeyStore("JKS", "trustpass"));
+        ssl.setTrustStorePassword("trustpass");
+        Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.conflictingTrustMaterial", exception.getCode());
+        assertFalse(p.containsKey("trustCertificateKeyStoreUrl"));
+    }
+
+    @Test
+    void suppliedTrustStoreIsIndependentFromClientKeyStore() {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setTrustStoreType("JKS");
+        ssl.setTrustStoreBytes(base64KeyStore("JKS", "trustpass"));
+        ssl.setTrustStorePassword("trustpass");
+        ssl.setKeyStoreType("PKCS12");
+        ssl.setKeyStoreBytes(base64KeyStore("PKCS12", "clientpass"));
+        ssl.setKeyStorePassword("clientpass");
+        Map<String, Object> p = new HashMap<>();
+
         MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
-        // The keystore is the client identity; CA PEM stays in the trust store.
-        assertEquals("PKCS12", p.get("trustCertificateKeyStoreType"));
+
+        assertEquals("JKS", p.get("trustCertificateKeyStoreType"));
         assertEquals("PKCS12", p.get("clientCertificateKeyStoreType"));
-        assertLoadableKeyStore((String) p.get("trustCertificateKeyStoreUrl"), "PKCS12", "");
-        assertLoadableKeyStore((String) p.get("clientCertificateKeyStoreUrl"), "PKCS12", "storepass");
-        assertEquals("storepass", p.get("clientCertificateKeyStorePassword"));
-        assertEquals("", p.get("trustCertificateKeyStorePassword"));
+        assertLoadableKeyStore((String) p.get("trustCertificateKeyStoreUrl"), "JKS", "trustpass");
+        assertLoadableKeyStore((String) p.get("clientCertificateKeyStoreUrl"), "PKCS12", "clientpass");
+        assertEquals("trustpass", p.get("trustCertificateKeyStorePassword"));
+        assertEquals("clientpass", p.get("clientCertificateKeyStorePassword"));
+    }
+
+    @Test
+    void temporaryStoresUseOwnerOnlyPermissionsWhenPosixIsAvailable() throws Exception {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setTrustStoreBytes(base64KeyStore("PKCS12", null));
+        Map<String, Object> p = new HashMap<>();
+
+        MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
+        Path path = Path.of(new URL((String) p.get("trustCertificateKeyStoreUrl")).toURI());
+        try {
+            if (Files.getFileStore(path).supportsFileAttributeView("posix")) {
+                Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(path);
+                assertEquals(PosixFilePermissions.fromString("rw-------"), permissions);
+            }
+        } finally {
+            MySqlTlsTranslator.cleanupTemporaryStores(p);
+        }
+    }
+
+    @Test
+    void translatorFailureRemovesAlreadyCreatedTemporaryStore() throws Exception {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setCaPem(PEM_CA);
+        ssl.setKeyStoreBytes("not-base64%%%");
+        Map<String, Object> p = new HashMap<>();
+
+        assertThrows(BusinessException.class, () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        Path trustStore = Path.of(new URL((String) p.get("trustCertificateKeyStoreUrl")).toURI());
+        assertFalse(Files.exists(trustStore));
+    }
+
+    @Test
+    void suppliedTrustStoreDefaultsToPkcs12WhenTypeBlank() {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setTrustStoreBytes(base64KeyStore("PKCS12", null));
+        Map<String, Object> p = new HashMap<>();
+
+        MySqlTlsTranslator.apply(ssl, connectorJ8(), p);
+
+        assertEquals("PKCS12", p.get("trustCertificateKeyStoreType"));
+        assertLoadableKeyStore((String) p.get("trustCertificateKeyStoreUrl"), "PKCS12", null);
+        assertFalse(p.containsKey("trustCertificateKeyStorePassword"));
+    }
+
+    @Test
+    void invalidTrustStoreBase64ReportsFieldSpecificDiagnostic() {
+        SSLInfo ssl = ssl(MySqlTlsMode.VERIFY_CA);
+        ssl.setTrustStoreBytes("not-base64%%%");
+        Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.invalidKeyStoreBase64", exception.getCode());
+        assertEquals("trustStoreBytes", exception.getArgs()[0]);
+    }
+
+    @Test
+    void invalidClientKeyStorePasswordReportsFieldSpecificDiagnostic() {
+        SSLInfo ssl = ssl(MySqlTlsMode.REQUIRED);
+        ssl.setKeyStoreType("PKCS12");
+        ssl.setKeyStoreBytes(base64KeyStore("PKCS12", "actualpass"));
+        ssl.setKeyStorePassword("wrongpass");
+        Map<String, Object> p = new HashMap<>();
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl, connectorJ8(), p));
+
+        assertEquals("datasource.tls.invalidKeyStore", exception.getCode());
+        assertEquals("keyStoreBytes", exception.getArgs()[0]);
+        assertEquals("PKCS12", exception.getArgs()[1]);
     }
 
     @Test
@@ -287,11 +406,42 @@ class MySqlTlsTranslatorTest {
     void v5Jar5_1StringDetectedAsLegacy() {
         DriverConfig cfg = new DriverConfig();
         cfg.setJdbcDriverClass("org.gjt.mm.mysql.Driver");
-        cfg.setJdbcDriver("mysql-connector-java-5.1.49.jar");
+        cfg.setJdbcDriver("mysql-connector-java-5.1.47.jar");
         Map<String, Object> p = new HashMap<>();
         MySqlTlsTranslator.apply(ssl(MySqlTlsMode.REQUIRED), cfg, p);
         assertEquals("true", p.get("useSSL"));
         assertFalse(p.containsKey("sslMode"));
+    }
+
+    @Test
+    void connectorJMatrixArtifactMatchesGeneratedModeProperties() throws Exception {
+        try (InputStream inputStream = MySqlTlsTranslatorTest.class
+                .getResourceAsStream("/mysql-tls/connector-j-matrix.csv")) {
+            assertTrue(inputStream != null, "matrix fixture must exist");
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String header = reader.readLine();
+                assertEquals("connector,jdbcDriverClass,jdbcDriver,tlsMode,expectedModeProperty,"
+                        + "expectedModeValue,expectedVerifyServerCertificate", header);
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] columns = line.split(",", -1);
+                    assertEquals(7, columns.length, () -> Arrays.toString(columns));
+                    DriverConfig cfg = new DriverConfig();
+                    cfg.setJdbcDriverClass(columns[1]);
+                    cfg.setJdbcDriver(columns[2]);
+                    Map<String, Object> p = new HashMap<>();
+
+                    MySqlTlsTranslator.apply(ssl(MySqlTlsMode.valueOf(columns[3])), cfg, p);
+
+                    assertEquals(columns[5], p.get(columns[4]), line);
+                    if (!columns[6].isBlank()) {
+                        assertEquals(columns[6], p.get("verifyServerCertificate"), line);
+                    } else {
+                        assertFalse(p.containsKey("verifyServerCertificate"), line);
+                    }
+                }
+            }
+        }
     }
 
     // ---- version detection edge cases ---------------------------------------------------
@@ -376,6 +526,50 @@ class MySqlTlsTranslatorTest {
         assertFalse(MySqlTlsTranslator.hasExplicitTlsIntent(info));
     }
 
+    // ---- connection diagnostics --------------------------------------------------------
+
+    @Test
+    void diagnosticsAddExpiredCertificateGuidanceForTlsConnections() {
+        String message = MySqlTlsTranslator.diagnosticMessage(
+                sqlException("javax.net.ssl.SSLHandshakeException: NotAfter: Sat Aug 24 11:33:05 PDT 2026"),
+                tlsProperties());
+
+        assertTrue(message.contains("TLS certificate is expired"), message);
+    }
+
+    @Test
+    void diagnosticsAddUntrustedCaGuidanceForTlsConnections() {
+        String message = MySqlTlsTranslator.diagnosticMessage(
+                sqlException("PKIX path building failed: unable to find valid certification path to requested target"),
+                tlsProperties());
+
+        assertTrue(message.contains("Upload the issuing CA PEM"), message);
+    }
+
+    @Test
+    void diagnosticsAddHostnameMismatchGuidanceForTlsConnections() {
+        String message = MySqlTlsTranslator.diagnosticMessage(
+                sqlException("No subject alternative names matching IP address 127.0.0.1 found"),
+                tlsProperties());
+
+        assertTrue(message.contains("TLS hostname verification failed"), message);
+    }
+
+    @Test
+    void diagnosticsAddWrongPasswordGuidanceForTlsConnections() {
+        String message = MySqlTlsTranslator.diagnosticMessage(
+                sqlException("java.io.IOException: keystore was tampered with, or password was incorrect"),
+                tlsProperties());
+
+        assertTrue(message.contains("key-store password is incorrect"), message);
+    }
+
+    @Test
+    void diagnosticsDoNotRewritePlaintextConnections() {
+        SQLException exception = sqlException("PKIX path building failed");
+        assertEquals(exception.getMessage(), MySqlTlsTranslator.diagnosticMessage(exception, new HashMap<>()));
+    }
+
     // ---- helpers ------------------------------------------------------------------------
 
     private static String base64KeyStore(String type, String password) {
@@ -414,5 +608,15 @@ class MySqlTlsTranslatorTest {
         } catch (Exception e) {
             throw new AssertionError(e);
         }
+    }
+
+    private static Map<String, Object> tlsProperties() {
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("sslMode", "VERIFY_IDENTITY");
+        return properties;
+    }
+
+    private static SQLException sqlException(String message) {
+        return new SQLException("Cannot create connection", new SQLException(message));
     }
 }

@@ -5,7 +5,14 @@ import lombok.ToString;
 
 
 @Data
-@ToString(exclude = {"clientPrivateKeyPem", "clientKeyPassword", "keyStoreBytes", "keyStorePassword"})
+@ToString(exclude = {
+        "clientPrivateKeyPem",
+        "clientKeyPassword",
+        "keyStoreBytes",
+        "keyStorePassword",
+        "trustStoreBytes",
+        "trustStorePassword"
+})
 public class SSLInfo {
 
     /**
@@ -32,6 +39,22 @@ public class SSLInfo {
      * Private key password (mutual TLS). Secret — encrypted at rest.
      */
     private String clientKeyPassword;
+
+    /**
+     * Optional trust-store type override (PKCS12/JKS) when a pre-built trust store is supplied
+     * instead of CA PEM. Blank when PEM is used.
+     */
+    private String trustStoreType;
+
+    /**
+     * Optional trust-store bytes, Base64-encoded (server trust material). Secret — encrypted at rest.
+     */
+    private String trustStoreBytes;
+
+    /**
+     * Trust-store password. Secret — encrypted at rest.
+     */
+    private String trustStorePassword;
 
     /**
      * Optional keystore type override (PKCS12/JKS) when a pre-built keystore is supplied

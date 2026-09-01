@@ -30,6 +30,7 @@ import ai.chat2db.community.tools.wrapper.result.DataResult;
 import cn.hutool.core.date.DatePattern;
 import cn.hutool.core.date.DateUtil;
 import org.springframework.stereotype.Component;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Date;
 import java.util.List;
@@ -234,6 +235,8 @@ public class LocalWorkspaceStorage implements IWorkspaceStorage {
         }
         ssl.setClientPrivateKeyPem(encryptString(ssl.getClientPrivateKeyPem()));
         ssl.setClientKeyPassword(encryptString(ssl.getClientKeyPassword()));
+        ssl.setTrustStoreBytes(encryptString(ssl.getTrustStoreBytes()));
+        ssl.setTrustStorePassword(encryptString(ssl.getTrustStorePassword()));
         ssl.setKeyStoreBytes(encryptString(ssl.getKeyStoreBytes()));
         ssl.setKeyStorePassword(encryptString(ssl.getKeyStorePassword()));
     }
@@ -243,7 +246,14 @@ public class LocalWorkspaceStorage implements IWorkspaceStorage {
         if (incoming == null) {
             return null;
         }
+        boolean trustStoreSupplied = StringUtils.isNotBlank(incoming.getTrustStoreBytes());
+        boolean trustPemSupplied = !trustStoreSupplied && StringUtils.isNotBlank(incoming.getCaPem());
+        boolean clientStoreSupplied = StringUtils.isNotBlank(incoming.getKeyStoreBytes());
+        boolean clientPemSupplied = !clientStoreSupplied
+                && (StringUtils.isNotBlank(incoming.getClientCertPem())
+                || StringUtils.isNotBlank(incoming.getClientPrivateKeyPem()));
         if (oldEncrypted == null) {
+            normalizeSslSources(incoming);
             encryptSslSensitiveFields(incoming);
             return incoming;
         }
@@ -251,12 +261,73 @@ public class LocalWorkspaceStorage implements IWorkspaceStorage {
         oldEncrypted.setTlsMode(incoming.getTlsMode());
         oldEncrypted.setCaPem(incoming.getCaPem());
         oldEncrypted.setClientCertPem(incoming.getClientCertPem());
+        oldEncrypted.setTrustStoreType(incoming.getTrustStoreType());
         oldEncrypted.setKeyStoreType(incoming.getKeyStoreType());
-        oldEncrypted.setClientPrivateKeyPem(encryptString(incoming.getClientPrivateKeyPem()));
-        oldEncrypted.setClientKeyPassword(encryptString(incoming.getClientKeyPassword()));
-        oldEncrypted.setKeyStoreBytes(encryptString(incoming.getKeyStoreBytes()));
-        oldEncrypted.setKeyStorePassword(encryptString(incoming.getKeyStorePassword()));
+        oldEncrypted.setClientPrivateKeyPem(mergeEncryptedSecret(incoming.getClientPrivateKeyPem(),
+                oldEncrypted.getClientPrivateKeyPem()));
+        oldEncrypted.setClientKeyPassword(mergeEncryptedSecret(incoming.getClientKeyPassword(),
+                oldEncrypted.getClientKeyPassword()));
+        oldEncrypted.setTrustStoreBytes(mergeEncryptedSecret(incoming.getTrustStoreBytes(),
+                oldEncrypted.getTrustStoreBytes()));
+        oldEncrypted.setTrustStorePassword(mergeEncryptedSecret(incoming.getTrustStorePassword(),
+                oldEncrypted.getTrustStorePassword()));
+        oldEncrypted.setKeyStoreBytes(mergeEncryptedSecret(incoming.getKeyStoreBytes(),
+                oldEncrypted.getKeyStoreBytes()));
+        oldEncrypted.setKeyStorePassword(mergeEncryptedSecret(incoming.getKeyStorePassword(),
+                oldEncrypted.getKeyStorePassword()));
+        if (trustStoreSupplied) {
+            oldEncrypted.setCaPem(null);
+        } else if (trustPemSupplied) {
+            clearTrustStore(oldEncrypted);
+        }
+        if (clientStoreSupplied) {
+            clearClientPem(oldEncrypted);
+        } else if (clientPemSupplied) {
+            clearClientStore(oldEncrypted);
+        }
         return oldEncrypted;
+    }
+
+    private void normalizeSslSources(SSLInfo ssl) {
+        if (StringUtils.isNotBlank(ssl.getTrustStoreBytes())) {
+            ssl.setCaPem(null);
+        } else if (StringUtils.isNotBlank(ssl.getCaPem())) {
+            clearTrustStore(ssl);
+        }
+        if (StringUtils.isNotBlank(ssl.getKeyStoreBytes())) {
+            clearClientPem(ssl);
+        } else if (StringUtils.isNotBlank(ssl.getClientCertPem())
+                || StringUtils.isNotBlank(ssl.getClientPrivateKeyPem())) {
+            clearClientStore(ssl);
+        }
+    }
+
+    private void clearTrustStore(SSLInfo ssl) {
+        ssl.setTrustStoreType(null);
+        ssl.setTrustStoreBytes(null);
+        ssl.setTrustStorePassword(null);
+    }
+
+    private void clearClientStore(SSLInfo ssl) {
+        ssl.setKeyStoreType(null);
+        ssl.setKeyStoreBytes(null);
+        ssl.setKeyStorePassword(null);
+    }
+
+    private void clearClientPem(SSLInfo ssl) {
+        ssl.setClientCertPem(null);
+        ssl.setClientPrivateKeyPem(null);
+        ssl.setClientKeyPassword(null);
+    }
+
+    private String mergeEncryptedSecret(String incoming, String oldEncrypted) {
+        if (incoming == null) {
+            return oldEncrypted;
+        }
+        if (incoming.isEmpty()) {
+            return null;
+        }
+        return encryptString(incoming);
     }
 
     private int normalizePageNo(Integer pageNo) {

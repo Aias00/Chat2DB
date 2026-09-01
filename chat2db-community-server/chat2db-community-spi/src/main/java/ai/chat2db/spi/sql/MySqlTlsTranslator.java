@@ -13,18 +13,23 @@ import javax.crypto.spec.PBEKeySpec;
 import java.io.ByteArrayInputStream;
 import java.io.OutputStream;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Translates a structured {@link SSLInfo} into MySQL Connector/J connection properties, merged
@@ -44,6 +49,9 @@ public final class MySqlTlsTranslator {
     private static final String CERTIFICATE_LABEL = "CERTIFICATE";
     private static final String PRIVATE_KEY_LABEL = "PRIVATE KEY";
     private static final String ENCRYPTED_PRIVATE_KEY_LABEL = "ENCRYPTED PRIVATE KEY";
+    private static final Set<Path> TEMPORARY_STORES = ConcurrentHashMap.newKeySet();
+    private static final Set<java.nio.file.attribute.PosixFilePermission> OWNER_ONLY_PERMISSIONS =
+            PosixFilePermissions.fromString("rw-------");
 
     private MySqlTlsTranslator() {
     }
@@ -62,15 +70,33 @@ public final class MySqlTlsTranslator {
         if (properties == null) {
             return;
         }
+        cleanupTemporaryStores(properties);
         if (ssl == null || MySqlTlsMode.fromString(ssl.getTlsMode()) == MySqlTlsMode.DISABLED) {
             removeTlsProperties(properties);
             return;
         }
+        validateExclusiveSources(ssl);
         MySqlTlsMode mode = MySqlTlsMode.fromString(ssl.getTlsMode());
-        if (isConnectorJ8(driverConfig)) {
-            applyV8(ssl, mode, properties);
-        } else {
-            applyV5(ssl, mode, properties);
+        try {
+            if (isConnectorJ8(driverConfig)) {
+                applyV8(ssl, mode, properties);
+            } else {
+                applyV5(ssl, mode, properties);
+            }
+        } catch (RuntimeException exception) {
+            cleanupTemporaryStores(properties);
+            throw exception;
+        }
+    }
+
+    private static void validateExclusiveSources(SSLInfo ssl) {
+        if (StringUtils.isNotBlank(ssl.getCaPem()) && StringUtils.isNotBlank(ssl.getTrustStoreBytes())) {
+            throw new BusinessException("datasource.tls.conflictingTrustMaterial");
+        }
+        boolean hasClientPem = StringUtils.isNotBlank(ssl.getClientCertPem())
+                || StringUtils.isNotBlank(ssl.getClientPrivateKeyPem());
+        if (hasClientPem && StringUtils.isNotBlank(ssl.getKeyStoreBytes())) {
+            throw new BusinessException("datasource.tls.conflictingClientMaterial");
         }
     }
 
@@ -119,6 +145,55 @@ public final class MySqlTlsTranslator {
         return false;
     }
 
+    public static String diagnosticMessage(SQLException exception, Map<?, ?> properties) {
+        String original = exception == null ? "" : StringUtils.defaultString(exception.getMessage());
+        if (!hasExplicitTlsIntent(properties)) {
+            return original;
+        }
+        String chain = exceptionChainText(exception).toLowerCase();
+        String diagnostic = null;
+        if (chain.contains("expired") || chain.contains("notafter") || chain.contains("not valid after")) {
+            diagnostic = "TLS certificate is expired. Replace the server/client certificate or lower the TLS mode "
+                    + "only after confirming the datasource policy.";
+        } else if (chain.contains("no subject alternative names matching")
+                || chain.contains("doesn't correspond to desired host")
+                || chain.contains("hostname") && chain.contains("match")) {
+            diagnostic = "TLS hostname verification failed. Connect with the hostname listed in the certificate SAN "
+                    + "or use VERIFY_CA only when hostname verification is not required.";
+        } else if (chain.contains("pkix path building failed")
+                || chain.contains("unable to find valid certification path")
+                || chain.contains("sun.security.validator.validatorexception")
+                || chain.contains("certificate_unknown")) {
+            diagnostic = "TLS certificate authority is not trusted. Upload the issuing CA PEM or a trust-store "
+                    + "containing that CA.";
+        } else if (chain.contains("badpaddingexception")
+                || chain.contains("keystore was tampered with")
+                || chain.contains("password was incorrect")
+                || chain.contains("cannot recover key")
+                || chain.contains("given final block not properly padded")) {
+            diagnostic = "TLS private-key or key-store password is incorrect. Re-enter the client key password or "
+                    + "client key-store password for this datasource.";
+        }
+        if (diagnostic == null) {
+            return original;
+        }
+        return original.isBlank() ? diagnostic : original + ". " + diagnostic;
+    }
+
+    private static String exceptionChainText(Throwable throwable) {
+        StringBuilder builder = new StringBuilder();
+        Throwable cursor = throwable;
+        while (cursor != null) {
+            builder.append(cursor.getClass().getName()).append(':');
+            if (cursor.getMessage() != null) {
+                builder.append(cursor.getMessage());
+            }
+            builder.append('\n');
+            cursor = cursor.getCause();
+        }
+        return builder.toString();
+    }
+
     private static boolean isConnectorJ8(DriverConfig driverConfig) {
         if (driverConfig == null) {
             return true;
@@ -155,8 +230,12 @@ public final class MySqlTlsTranslator {
     }
 
     private static void applyTrustStore(SSLInfo ssl, Map<String, Object> p) {
-        // The trust store only carries CA material; keyStoreBytes is the client identity
-        // keystore (mutual TLS) and must not double as the trust store.
+        if (StringUtils.isNotBlank(ssl.getTrustStoreBytes())) {
+            p.put("trustCertificateKeyStoreType", trustStoreType(ssl));
+            p.put("trustCertificateKeyStoreUrl", writeSuppliedTrustStoreUrl(ssl));
+            putIfNotBlank(p, "trustCertificateKeyStorePassword", ssl.getTrustStorePassword());
+            return;
+        }
         if (StringUtils.isNotBlank(ssl.getCaPem())) {
             p.put("trustCertificateKeyStoreType", KEY_STORE_TYPE_PKCS12);
             p.put("trustCertificateKeyStoreUrl", createTrustStoreUrl(ssl.getCaPem()));
@@ -178,8 +257,16 @@ public final class MySqlTlsTranslator {
         }
     }
 
+    private static String trustStoreType(SSLInfo ssl) {
+        return storeType(StringUtils.defaultIfBlank(ssl.getTrustStoreType(), KEY_STORE_TYPE_PKCS12));
+    }
+
     private static String storeType(SSLInfo ssl) {
-        String type = StringUtils.defaultIfBlank(ssl.getKeyStoreType(), KEY_STORE_TYPE_PKCS12).toUpperCase();
+        return storeType(StringUtils.defaultIfBlank(ssl.getKeyStoreType(), KEY_STORE_TYPE_PKCS12));
+    }
+
+    private static String storeType(String requestedType) {
+        String type = StringUtils.defaultIfBlank(requestedType, KEY_STORE_TYPE_PKCS12).toUpperCase();
         if (!KEY_STORE_TYPE_PKCS12.equals(type) && !KEY_STORE_TYPE_JKS.equals(type)) {
             throw new BusinessException("datasource.tls.unsupportedKeyStoreType", new Object[]{type});
         }
@@ -192,16 +279,28 @@ public final class MySqlTlsTranslator {
         }
     }
 
+    private static String writeSuppliedTrustStoreUrl(SSLInfo ssl) {
+        String type = trustStoreType(ssl);
+        byte[] storeBytes = decodeStoreBytes(ssl.getTrustStoreBytes(), "trustStoreBytes");
+        validateKeyStoreBytes(type, storeBytes, ssl.getTrustStorePassword(), "trustStoreBytes");
+        return writeTempStoreBytes(storeBytes, type, "chat2db-mysql-trust-store-");
+    }
+
     private static String writeSuppliedKeyStoreUrl(SSLInfo ssl) {
         String type = storeType(ssl);
+        byte[] storeBytes = decodeStoreBytes(ssl.getKeyStoreBytes(), "keyStoreBytes");
+        validateKeyStoreBytes(type, storeBytes, ssl.getKeyStorePassword(), "keyStoreBytes");
+        return writeTempStoreBytes(storeBytes, type, "chat2db-mysql-client-store-");
+    }
+
+    private static byte[] decodeStoreBytes(String keyStoreBytes, String field) {
         byte[] storeBytes;
         try {
-            storeBytes = Base64.getDecoder().decode(StringUtils.deleteWhitespace(ssl.getKeyStoreBytes()));
+            storeBytes = Base64.getDecoder().decode(StringUtils.deleteWhitespace(keyStoreBytes));
         } catch (IllegalArgumentException e) {
-            throw new BusinessException("datasource.tls.invalidKeyStore", new Object[]{"base64"}, e);
+            throw new BusinessException("datasource.tls.invalidKeyStoreBase64", new Object[]{field}, e);
         }
-        validateKeyStoreBytes(type, storeBytes, ssl.getKeyStorePassword());
-        return writeTempStoreBytes(storeBytes, type, "chat2db-mysql-client-store-");
+        return storeBytes;
     }
 
     private static String createTrustStoreUrl(String caPem) {
@@ -347,38 +446,112 @@ public final class MySqlTlsTranslator {
         throw new BusinessException("datasource.tls.invalidPrivateKey");
     }
 
-    private static void validateKeyStoreBytes(String type, byte[] storeBytes, String password) {
+    private static void validateKeyStoreBytes(String type, byte[] storeBytes, String password, String field) {
         try {
             KeyStore keyStore = KeyStore.getInstance(type);
             keyStore.load(new ByteArrayInputStream(storeBytes), passwordChars(password));
         } catch (Exception e) {
-            throw new BusinessException("datasource.tls.invalidKeyStore", new Object[]{type}, e);
+            throw new BusinessException("datasource.tls.invalidKeyStore", new Object[]{field, type}, e);
         }
     }
 
     private static String writeGeneratedStoreUrl(KeyStore keyStore, String prefix) {
+        Path file = null;
         try {
-            Path file = Files.createTempFile(prefix, ".p12");
+            file = createOwnerOnlyTempFile(prefix, ".p12");
             try (OutputStream outputStream = Files.newOutputStream(file)) {
                 keyStore.store(outputStream, GENERATED_STORE_PASSWORD);
             }
-            file.toFile().deleteOnExit();
+            TEMPORARY_STORES.add(file);
             return file.toUri().toURL().toString();
         } catch (Exception e) {
+            deleteCreatedFile(file);
             throw new BusinessException("datasource.tls.storeWriteFailed", null, e);
         }
     }
 
     private static String writeTempStoreBytes(byte[] storeBytes, String type, String prefix) {
+        Path file = null;
         try {
-            Path file = Files.createTempFile(prefix, KEY_STORE_TYPE_JKS.equals(type) ? ".jks" : ".p12");
+            file = createOwnerOnlyTempFile(prefix, KEY_STORE_TYPE_JKS.equals(type) ? ".jks" : ".p12");
             Files.write(file, storeBytes);
-            file.toFile().deleteOnExit();
+            TEMPORARY_STORES.add(file);
             return file.toUri().toURL().toString();
         } catch (MalformedURLException e) {
+            deleteCreatedFile(file);
             throw new BusinessException("datasource.tls.storeUrlFailed", null, e);
         } catch (Exception e) {
+            deleteCreatedFile(file);
             throw new BusinessException("datasource.tls.storeWriteFailed", null, e);
+        }
+    }
+
+    private static Path createOwnerOnlyTempFile(String prefix, String suffix) throws Exception {
+        Path file;
+        if (Files.getFileStore(Path.of(System.getProperty("java.io.tmpdir"))).supportsFileAttributeView("posix")) {
+            file = Files.createTempFile(prefix, suffix,
+                    PosixFilePermissions.asFileAttribute(OWNER_ONLY_PERMISSIONS));
+            Files.setPosixFilePermissions(file, OWNER_ONLY_PERMISSIONS);
+            return file;
+        }
+        file = Files.createTempFile(prefix, suffix);
+        boolean secured = file.toFile().setReadable(false, false)
+                && file.toFile().setWritable(false, false)
+                && file.toFile().setExecutable(false, false)
+                && file.toFile().setReadable(true, true)
+                && file.toFile().setWritable(true, true);
+        if (!secured) {
+            Files.deleteIfExists(file);
+            throw new IllegalStateException("Cannot secure TLS temporary store permissions");
+        }
+        return file;
+    }
+
+    static void cleanupTemporaryStores(Map<?, ?> properties) {
+        if (properties == null) {
+            return;
+        }
+        deleteTemporaryStore(storePath(properties.get("trustCertificateKeyStoreUrl")));
+        deleteTemporaryStore(storePath(properties.get("clientCertificateKeyStoreUrl")));
+    }
+
+    private static Path storePath(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(value.toString());
+            return "file".equalsIgnoreCase(uri.getScheme()) ? Path.of(uri).toAbsolutePath().normalize() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static void deleteTemporaryStore(Path file) {
+        if (file == null) {
+            return;
+        }
+        Path normalized = file.toAbsolutePath().normalize();
+        if (!TEMPORARY_STORES.remove(normalized)) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(normalized);
+        } catch (Exception ignored) {
+            normalized.toFile().deleteOnExit();
+        }
+    }
+
+    private static void deleteCreatedFile(Path file) {
+        if (file == null) {
+            return;
+        }
+        Path normalized = file.toAbsolutePath().normalize();
+        TEMPORARY_STORES.remove(normalized);
+        try {
+            Files.deleteIfExists(normalized);
+        } catch (Exception ignored) {
+            normalized.toFile().deleteOnExit();
         }
     }
 

@@ -90,14 +90,81 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
                 && !AuthenticationTypeEnum.NONE.getCode().equals(request.getAuthenticationType())) {
             request.setPassword(savedDataSource.getPassword());
         }
-        // Only an omitted TLS object reuses the saved configuration. An explicit blank object
-        // disables TLS and must not resurrect saved private material.
         if (request.getId() != null
-                && savedDataSource != null
-                && request.getSsl() == null) {
-            request.setSsl(savedDataSource.getSsl());
+                && savedDataSource != null) {
+            request.setSsl(mergeSslForConnect(request.getSsl(), savedDataSource.getSsl()));
         }
         dataSourceService.preConnect(request);
+    }
+
+    private SSLInfo mergeSslForConnect(SSLInfo incoming, SSLInfo saved) {
+        if (incoming == null) {
+            return saved;
+        }
+        if (StringUtils.isBlank(incoming.getTlsMode())
+                || "DISABLED".equalsIgnoreCase(incoming.getTlsMode())) {
+            return incoming;
+        }
+        if (saved == null) {
+            normalizeSslSources(incoming);
+            return incoming;
+        }
+
+        boolean trustStoreSupplied = StringUtils.isNotBlank(incoming.getTrustStoreBytes());
+        boolean trustPemSupplied = !trustStoreSupplied && StringUtils.isNotBlank(incoming.getCaPem());
+        boolean clientStoreSupplied = StringUtils.isNotBlank(incoming.getKeyStoreBytes());
+        boolean clientPemSupplied = !clientStoreSupplied
+                && (StringUtils.isNotBlank(incoming.getClientCertPem())
+                || StringUtils.isNotBlank(incoming.getClientPrivateKeyPem()));
+
+        if (!trustPemSupplied) {
+            incoming.setTrustStoreBytes(mergeOmittedSecret(incoming.getTrustStoreBytes(), saved.getTrustStoreBytes()));
+            incoming.setTrustStorePassword(mergeOmittedSecret(
+                    incoming.getTrustStorePassword(), saved.getTrustStorePassword()));
+        }
+        if (clientPemSupplied) {
+            incoming.setClientPrivateKeyPem(mergeOmittedSecret(
+                    incoming.getClientPrivateKeyPem(), saved.getClientPrivateKeyPem()));
+            incoming.setClientKeyPassword(mergeOmittedSecret(
+                    incoming.getClientKeyPassword(), saved.getClientKeyPassword()));
+        } else if (!clientStoreSupplied) {
+            incoming.setClientPrivateKeyPem(mergeOmittedSecret(
+                    incoming.getClientPrivateKeyPem(), saved.getClientPrivateKeyPem()));
+            incoming.setClientKeyPassword(mergeOmittedSecret(
+                    incoming.getClientKeyPassword(), saved.getClientKeyPassword()));
+            incoming.setKeyStoreBytes(mergeOmittedSecret(incoming.getKeyStoreBytes(), saved.getKeyStoreBytes()));
+            incoming.setKeyStorePassword(mergeOmittedSecret(
+                    incoming.getKeyStorePassword(), saved.getKeyStorePassword()));
+        } else {
+            incoming.setKeyStorePassword(mergeOmittedSecret(
+                    incoming.getKeyStorePassword(), saved.getKeyStorePassword()));
+        }
+        normalizeSslSources(incoming);
+        return incoming;
+    }
+
+    private String mergeOmittedSecret(String incoming, String saved) {
+        return incoming == null ? saved : incoming;
+    }
+
+    private void normalizeSslSources(SSLInfo ssl) {
+        if (StringUtils.isNotBlank(ssl.getTrustStoreBytes())) {
+            ssl.setCaPem(null);
+        } else if (StringUtils.isNotBlank(ssl.getCaPem())) {
+            ssl.setTrustStoreType(null);
+            ssl.setTrustStoreBytes(null);
+            ssl.setTrustStorePassword(null);
+        }
+        if (StringUtils.isNotBlank(ssl.getKeyStoreBytes())) {
+            ssl.setClientCertPem(null);
+            ssl.setClientPrivateKeyPem(null);
+            ssl.setClientKeyPassword(null);
+        } else if (StringUtils.isNotBlank(ssl.getClientCertPem())
+                || StringUtils.isNotBlank(ssl.getClientPrivateKeyPem())) {
+            ssl.setKeyStoreType(null);
+            ssl.setKeyStoreBytes(null);
+            ssl.setKeyStorePassword(null);
+        }
     }
 
     @Override
@@ -297,6 +364,8 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
         SSLInfo ssl = dataSource.getSsl();
         ssl.setClientPrivateKeyPem(null);
         ssl.setClientKeyPassword(null);
+        ssl.setTrustStoreBytes(null);
+        ssl.setTrustStorePassword(null);
         ssl.setKeyStoreBytes(null);
         ssl.setKeyStorePassword(null);
     }
@@ -312,6 +381,8 @@ public class DbWorkspaceDataSourceServiceImpl implements IDbWorkspaceDataSourceS
         }
         ssl.setClientPrivateKeyPem(decryptSecret(ssl.getClientPrivateKeyPem(), cloud, privateKey));
         ssl.setClientKeyPassword(decryptSecret(ssl.getClientKeyPassword(), cloud, privateKey));
+        ssl.setTrustStoreBytes(decryptSecret(ssl.getTrustStoreBytes(), cloud, privateKey));
+        ssl.setTrustStorePassword(decryptSecret(ssl.getTrustStorePassword(), cloud, privateKey));
         ssl.setKeyStoreBytes(decryptSecret(ssl.getKeyStoreBytes(), cloud, privateKey));
         ssl.setKeyStorePassword(decryptSecret(ssl.getKeyStorePassword(), cloud, privateKey));
     }

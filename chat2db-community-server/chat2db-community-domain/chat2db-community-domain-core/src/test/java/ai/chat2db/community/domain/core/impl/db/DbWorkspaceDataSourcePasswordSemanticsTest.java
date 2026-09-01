@@ -71,8 +71,14 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
     void queryDisplayRedactsTlsSecretsWithoutMutatingSavedDataSource() {
         savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
         savedDataSource.setSsl(savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem"));
+        savedDataSource.getSsl().setClientPrivateKeyPem(AesGcmUtil.configured().encrypt("saved-client-key"));
+        savedDataSource.getSsl().setTrustStoreBytes(AesGcmUtil.configured().encrypt("saved-trust-store"));
+        savedDataSource.getSsl().setKeyStoreBytes(AesGcmUtil.configured().encrypt("saved-client-store"));
         savedDataSource.getSsl().setClientPrivateKeyPem("encrypted-key");
         savedDataSource.getSsl().setClientKeyPassword("encrypted-key-password");
+        savedDataSource.getSsl().setTrustStoreType("JKS");
+        savedDataSource.getSsl().setTrustStoreBytes("encrypted-trust-store-bytes");
+        savedDataSource.getSsl().setTrustStorePassword("encrypted-trust-store-password");
         savedDataSource.getSsl().setKeyStoreBytes("encrypted-store-bytes");
         savedDataSource.getSsl().setKeyStorePassword("encrypted-store-password");
 
@@ -83,10 +89,15 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
         assertEquals("saved-ca-pem", display.getSsl().getCaPem());
         assertNull(display.getSsl().getClientPrivateKeyPem());
         assertNull(display.getSsl().getClientKeyPassword());
+        assertEquals("JKS", display.getSsl().getTrustStoreType());
+        assertNull(display.getSsl().getTrustStoreBytes());
+        assertNull(display.getSsl().getTrustStorePassword());
         assertNull(display.getSsl().getKeyStoreBytes());
         assertNull(display.getSsl().getKeyStorePassword());
         assertEquals("encrypted-key", savedDataSource.getSsl().getClientPrivateKeyPem());
         assertEquals("encrypted-key-password", savedDataSource.getSsl().getClientKeyPassword());
+        assertEquals("encrypted-trust-store-bytes", savedDataSource.getSsl().getTrustStoreBytes());
+        assertEquals("encrypted-trust-store-password", savedDataSource.getSsl().getTrustStorePassword());
         assertEquals("encrypted-store-bytes", savedDataSource.getSsl().getKeyStoreBytes());
         assertEquals("encrypted-store-password", savedDataSource.getSsl().getKeyStorePassword());
     }
@@ -97,6 +108,9 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
         savedDataSource.setSsl(savedSsl(MySqlTlsMode.VERIFY_CA, "saved-ca-pem"));
         savedDataSource.getSsl().setClientPrivateKeyPem("encrypted-key");
         savedDataSource.getSsl().setClientKeyPassword("encrypted-key-password");
+        savedDataSource.getSsl().setTrustStoreType("PKCS12");
+        savedDataSource.getSsl().setTrustStoreBytes("encrypted-trust-store-bytes");
+        savedDataSource.getSsl().setTrustStorePassword("encrypted-trust-store-password");
         savedDataSource.getSsl().setKeyStoreBytes("encrypted-store-bytes");
         savedDataSource.getSsl().setKeyStorePassword("encrypted-store-password");
 
@@ -109,10 +123,15 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
         assertEquals("saved-ca-pem", ssl.getCaPem());
         assertNull(ssl.getClientPrivateKeyPem());
         assertNull(ssl.getClientKeyPassword());
+        assertEquals("PKCS12", ssl.getTrustStoreType());
+        assertNull(ssl.getTrustStoreBytes());
+        assertNull(ssl.getTrustStorePassword());
         assertNull(ssl.getKeyStoreBytes());
         assertNull(ssl.getKeyStorePassword());
         assertEquals("encrypted-key", savedDataSource.getSsl().getClientPrivateKeyPem());
         assertEquals("encrypted-key-password", savedDataSource.getSsl().getClientKeyPassword());
+        assertEquals("encrypted-trust-store-bytes", savedDataSource.getSsl().getTrustStoreBytes());
+        assertEquals("encrypted-trust-store-password", savedDataSource.getSsl().getTrustStorePassword());
         assertEquals("encrypted-store-bytes", savedDataSource.getSsl().getKeyStoreBytes());
         assertEquals("encrypted-store-password", savedDataSource.getSsl().getKeyStorePassword());
     }
@@ -157,6 +176,75 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
     }
 
     @Test
+    void preConnectRecoversOmittedPemSecretsFromRedactedSsl() {
+        savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
+        SSLInfo saved = savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem");
+        saved.setClientCertPem("saved-client-cert-pem");
+        saved.setClientPrivateKeyPem(AesGcmUtil.configured().encrypt("saved-client-key-pem"));
+        saved.setClientKeyPassword(AesGcmUtil.configured().encrypt("saved-key-password"));
+        savedDataSource.setSsl(saved);
+
+        DbDataSourcePreConnectRequest request = requestWithSsl(savedSsl(
+                MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem"));
+        request.getSsl().setClientCertPem("saved-client-cert-pem");
+
+        service.preConnect(request);
+
+        assertEquals("saved-client-key-pem", forwardedRequest.getSsl().getClientPrivateKeyPem());
+        assertEquals("saved-key-password", forwardedRequest.getSsl().getClientKeyPassword());
+        assertNull(forwardedRequest.getSsl().getTrustStoreBytes());
+        assertNull(forwardedRequest.getSsl().getKeyStoreBytes());
+    }
+
+    @Test
+    void preConnectRecoversOmittedTrustAndClientStoreSecretsFromRedactedSsl() {
+        savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
+        SSLInfo saved = savedSsl(MySqlTlsMode.VERIFY_CA, null);
+        saved.setTrustStoreType("JKS");
+        saved.setTrustStoreBytes(AesGcmUtil.configured().encrypt("saved-trust-store"));
+        saved.setTrustStorePassword(AesGcmUtil.configured().encrypt("saved-trust-password"));
+        saved.setKeyStoreType("PKCS12");
+        saved.setKeyStoreBytes(AesGcmUtil.configured().encrypt("saved-client-store"));
+        saved.setKeyStorePassword(AesGcmUtil.configured().encrypt("saved-client-password"));
+        savedDataSource.setSsl(saved);
+
+        SSLInfo redacted = savedSsl(MySqlTlsMode.VERIFY_CA, null);
+        redacted.setTrustStoreType("JKS");
+        redacted.setKeyStoreType("PKCS12");
+        DbDataSourcePreConnectRequest request = requestWithSsl(redacted);
+
+        service.preConnect(request);
+
+        assertEquals("saved-trust-store", forwardedRequest.getSsl().getTrustStoreBytes());
+        assertEquals("saved-trust-password", forwardedRequest.getSsl().getTrustStorePassword());
+        assertEquals("saved-client-store", forwardedRequest.getSsl().getKeyStoreBytes());
+        assertEquals("saved-client-password", forwardedRequest.getSsl().getKeyStorePassword());
+        assertNull(forwardedRequest.getSsl().getCaPem());
+        assertNull(forwardedRequest.getSsl().getClientCertPem());
+    }
+
+    @Test
+    void preConnectPreservesExplicitBlankSecretClear() {
+        savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
+        SSLInfo saved = savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem");
+        saved.setClientCertPem("saved-client-cert-pem");
+        saved.setClientPrivateKeyPem(AesGcmUtil.configured().encrypt("saved-client-key-pem"));
+        saved.setClientKeyPassword(AesGcmUtil.configured().encrypt("saved-key-password"));
+        savedDataSource.setSsl(saved);
+
+        SSLInfo cleared = savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem");
+        cleared.setClientCertPem("saved-client-cert-pem");
+        cleared.setClientPrivateKeyPem("");
+        cleared.setClientKeyPassword("");
+        DbDataSourcePreConnectRequest request = requestWithSsl(cleared);
+
+        service.preConnect(request);
+
+        assertEquals("", forwardedRequest.getSsl().getClientPrivateKeyPem());
+        assertEquals("", forwardedRequest.getSsl().getClientKeyPassword());
+    }
+
+    @Test
     void preConnectPreservesExplicitBlankSslInsteadOfRecoveringSavedTls() {
         savedDataSource = localDataSource(AesGcmUtil.configured().encrypt("saved-password"));
         savedDataSource.setSsl(savedSsl(MySqlTlsMode.VERIFY_IDENTITY, "saved-ca-pem"));
@@ -173,6 +261,9 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
 
         assertSame(blank, forwardedRequest.getSsl());
         assertEquals("   ", forwardedRequest.getSsl().getTlsMode());
+        assertNull(forwardedRequest.getSsl().getClientPrivateKeyPem());
+        assertNull(forwardedRequest.getSsl().getTrustStoreBytes());
+        assertNull(forwardedRequest.getSsl().getKeyStoreBytes());
     }
 
     @Test
@@ -226,6 +317,15 @@ class DbWorkspaceDataSourcePasswordSemanticsTest {
         ssl.setTlsMode(mode.name());
         ssl.setCaPem(caPem);
         return ssl;
+    }
+
+    private static DbDataSourcePreConnectRequest requestWithSsl(SSLInfo ssl) {
+        DbDataSourcePreConnectRequest request = new DbDataSourcePreConnectRequest();
+        request.setId(1L);
+        request.setAuthenticationType("PASSWORD");
+        request.setPassword("  ");
+        request.setSsl(ssl);
+        return request;
     }
 
     private static Object defaultValue(Class<?> returnType) {
