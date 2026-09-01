@@ -4,7 +4,6 @@ import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContext
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
-import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
 import ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -18,12 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
  * Manages manual transactions scoped to a single SQL Console: begin, commit, rollback,
  * state lookup, and release on console close / connection switch.
  *
- * <p>Each request carries {@code consoleId} via {@link ConsoleCloseRequest} so the
- * {@link ConnectionInfoHandler} aspect binds the console-scoped connection context, and the
- * bound connection is reused across executions while a transaction is open.
+ * <p>Each request carries {@code consoleId} via {@link ConsoleCloseRequest}; the domain
+ * service resolves the trusted saved-console context and reuses the bound connection across
+ * executions while a transaction is open.
  */
 @Slf4j
-@ConnectionInfoAspect
 @RequestMapping("/api/rdb/transaction")
 @RestController
 public class DbTransactionController {
@@ -87,8 +85,6 @@ public class DbTransactionController {
         DbConnectionContextRequest context = new DbConnectionContextRequest();
         context.setDataSourceId(request.getDataSourceId());
         context.setConsoleId(request.getConsoleId());
-        context.setDatabaseName(request.getDatabaseName());
-        context.setSchemaName(request.getSchemaName());
         return context;
     }
 }

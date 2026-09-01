@@ -2,6 +2,7 @@ package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.model.metadata.ForeignKeyInfo;
+import ai.chat2db.community.domain.api.model.operation.Operation;
 import ai.chat2db.community.domain.api.model.runtime.ConnectionProfile;
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
 import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
@@ -9,6 +10,7 @@ import ai.chat2db.community.domain.api.model.request.runtime.McpConnectionContex
 import ai.chat2db.community.domain.api.model.request.runtime.DbObjectsQueryRequest;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.domain.api.service.db.IDbWorkspaceDataSourceService;
+import ai.chat2db.community.domain.api.service.ops.IOpsOperationSavedService;
 import ai.chat2db.community.domain.api.model.storage.WorkspaceDataSource;
 import ai.chat2db.community.domain.core.converter.ConnectionContextConverter;
 import ai.chat2db.community.tools.exception.BusinessException;
@@ -42,19 +44,25 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     @Autowired
     private ConnectionContextConverter connectionContextConverter;
 
+    @Autowired
+    private IOpsOperationSavedService operationSavedService;
+
     @Override
     public void bind(DbConnectionContextRequest param) {
-        ConnectInfo connectInfo = buildConnectInfo(param);
         // When a manual transaction is open for this console, reuse the bound connection
-        // (already autoCommit=false, consoleOwn=true) instead of borrowing a fresh one. The
-        // fresh ConnectInfo's metadata (host/db/schema) is preserved while the live
-        // connection is grafted in so ConnectionPool.getConnection() hits its
-        // tryGetExistingConnection fast path.
+        // and the trusted metadata captured when the transaction began. Rebuilding from the
+        // current request would let later request database/schema fields change the console's
+        // transaction context while the JDBC connection itself stays bound.
         ConnectInfo bound = ConsoleTransactionRegistry.getBoundConnectInfo(param.getConsoleId());
         if (bound != null && bound.getConnection() != null) {
+            validateBoundTransactionRequest(param, bound);
+            ConnectInfo connectInfo = bound.copy();
             connectInfo.setConnection(bound.getConnection());
             connectInfo.setConsoleOwn(Boolean.TRUE);
+            Chat2DBContext.putContext(connectInfo);
+            return;
         }
+        ConnectInfo connectInfo = buildConnectInfo(param);
         Chat2DBContext.putContext(connectInfo);
     }
 
@@ -118,13 +126,14 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse beginManualTransaction(DbConnectionContextRequest param) {
-        bind(param);
+        DbConnectionContextRequest trustedParam = resolveTransactionBeginContext(param);
+        bind(trustedParam);
         ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
         if (connectInfo == null) {
             throw new BusinessException("connection error");
         }
         // If a transaction is already open for this console, this is idempotent.
-        if (ConsoleTransactionRegistry.isInTransaction(param.getConsoleId())) {
+        if (ConsoleTransactionRegistry.isInTransaction(trustedParam.getConsoleId())) {
             return TransactionStateResponse.of(true, "manual");
         }
         // Open a fresh, isolated connection (not borrowed from the pool) and switch it to
@@ -143,7 +152,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             response.setLastError(e.getMessage());
             return response;
         }
-        if (!ConsoleTransactionRegistry.registerIfAbsent(param.getConsoleId(), connectInfo)) {
+        if (!ConsoleTransactionRegistry.registerIfAbsent(trustedParam.getConsoleId(), connectInfo)) {
             // Another request opened the transaction concurrently; drop this request's fresh
             // connection and report the existing open transaction.
             connectInfo.setConsoleOwn(Boolean.FALSE);
@@ -192,6 +201,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse getTransactionState(DbConnectionContextRequest param) {
+        validateTransactionRequest(param);
         boolean inTransaction = ConsoleTransactionRegistry.isInTransaction(param.getConsoleId());
         return TransactionStateResponse.of(inTransaction, inTransaction ? "manual" : "auto");
     }
@@ -329,6 +339,31 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             throw new BusinessException("datasource.not.found");
         }
         return connectionContextConverter.datasource2connectInfo(param, dataSource, dataSource.getUrl());
+    }
+
+    private DbConnectionContextRequest resolveTransactionBeginContext(DbConnectionContextRequest param) {
+        DbConnectionContextRequest resolved = new DbConnectionContextRequest();
+        resolved.setDataSourceId(param.getDataSourceId());
+        resolved.setConsoleId(param.getConsoleId());
+        Operation console = param.getConsoleId() == null ? null : operationSavedService.getConsole(param.getConsoleId());
+        if (console == null) {
+            return resolved;
+        }
+        if (console.getDataSourceId() != null && param.getDataSourceId() != null
+                && !Objects.equals(console.getDataSourceId(), param.getDataSourceId())) {
+            throw new BusinessException("transaction.datasource.mismatch");
+        }
+        resolved.setDataSourceId(Objects.requireNonNullElse(console.getDataSourceId(), param.getDataSourceId()));
+        resolved.setDatabaseName(console.getDatabaseName());
+        resolved.setSchemaName(console.getSchemaName());
+        return resolved;
+    }
+
+    private void validateBoundTransactionRequest(DbConnectionContextRequest param, ConnectInfo bound) {
+        if (param.getDataSourceId() != null && bound.getDataSourceId() != null
+                && !Objects.equals(bound.getDataSourceId(), param.getDataSourceId())) {
+            throw new BusinessException("transaction.datasource.mismatch");
+        }
     }
 
     private void validateTransactionRequest(DbConnectionContextRequest param) {

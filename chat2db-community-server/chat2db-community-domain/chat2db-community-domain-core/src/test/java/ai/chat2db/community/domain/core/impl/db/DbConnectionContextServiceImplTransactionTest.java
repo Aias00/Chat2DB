@@ -1,6 +1,7 @@
 package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.model.PageResponse;
+import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.model.request.datasource.DbDataSourcePageQueryRequest;
 import ai.chat2db.community.domain.api.model.request.datasource.DbDataSourcePreConnectRequest;
 import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
@@ -8,6 +9,7 @@ import ai.chat2db.community.domain.api.model.storage.WorkspaceDataSource;
 import ai.chat2db.community.domain.api.service.db.IDbWorkspaceDataSourceService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.spi.sql.ConsoleTransactionRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +29,7 @@ class DbConnectionContextServiceImplTransactionTest {
 
     @AfterEach
     void tearDown() {
+        Chat2DBContext.removeContext();
         ConsoleTransactionRegistry.releaseAll(true);
     }
 
@@ -59,6 +63,35 @@ class DbConnectionContextServiceImplTransactionTest {
         assertTrue(ConsoleTransactionRegistry.isInTransaction(consoleId));
     }
 
+    @Test
+    void bindOpenTransactionUsesBoundContextInsteadOfRequestDatabaseAndSchema() {
+        long consoleId = 9003L;
+        Connection connection = proxyConnection(new AtomicInteger(), new AtomicInteger());
+        ConnectInfo bound = registerBound(consoleId, 10L, connection);
+        bound.setDatabaseName("trusted_db");
+        bound.setSchemaName("trusted_schema");
+        DbConnectionContextServiceImpl service = new DbConnectionContextServiceImpl();
+        DbConnectionContextRequest taintedRequest = request(consoleId, 10L);
+        taintedRequest.setDatabaseName("evil`; DROP DATABASE trusted_db; --");
+        taintedRequest.setSchemaName("evil_schema");
+
+        service.bind(taintedRequest);
+
+        ConnectInfo current = Chat2DBContext.getConnectInfo();
+        assertEquals("trusted_db", current.getDatabaseName());
+        assertEquals("trusted_schema", current.getSchemaName());
+        assertSame(connection, current.getConnection());
+    }
+
+    @Test
+    void transactionStateRejectsDatasourceMismatch() {
+        long consoleId = 9004L;
+        registerBound(consoleId, 10L, proxyConnection(new AtomicInteger(), new AtomicInteger()));
+        DbConnectionContextServiceImpl service = service(Set.of(10L, 11L));
+
+        assertThrows(BusinessException.class, () -> service.getTransactionState(request(consoleId, 11L)));
+    }
+
     private static DbConnectionContextServiceImpl service(Set<Long> visibleDatasourceIds) {
         DbConnectionContextServiceImpl service = new DbConnectionContextServiceImpl();
         setField(service, "workspaceDataSourceService",
@@ -73,13 +106,15 @@ class DbConnectionContextServiceImplTransactionTest {
         return request;
     }
 
-    private static void registerBound(long consoleId, long dataSourceId, Connection connection) {
+    private static ConnectInfo registerBound(long consoleId, long dataSourceId, Connection connection) {
         ConnectInfo connectInfo = new ConnectInfo();
         connectInfo.setConsoleId(consoleId);
         connectInfo.setDataSourceId(dataSourceId);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
+        connectInfo.setDriverConfig(new DriverConfig());
         assertTrue(ConsoleTransactionRegistry.registerIfAbsent(consoleId, connectInfo));
+        return connectInfo;
     }
 
     private static Connection proxyConnection(AtomicInteger commits, AtomicInteger rollbacks) {

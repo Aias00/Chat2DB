@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DbTransactionControllerTest {
@@ -52,7 +53,7 @@ class DbTransactionControllerTest {
     }
 
     @Test
-    void commitEndpointPassesDatasourceAndConsoleIdentityToService() throws Exception {
+    void commitEndpointPassesOnlyDatasourceAndConsoleIdentityToService() throws Exception {
         AtomicReference<DbConnectionContextRequest> received = new AtomicReference<>();
         DbTransactionController controller = controller(new RecordingConnectionContextService(received, null));
         ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest request =
@@ -69,8 +70,8 @@ class DbTransactionControllerTest {
 
         assertEquals(42L, received.get().getDataSourceId());
         assertEquals(7001L, received.get().getConsoleId());
-        assertEquals("shop", received.get().getDatabaseName());
-        assertEquals("public", received.get().getSchemaName());
+        assertNull(received.get().getDatabaseName());
+        assertNull(received.get().getSchemaName());
     }
 
     @Test
