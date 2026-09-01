@@ -327,8 +327,11 @@ const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableNam
       )}
       {preview && (
         <>
-          <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <span>{i18n('workspace.importExport.previewHint', preview.previewRows)}</span>
+            {!!preview.skippedCount && (
+              <span>{i18n('workspace.importExport.previewSkippedRows', preview.skippedCount)}</span>
+            )}
             {preview.hasMoreRows && <span>{i18n('workspace.importExport.largeFilePreviewLimited')}</span>}
             {!!preview.invalidHeaders?.length && (
               <span style={{ color: 'var(--text-color-warning)' }}>

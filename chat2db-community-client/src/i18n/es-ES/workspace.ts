@@ -304,6 +304,7 @@ export default {
   'workspace.importExport.targetColumn': 'Columna de destino',
   'workspace.importExport.skipSourceField': 'Omitir campo',
   'workspace.importExport.previewHint': 'Vista previa: {1} filas (la primera es el encabezado)',
+  'workspace.importExport.previewSkippedRows': 'Omitidas: {1} filas vacías',
   'workspace.importExport.unmappedDefault': 'Columnas sin asignar: DEFAULT',
   'workspace.importExport.unmappedNull': 'Columnas sin asignar: NULL',
   'workspace.importExport.requiredUnmapped': 'Columnas NOT NULL sin predeterminado sin asignar',

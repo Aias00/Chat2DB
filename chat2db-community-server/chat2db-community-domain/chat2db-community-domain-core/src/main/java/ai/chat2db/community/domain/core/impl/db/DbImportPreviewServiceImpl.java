@@ -102,6 +102,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         result.put("suggestedMapping", suggested);
         result.put("previewLimit", PREVIEW_ROW_LIMIT);
         result.put("previewRows", Math.max(0, rows.size() - outcome.firstDataRow));
+        result.put("skippedCount", outcome.skippedCount);
         result.put("headerRow", outcome.firstDataRow == 1);
         result.put("sheets", outcome.sheets);
         result.put("selectedSheet", selectedSheet(outcome));
@@ -150,7 +151,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         List<Map<String, Object>> errors = new ArrayList<>();
         int success = 0;
         int failed = 0;
-        int skipped = 0;
+        long skipped = outcome.skippedCount;
 
         List<Map<String, Object>> insertTargets = targetColumns.stream()
                 .filter(target -> NULL_STRATEGY.equals(strategy) || isMapped(sourceToTarget, (String) target.get("name")))
@@ -202,7 +203,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("totalRows", Math.max(0, rows.size() - outcome.firstDataRow));
+        result.put("totalRows", Math.max(0, rows.size() - outcome.firstDataRow) + skipped);
         result.put("successCount", success);
         result.put("failedCount", failed);
         result.put("skippedCount", skipped);
@@ -337,7 +338,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private record ParseOutcome(List<Map<Integer, ExcelParser.CellValue>> rows,
                                 Map<Integer, ExcelParser.CellValue> header,
                                 int firstDataRow, List<Map<String, Object>> sheets,
-                                ExcelImportConfig config, boolean hasMoreRows) {
+                                ExcelImportConfig config, boolean hasMoreRows, long skippedCount) {
     }
 
     private static String selectedSheet(ParseOutcome outcome) {
@@ -379,7 +380,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                 firstDataRow = 0;
             }
             return new ParseOutcome(rows, header, firstDataRow, ExcelParser.sheets(file, file.getName()),
-                    config, hasMoreRows);
+                    config, hasMoreRows, result.skippedRowCount());
         }
         throw new BusinessException("import.preview.unsupportedFile");
     }

@@ -293,6 +293,7 @@ export default {
   'workspace.importExport.targetColumn': '目标列',
   'workspace.importExport.skipSourceField': '跳过该字段',
   'workspace.importExport.previewHint': '预览：{1} 行（首行为表头）',
+  'workspace.importExport.previewSkippedRows': '已跳过：{1} 个空行',
   'workspace.importExport.unmappedDefault': '未映射列：使用默认值',
   'workspace.importExport.unmappedNull': '未映射列：写入 NULL',
   'workspace.importExport.requiredUnmapped': '以下无默认值的 NOT NULL 列未映射',

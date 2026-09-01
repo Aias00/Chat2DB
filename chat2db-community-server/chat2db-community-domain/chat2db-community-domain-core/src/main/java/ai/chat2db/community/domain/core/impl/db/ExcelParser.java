@@ -137,7 +137,7 @@ public final class ExcelParser {
         }
     }
 
-    public static void parseRows(File file, String fileName, ExcelImportConfig config,
+    public static long parseRows(File file, String fileName, ExcelImportConfig config,
                                  BiConsumer<Integer, Map<Integer, CellValue>> rowConsumer) {
         try (Workbook workbook = open(file, fileName)) {
             validateWorkbook(workbook);
@@ -145,13 +145,17 @@ public final class ExcelParser {
             validateSheetDimensions(sheet);
             int rowIndex = config.firstDataRowIndex();
             int endRowIndex = Math.min(config.endRowIndex(), sheet.getLastRowNum());
+            long skippedRows = 0L;
             while (rowIndex <= endRowIndex) {
                 Map<Integer, CellValue> row = readRow(sheet, rowIndex, config);
-                if (!row.isEmpty()) {
+                if (isEmptyRow(row)) {
+                    skippedRows++;
+                } else {
                     rowConsumer.accept(rowIndex, row);
                 }
                 rowIndex++;
             }
+            return skippedRows;
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -169,9 +173,12 @@ public final class ExcelParser {
         int physicalRow = config.firstDataRowIndex();
         int endRowIndex = Math.min(config.endRowIndex(), sheet.getLastRowNum());
         int count = 0;
+        long skippedRows = 0L;
         while (physicalRow <= endRowIndex && count < limit) {
             Map<Integer, CellValue> row = readRow(sheet, physicalRow++, config);
-            if (!row.isEmpty()) {
+            if (isEmptyRow(row)) {
+                skippedRows++;
+            } else {
                 rows.add(row);
                 maxColumn = Math.max(maxColumn, row.keySet().stream().mapToInt(Integer::intValue).max().orElse(0));
                 count++;
@@ -184,7 +191,7 @@ public final class ExcelParser {
         for (Map<Integer, CellValue> row : rows) {
             normalizedRows.add(normalizeRow(row, maxColumn));
         }
-        return new ExcelResult(normalizedRows, config.headerRow() > 0 ? 1 : 0);
+        return new ExcelResult(normalizedRows, config.headerRow() > 0 ? 1 : 0, skippedRows);
     }
 
     private static void validateWorkbook(Workbook workbook) {
@@ -294,6 +301,18 @@ public final class ExcelParser {
         return values;
     }
 
+    private static boolean isEmptyRow(Map<Integer, CellValue> row) {
+        if (row.isEmpty()) {
+            return true;
+        }
+        for (CellValue cellValue : row.values()) {
+            if (cellValue != null && cellValue.value() != null && !cellValue.value().isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static CellValue readCell(Cell cell, ExcelImportConfig config) {
         CellType type = cell.getCellType();
         switch (type) {
@@ -344,7 +363,7 @@ public final class ExcelParser {
     public record CellValue(String value, String type) {
     }
 
-    public record ExcelResult(List<Map<Integer, CellValue>> rows, int headerRowCount) {
+    public record ExcelResult(List<Map<Integer, CellValue>> rows, int headerRowCount, long skippedRowCount) {
     }
 
     public static boolean isExcel(String fileName) {

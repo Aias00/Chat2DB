@@ -302,6 +302,7 @@ export default {
   'workspace.importExport.targetColumn': 'Target Column',
   'workspace.importExport.skipSourceField': 'Skip field',
   'workspace.importExport.previewHint': 'Preview: {1} rows (first row is the header)',
+  'workspace.importExport.previewSkippedRows': 'Skipped: {1} empty rows',
   'workspace.importExport.unmappedDefault': 'Unmapped columns: DEFAULT',
   'workspace.importExport.unmappedNull': 'Unmapped columns: NULL',
   'workspace.importExport.requiredUnmapped': 'NOT NULL columns without a default are unmapped',

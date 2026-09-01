@@ -58,7 +58,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
         File file = new File(spec.getSourceFile());
         ExcelDataImporter importer = new ExcelDataImporter(spec, context, columns, config);
         importer.initializeHeader(file);
-        ExcelParser.parseRows(file, file.getName(), config, importer::invoke);
+        importer.addSkippedRows(ExcelParser.parseRows(file, file.getName(), config, importer::invoke));
         importer.doAfterAllAnalysed();
     }
 
@@ -98,6 +98,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
         private List<String> tableColumnList;
         private List<RowSql> sqlList;
         private long successCount;
+        private long skippedCount;
         private long processedCount;
         private final long estimatedTotalRows;
 
@@ -112,6 +113,10 @@ public abstract class BaseExcelImporter extends BaseImporter {
             this.sqlBuilder = Chat2DBContext.getSqlBuilder();
             this.sqlExecutor = new ImportSqlExecutor(taskContext);
             this.estimatedTotalRows = estimateRows(config);
+        }
+
+        private void addSkippedRows(long skippedRows) {
+            this.skippedCount += skippedRows;
         }
 
         private void initializeHeader(File file) {
@@ -171,6 +176,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             List<String> values = getValueList(data);
             String sql = getInsertSql(values);
             if (StringUtils.isBlank(sql)) {
+                skippedCount++;
                 return;
             }
             if (sqlList == null) {
@@ -293,7 +299,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             taskContext.logInfo("IMPORT_SUMMARY", "Data import completed", Map.of(
                     "successCount", successCount,
                     "failedCount", 0L,
-                    "skippedCount", 0L));
+                    "skippedCount", skippedCount));
         }
 
         private void executeBatchInsert() {

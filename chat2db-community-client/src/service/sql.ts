@@ -444,6 +444,7 @@ export interface IImportPreview {
   suggestedMapping: { sourceColumn: string; targetColumn: string }[];
   previewLimit: number;
   previewRows: number;
+  skippedCount?: number;
   headerRow: boolean;
   sheets?: { name: string; visible: boolean }[];
   selectedSheet?: string;

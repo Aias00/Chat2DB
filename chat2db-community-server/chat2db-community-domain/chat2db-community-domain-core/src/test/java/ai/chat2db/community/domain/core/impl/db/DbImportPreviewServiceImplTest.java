@@ -111,6 +111,27 @@ class DbImportPreviewServiceImplTest {
     }
 
     @Test
+    void previewCountsEmptyRowsSkippedInsideExcelDataRange(@TempDir Path directory) throws Exception {
+        Path input = directory.resolve("orders.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("visible");
+            sheet.createRow(0).createCell(0).setCellValue("id");
+            sheet.createRow(1).createCell(0).setCellValue("1");
+            sheet.createRow(3).createCell(0).setBlank();
+            sheet.createRow(4).createCell(0).setCellValue("2");
+            workbook.write(output);
+            Files.write(input, output.toByteArray());
+        }
+
+        Map<String, Object> preview = new DbImportPreviewServiceImpl().preview(10L, "trusted_db", null, "orders",
+                input.toFile(), Map.of("sheetName", "visible", "headerRow", 1));
+
+        assertEquals(2, preview.get("previewRows"));
+        assertEquals(2L, preview.get("skippedCount"));
+        assertEquals(false, preview.get("hasMoreRows"));
+    }
+
+    @Test
     void previewRejectsRequestDatabaseMismatchBeforeMetadataLookup(@TempDir Path directory) {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> new DbImportPreviewServiceImpl().preview(10L, "other_db", null, "orders",

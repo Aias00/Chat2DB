@@ -302,6 +302,7 @@ export default {
   'workspace.importExport.targetColumn': 'ターゲット列',
   'workspace.importExport.skipSourceField': 'フィールドをスキップ',
   'workspace.importExport.previewHint': 'プレビュー: {1} 行（先頭行はヘッダー）',
+  'workspace.importExport.previewSkippedRows': 'スキップ: 空行 {1} 件',
   'workspace.importExport.unmappedDefault': '未マッピング列: DEFAULT',
   'workspace.importExport.unmappedNull': '未マッピング列: NULL',
   'workspace.importExport.requiredUnmapped': 'デフォルトなしの NOT NULL 列が未マッピングです',

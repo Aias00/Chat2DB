@@ -246,6 +246,29 @@ class BaseExcelImporterTest {
     }
 
     @Test
+    void xlsxImportCountsSkippedEmptyRowsInTaskSummary(@TempDir Path directory) throws Exception {
+        createOrdersTable("CREATE TABLE orders (id INT PRIMARY KEY)");
+        Path input = writeWorkbook(directory, workbook -> {
+            var sheet = workbook.createSheet("visible");
+            sheet.createRow(0).createCell(0).setCellValue("id");
+            sheet.createRow(1).createCell(0).setCellValue("1");
+            sheet.createRow(3).createCell(0).setBlank();
+            sheet.createRow(4).createCell(0).setCellValue("2");
+        });
+        RecordingTaskExecutionContext context = new RecordingTaskExecutionContext();
+
+        new XLSXImporter().doImportData(spec(input, Map.of("sheetName", "visible", "headerRow", 1),
+                        List.of(Map.of("sourceColumn", "id", "targetColumn", "id")), "DEFAULT"),
+                context, columns("id"));
+
+        assertEquals(2, countRows());
+        Map<String, Object> summary = context.detailsFor("IMPORT_SUMMARY");
+        assertEquals(2L, summary.get("successCount"));
+        assertEquals(0L, summary.get("failedCount"));
+        assertEquals(2L, summary.get("skippedCount"));
+    }
+
+    @Test
     void queuedXlsxImportRejectsRequestDatabaseMismatchBeforeMetadataLookup(@TempDir Path directory) {
         Chat2DBContext.getConnectInfo().setDatabaseName("trusted_db");
         ImportTaskSpec spec = spec(directory.resolve("missing.xlsx"), Map.of(),
@@ -420,6 +443,14 @@ class BaseExcelImporterTest {
                     .filter(details -> details.containsKey("statementCount"))
                     .map(details -> ((Number) details.get("statementCount")).intValue())
                     .toList();
+        }
+
+        private Map<String, Object> detailsFor(String code) {
+            return events.stream()
+                    .filter(event -> code.equals(event.code()))
+                    .findFirst()
+                    .map(RecordedTaskEvent::details)
+                    .orElse(Map.of());
         }
     }
 }

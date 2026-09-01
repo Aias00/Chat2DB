@@ -300,6 +300,7 @@ export default {
   'workspace.importExport.targetColumn': '대상 열',
   'workspace.importExport.skipSourceField': '필드 건너뛰기',
   'workspace.importExport.previewHint': '미리보기: {1}행 (첫 행은 헤더)',
+  'workspace.importExport.previewSkippedRows': '건너뜀: 빈 행 {1}개',
   'workspace.importExport.unmappedDefault': '매핑되지 않은 열: DEFAULT',
   'workspace.importExport.unmappedNull': '매핑되지 않은 열: NULL',
   'workspace.importExport.requiredUnmapped': '기본값이 없는 NOT NULL 열이 매핑되지 않았습니다',
