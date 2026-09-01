@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 // Chat2DB is an SQL console; this class is the intentional boundary for complete user-authored statements.
-@SuppressWarnings("codeql[java/sql-injection]")
+@SuppressWarnings("lgtm[java/sql-injection]")
 public class DefaultSQLExecutor implements ICommandExecutor {
 
     private static final int STREAMING_ROW_BATCH_SIZE = 200;

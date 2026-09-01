@@ -19,7 +19,7 @@ final class JdbcDriverManagementPolicy {
 
     record PromotedDrivers(String jdbcDriver, List<Path> files) {
         // Paths are created only by promoteUploadedDrivers after token and parent-directory validation.
-        @SuppressWarnings("codeql[java/path-injection]")
+        @SuppressWarnings("lgtm[java/path-injection]")
         void rollback() {
             for (Path file : files) {
                 try {
@@ -39,7 +39,7 @@ final class JdbcDriverManagementPolicy {
     }
 
     // Upload tokens are allowlisted and both resolved paths must remain direct children of trusted directories.
-    @SuppressWarnings("codeql[java/path-injection]")
+    @SuppressWarnings("lgtm[java/path-injection]")
     static PromotedDrivers promoteUploadedDrivers(List<String> uploadTokens, Path stagingDirectory,
                                                    Path driverDirectory) {
         if (uploadTokens == null || uploadTokens.isEmpty()) {
@@ -101,7 +101,7 @@ final class JdbcDriverManagementPolicy {
     }
 
     // Callers pass only paths validated as direct children of the managed staging and driver directories.
-    @SuppressWarnings("codeql[java/path-injection]")
+    @SuppressWarnings("lgtm[java/path-injection]")
     static void moveWithoutReplacement(Path source, Path target, LinkCreator linkCreator) throws Exception {
         try {
             linkCreator.create(target, source);
@@ -122,7 +122,7 @@ final class JdbcDriverManagementPolicy {
         }
     }
 
-    @SuppressWarnings("codeql[java/path-injection]")
+    @SuppressWarnings("lgtm[java/path-injection]")
     private static void cleanupStagedFiles(List<UploadTarget> targets) {
         for (UploadTarget target : targets) {
             try {
