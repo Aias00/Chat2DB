@@ -1,7 +1,7 @@
 package ai.chat2db.community.web.api.controller;
 
+import ai.chat2db.community.domain.api.model.db.DbSessionKillResult;
 import ai.chat2db.community.domain.api.service.db.IDbSessionService;
-import ai.chat2db.community.tools.wrapper.result.ActionResult;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
 import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
@@ -47,9 +47,8 @@ public class DbSessionController {
      * @return operation result for the request.
      */
     @PostMapping("/kill")
-    public ActionResult kill(@RequestBody @Valid KillRequest request) {
-        sessionService.kill(request.getConnectionId(), request.getKillType());
-        return ActionResult.isSuccess();
+    public DataResult<DbSessionKillResult> kill(@RequestBody @Valid KillRequest request) {
+        return DataResult.of(sessionService.kill(request.getConnectionId(), request.getKillType()));
     }
 
     @Data

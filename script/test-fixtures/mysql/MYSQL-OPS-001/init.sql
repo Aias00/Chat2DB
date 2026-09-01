@@ -1,7 +1,8 @@
 -- MYSQL-OPS-001: Session inspection and termination
 -- Test fixture: test users and workload setup
 
--- Administrator account (for full process list visibility)
+-- Administrator account for MySQL 8.0: PROCESS gives full visibility, CONNECTION_ADMIN authorizes other-user KILL.
+-- MySQL 5.7 fixtures should grant SUPER instead of CONNECTION_ADMIN.
 CREATE USER IF NOT EXISTS 'ops001_admin'@'%' IDENTIFIED BY 'AdminPass123!';
 GRANT PROCESS, CONNECTION_ADMIN ON *.* TO 'ops001_admin'@'%';
 

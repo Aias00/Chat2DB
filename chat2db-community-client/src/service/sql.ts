@@ -423,15 +423,40 @@ const getCreateSchemaSql = createRequest<
 const truncateTable = createRequest<ITableParams, void>('/api/rdb/table/truncate', { method: 'post' });
 
 // Session list
-interface ISessionRequest {
+export interface ISessionRequest {
   dataSourceId: number;
   databaseName?: string;
 }
 
-const getSessionList = createRequest<ISessionRequest, { id: number; user: string; host: string; db: string | null; command: string; time: number; state: string | null; info: string | null }[]>('/api/rdb/session/list', { method: 'post' });
+export interface IDbSession {
+  id: number;
+  user: string;
+  host: string;
+  db: string | null;
+  command: string;
+  time: number;
+  state: string | null;
+  info: string | null;
+  current: boolean;
+}
+
+export type DbSessionKillType = 'QUERY' | 'CONNECTION';
+export type DbSessionKillStatus = 'KILLED' | 'ALREADY_FINISHED';
+
+export interface IDbSessionKillResult {
+  connectionId: number;
+  killType: DbSessionKillType;
+  status: DbSessionKillStatus;
+  sql: string;
+}
+
+const getSessionList = createRequest<ISessionRequest, IDbSession[]>('/api/rdb/session/list', { method: 'post' });
 
 // Kill session
-const killSession = createRequest<ISessionRequest & { connectionId: number; killType: string }, void>('/api/rdb/session/kill', { method: 'post' });
+const killSession = createRequest<
+  ISessionRequest & { connectionId: number; killType: DbSessionKillType },
+  IDbSessionKillResult
+>('/api/rdb/session/kill', { method: 'post' });
 
 export interface ICopyTableParams extends ITableParams {
   copyData: boolean;

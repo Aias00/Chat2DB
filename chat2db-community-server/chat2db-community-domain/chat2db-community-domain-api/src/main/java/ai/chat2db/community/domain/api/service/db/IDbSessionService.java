@@ -1,5 +1,7 @@
 package ai.chat2db.community.domain.api.service.db;
 
+import ai.chat2db.community.domain.api.model.db.DbSessionKillResult;
+
 import java.util.List;
 import java.util.Map;
 
@@ -11,7 +13,7 @@ public interface IDbSessionService {
     /**
      * Lists active database sessions.
      *
-     * @return list of session maps with keys: id, user, host, db, command, time, state, info.
+     * @return list of session maps with keys: id, user, host, db, command, time, state, info, current.
      */
     List<Map<String, Object>> list();
 
@@ -21,5 +23,5 @@ public interface IDbSessionService {
      * @param connectionId connection ID to terminate.
      * @param killType "QUERY" to stop only the current query, "CONNECTION" to disconnect.
      */
-    void kill(Long connectionId, String killType);
+    DbSessionKillResult kill(Long connectionId, String killType);
 }
