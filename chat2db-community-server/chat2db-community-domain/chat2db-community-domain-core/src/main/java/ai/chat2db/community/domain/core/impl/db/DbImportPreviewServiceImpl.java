@@ -1,6 +1,7 @@
 package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.model.metadata.Table;
+import ai.chat2db.community.domain.api.model.task.CsvOptions;
 import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.util.ConfigUtils;
@@ -119,7 +120,6 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             throw new BusinessException("import.preview.unsupportedStrategy");
         }
 
-        // Resolve mapping: source index -> target column name; track unmapped targets.
         Map<Integer, String> sourceToTarget = new LinkedHashMap<>();
         for (Map<String, String> mapping : mappings == null ? List.<Map<String, String>>of() : mappings) {
             String source = mapping.get("sourceColumn");
@@ -134,13 +134,22 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             }
             sourceToTarget.put(sourceIndex, mappingTarget);
         }
+        if (sourceToTarget.isEmpty()) {
+            for (Map.Entry<Integer, ExcelParser.CellValue> source : header.entrySet()) {
+                targetColumns.stream()
+                        .map(targetColumn -> (String) targetColumn.get("name"))
+                        .filter(targetName -> StringUtils.equalsIgnoreCase(targetName, source.getValue().value()))
+                        .findFirst()
+                        .ifPresent(targetName -> sourceToTarget.put(source.getKey(), targetName));
+            }
+        }
 
         List<Map<String, Object>> errors = new ArrayList<>();
         int success = 0;
         int failed = 0;
         int skipped = 0;
 
-        String insertSql = buildInsertSql(targetMetadata.tableName(), targetColumns, sourceToTarget, strategy);
+        String insertSql = buildInsertSql(targetMetadata, targetColumns, sourceToTarget, strategy);
         Connection connection = Chat2DBContext.getConnection();
         boolean originalAutoCommit;
         try {
@@ -294,7 +303,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         return -1;
     }
 
-    private static String buildInsertSql(String tableName, List<Map<String, Object>> targetColumns,
+    private static String buildInsertSql(TargetMetadata targetMetadata, List<Map<String, Object>> targetColumns,
                                         Map<Integer, String> sourceToTarget, String strategy) {
         StringBuilder columns = new StringBuilder();
         StringBuilder placeholders = new StringBuilder();
@@ -312,7 +321,9 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         if (first) {
             throw new BusinessException("import.preview.noColumns");
         }
-        return "INSERT INTO " + Chat2DBContext.getDbMetaData().getMetaDataName(tableName)
+        String qualifiedTableName = Chat2DBContext.getDbMetaData()
+                .getQualifiedTableName(targetMetadata.databaseName(), targetMetadata.schemaName(), targetMetadata.tableName());
+        return "INSERT INTO " + qualifiedTableName
                 + " (" + columns + ") VALUES (" + placeholders + ")";
     }
 
@@ -322,7 +333,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         for (Map<String, Object> target : targetColumns) {
             String name = (String) target.get("name");
             boolean mapped = sourceToTarget.values().stream().anyMatch(t -> StringUtils.equals(t, name));
-            if (mapped || NULL_STRATEGY.equals(strategy)) {
+            if (mapped || (NULL_STRATEGY.equals(strategy) && isNotAutoIncrement(target))) {
                 columns.add(target);
             }
         }
@@ -337,6 +348,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             try {
                 if (type.contains("DECIMAL") || type.contains("NUMERIC")) {
                     statement.setBigDecimal(index, new BigDecimal(value.trim()));
+                } else if (type.contains("FLOAT") || type.contains("DOUBLE") || type.contains("REAL")) {
+                    statement.setDouble(index, Double.parseDouble(value.trim()));
                 } else {
                     statement.setLong(index, Long.parseLong(value.trim()));
                 }
@@ -358,7 +371,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         } else if (type.contains("BIT")) {
             statement.setString(index, value.trim());
         } else {
-            statement.setString(index, sanitizeFormula(value));
+            statement.setString(index, value);
         }
     }
 
@@ -433,7 +446,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                     return map;
                 })
                 .collect(java.util.stream.Collectors.toList());
-        return new TargetMetadata(tableName, columns);
+        return new TargetMetadata(target.databaseName(), target.schemaName(), tableName, columns);
     }
 
     private static String trustedTableName(Connection connection, ImportTarget target) {
@@ -446,23 +459,6 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                 .orElseThrow(() -> new BusinessException("import.preview.tableNotFound"));
     }
 
-    /**
-     * Spreadsheet formula injection guard: values that Excel would interpret as formulas
-     * (= + - @ or a control character) are prefixed with a single quote so a later export
-     * cannot turn imported data into executable content.
-     */
-    private static String sanitizeFormula(String value) {
-        if (value == null || value.isEmpty()) {
-            return value;
-        }
-        char first = value.charAt(0);
-        if (first == '=' || first == '+' || first == '-' || first == '@'
-                || first == '\t' || first == '\r') {
-            return "'" + value;
-        }
-        return value;
-    }
-
     private record ParseOutcome(List<Map<Integer, ExcelParser.CellValue>> rows,
                                 Map<Integer, ExcelParser.CellValue> header,
                                 int firstDataRow, List<Map<String, Object>> sheets) {
@@ -471,7 +467,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     record ImportTarget(String databaseName, String schemaName, String tableName) {
     }
 
-    private record TargetMetadata(String tableName, List<Map<String, Object>> columns) {
+    private record TargetMetadata(String databaseName, String schemaName, String tableName,
+                                  List<Map<String, Object>> columns) {
     }
 
     private static Path importFile(String filePath) {
@@ -511,14 +508,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private static ParseOutcome parseRows(String fileName, int limit,
                                           Map<String, Object> csvOptions) {
         if (isCsv(fileName)) {
-            Map<String, Object> options = csvOptions == null ? Map.of() : csvOptions;
-            CsvParser parser = new CsvParser(
-                    csvStringOption(options, "encoding", CsvParser.DEFAULT_ENCODING),
-                    csvStringOption(options, "delimiter", ","),
-                    csvStringOption(options, "quote", "\""),
-                    csvStringOption(options, "escape", "\""),
-                    csvBooleanOption(options, "hasHeader", true),
-                    csvBooleanOption(options, "emptyAsNull", true));
+            CsvOptions options = CsvOptions.fromMap(csvOptions);
+            CsvParser parser = new CsvParser(options);
             Path importFile = importFile(fileName);
             CsvParser.CsvResult result;
             try (InputStream inputStream = Files.newInputStream(importFile)) {
@@ -528,11 +519,12 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             } catch (Exception e) {
                 throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
             }
-            List<Map<Integer, String>> rows = result.rows();
             List<Map<Integer, ExcelParser.CellValue>> typedRows = new ArrayList<>();
-            for (Map<Integer, String> row : rows) {
+            for (Map<Integer, CsvParser.CsvCell> row : result.cells()) {
                 Map<Integer, ExcelParser.CellValue> typed = new LinkedHashMap<>();
-                row.forEach((k, v) -> typed.put(k, new ExcelParser.CellValue(v, "string")));
+                row.forEach((k, v) -> typed.put(k,
+                        new ExcelParser.CellValue(v == null ? null : v.value(),
+                                v == null || v.value() == null ? "empty" : "string")));
                 typedRows.add(typed);
             }
             Map<Integer, ExcelParser.CellValue> header;

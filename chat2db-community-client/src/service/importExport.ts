@@ -3,6 +3,7 @@ import { IDatabaseBaseInfo } from '@/typings/database';
 import { IPageResponse } from '@/typings';
 import { ImportExportTaskDetails, ImportExportTaskEvent } from '@/typings/importExport';
 import { ImportExportFileType, ImportExportTaskType } from '@/constants/importExport';
+import type { ICsvOptions } from '@/service/sql';
 
 export interface GenerateJavaClassParams extends IDatabaseBaseInfo {
   exportPath: string;
@@ -53,6 +54,7 @@ export interface ExportTaskParams extends IDatabaseBaseInfo {
   containsHeader?: boolean;
   exportPath?: string;
   suggestedFileName?: string;
+  csvOptions?: ICsvOptions;
 }
 
 export interface ImportTaskParams extends IDatabaseBaseInfo {
@@ -63,6 +65,9 @@ export interface ImportTaskParams extends IDatabaseBaseInfo {
   displayFileName?: string;
   format: ImportExportFileType;
   dataTimeFormat?: string;
+  csvOptions?: ICsvOptions;
+  mappings?: { sourceColumn: string | null; targetColumn: string }[];
+  unmappedTarget?: 'DEFAULT' | 'NULL';
 }
 
 const submitExport = createRequest<ExportTaskParams, TaskSubmissionResponse>('/api/tasks/export', { method: 'post' });

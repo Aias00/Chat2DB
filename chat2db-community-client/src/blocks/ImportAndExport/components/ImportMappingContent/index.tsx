@@ -2,14 +2,23 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Modal, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
-import sqlService, { IImportPreview, IImportExecuteResult, ICsvOptions } from '@/service/sql';
+import sqlService, { IImportPreview, ICsvOptions } from '@/service/sql';
+import importExportServices from '@/service/importExport';
+import { ImportExportFileType, ImportExportTaskType } from '@/constants/importExport';
+import {
+  buildCsvOptionsForTaskSubmit,
+  csvOptionsToPreviewParam,
+  DEFAULT_CSV_OPTIONS,
+  inferImportFileFormat,
+} from '@/blocks/ImportAndExport/utils/csvOptions';
 
 interface IProps {
   dataSourceId: number;
   databaseName: string;
+  schemaName?: string;
   tableName: string;
   filePath: string;
-  onDone: () => void;
+  onSubmitted: (taskId: number) => void;
 }
 
 const SKIP = '__skip__';
@@ -20,35 +29,38 @@ const SKIP = '__skip__';
  * unmapped target columns are filled (DEFAULT or NULL), executes the import, and reports
  * row-level errors. Preview and execution share the backend parser.
  */
-const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath, onDone }: IProps) => {
+const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableName, filePath, onSubmitted }: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [unmappedTarget, setUnmappedTarget] = useState<'DEFAULT' | 'NULL'>('DEFAULT');
   const [executing, setExecuting] = useState(false);
-  const [result, setResult] = useState<IImportExecuteResult | null>(null);
-  const [csvOptions, setCsvOptions] = useState<ICsvOptions>({
-    encoding: 'UTF-8',
-    delimiter: ',',
-    quote: '"',
-    escape: '"',
-    hasHeader: true,
-    emptyAsNull: true,
-  });
-  const isCsv = filePath.toLowerCase().endsWith('.csv');
+  const [csvOptions, setCsvOptions] = useState<ICsvOptions>(DEFAULT_CSV_OPTIONS);
+  const fileFormat = useMemo(() => {
+    return inferImportFileFormat(filePath);
+  }, [filePath]);
+  const isCsv = fileFormat === ImportExportFileType.CSV;
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    setResult(null);
+    let previewCsvOptions: string | undefined;
+    try {
+      previewCsvOptions = csvOptionsToPreviewParam(isCsv, csvOptions);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : i18n('common.text.failure'));
+      setLoading(false);
+      return;
+    }
     sqlService
       .getImportPreview({
         dataSourceId,
         databaseName,
+        schemaName,
         tableName,
         filePath,
-        csvOptions: isCsv ? JSON.stringify(csvOptions) : undefined,
+        csvOptions: previewCsvOptions,
       })
       .then((data) => {
         setPreview(data);
@@ -125,21 +137,34 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
       });
       return;
     }
-    setExecuting(true);
     setError(null);
-    sqlService
-      .executeImportWithMapping({
+    let taskCsvOptions: ICsvOptions | undefined;
+    try {
+      taskCsvOptions = buildCsvOptionsForTaskSubmit(isCsv, csvOptions);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : i18n('common.text.failure'));
+      return;
+    }
+    setExecuting(true);
+    importExportServices
+      .submitImport({
         dataSourceId,
         databaseName,
+        schemaName,
         tableName,
-        filePath,
+        sourceFile: filePath,
+        format: fileFormat,
+        taskType:
+          fileFormat === ImportExportFileType.SQL
+            ? ImportExportTaskType.SQL_FILE_IMPORT
+            : ImportExportTaskType.DATA_FILE_IMPORT,
         mappings: Object.entries(mapping)
           .filter(([, target]) => target && target !== SKIP)
           .map(([source, target]) => ({ sourceColumn: source, targetColumn: target })),
         unmappedTarget,
-        csvOptions: isCsv ? csvOptions : undefined,
+        csvOptions: taskCsvOptions,
       })
-      .then(setResult)
+      .then((response) => onSubmitted(response.taskId))
       .catch((e) => setError(e?.message || i18n('common.text.failure')))
       .finally(() => setExecuting(false));
   };
@@ -147,39 +172,15 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
   return (
     <div>
       {error && <div style={{ color: 'var(--text-color-danger)', marginBottom: 8 }}>{error}</div>}
-      {result && (
-        <div style={{ marginBottom: 8 }}>
-          <span>
-            {i18n('workspace.importExport.importSummary', result.totalRows, result.successCount, result.failedCount)}
-          </span>
-          {result.failedCount > 0 && (
-            <Table
-              size="small"
-              style={{ marginTop: 8 }}
-              rowKey={(r) => `${r.row}-${r.column ?? ''}`}
-              pagination={{ pageSize: 5 }}
-              columns={[
-                { title: i18n('workspace.importExport.errorRow'), dataIndex: 'row', width: 80 },
-                { title: i18n('workspace.importExport.errorColumn'), dataIndex: 'column', width: 160 },
-                { title: i18n('workspace.importExport.errorMessage'), dataIndex: 'message' },
-              ]}
-              dataSource={result.errors}
-            />
-          )}
-          <div style={{ marginTop: 8 }}>
-            <Button type="primary" onClick={onDone}>
-              {i18n('common.button.close')}
-            </Button>
-          </div>
-        </div>
-      )}
-      {!result && preview && isCsv && (
+      {preview && isCsv && (
         <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
-            style={{ width: 120 }}
+            style={{ width: 140 }}
             value={csvOptions.encoding}
             onChange={(v) => setCsvOptions((prev) => ({ ...prev, encoding: v }))}
-            options={['UTF-8', 'GB18030', 'ISO-8859-1'].map((e) => ({ value: e, label: e }))}
+            options={['AUTO', 'UTF-8', 'UTF-16LE', 'UTF-16BE', 'GB18030', 'ISO-8859-1', 'WINDOWS-1252', 'SHIFT_JIS', 'BIG5'].map(
+              (e) => ({ value: e, label: e }),
+            )}
           />
           <Select
             style={{ width: 90 }}
@@ -205,9 +206,33 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, filePath,
             {i18n('workspace.importExport.emptyAsNull')}
           </Checkbox>
           <span style={{ color: 'var(--text-color-secondary)' }}>{i18n('workspace.importExport.csvOptionsHint')}</span>
+          <Select
+            style={{ width: 120 }}
+            value={csvOptions.quote}
+            onChange={(v) => setCsvOptions((prev) => ({ ...prev, quote: v }))}
+            options={[
+              { value: '"', label: i18n('workspace.importExport.quoteDouble') },
+              { value: "'", label: i18n('workspace.importExport.quoteSingle') },
+            ]}
+          />
+          <Select
+            style={{ width: 140 }}
+            value={csvOptions.escape}
+            onChange={(v) => setCsvOptions((prev) => ({ ...prev, escape: v }))}
+            options={[
+              { value: '"', label: i18n('workspace.importExport.escapeDouble') },
+              { value: '\\', label: i18n('workspace.importExport.escapeBackslash') },
+            ]}
+          />
+          <Select
+            style={{ width: 110 }}
+            value={csvOptions.newline}
+            onChange={(v) => setCsvOptions((prev) => ({ ...prev, newline: v }))}
+            options={['LF', 'CRLF', 'CR'].map((value) => ({ value, label: value }))}
+          />
         </div>
       )}
-      {!result && preview && (
+      {preview && (
         <>
           <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span>{i18n('workspace.importExport.previewHint', preview.previewRows)}</span>

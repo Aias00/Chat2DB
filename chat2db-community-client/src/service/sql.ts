@@ -458,12 +458,20 @@ export interface ICsvOptions {
   delimiter: string;
   quote: string;
   escape: string;
+  newline: string;
   hasHeader: boolean;
   emptyAsNull: boolean;
 }
 
 const getImportPreview = createRequest<
-  { dataSourceId: number; databaseName: string; tableName: string; filePath: string; csvOptions?: string },
+  {
+    dataSourceId: number;
+    databaseName: string;
+    schemaName?: string;
+    tableName: string;
+    filePath: string;
+    csvOptions?: string;
+  },
   IImportPreview
 >('/api/rdb/import_preview/preview', { method: 'post' });
 
@@ -471,6 +479,7 @@ const executeImportWithMapping = createRequest<
   {
     dataSourceId: number;
     databaseName: string;
+    schemaName?: string;
     tableName: string;
     filePath: string;
     mappings: { sourceColumn: string | null; targetColumn: string }[];

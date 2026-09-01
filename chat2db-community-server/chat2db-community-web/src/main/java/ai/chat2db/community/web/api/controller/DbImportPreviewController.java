@@ -1,6 +1,7 @@
 package ai.chat2db.community.web.api.controller;
 
 import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
 import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
@@ -52,7 +53,7 @@ public class DbImportPreviewController {
                     new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
                     });
         } catch (Exception e) {
-            return new java.util.LinkedHashMap<>();
+            throw new BusinessException("import.preview.invalidCsvOptions", new Object[0], e);
         }
     }
 

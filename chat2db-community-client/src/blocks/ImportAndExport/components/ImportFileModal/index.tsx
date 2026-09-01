@@ -6,12 +6,13 @@ import ImportExportFile, { ImportExportFileRef } from '../ImportExportFile';
 import { useImportExportStore } from '@/store/importExport';
 import ModalFooterButton from '@/components/Modal/ModalFooterButton';
 import importExportServices from '@/service/importExport';
-import { ImportExportTaskStatus, ImportExportType } from '@/constants/importExport';
+import { ImportExportFileType, ImportExportTaskStatus, ImportExportType } from '@/constants/importExport';
 import Log from '@/blocks/ImportAndExport/components/Log';
 import { ImportExportTaskDetails } from '@/typings/importExport';
 import ImportMappingContent from '@/blocks/ImportAndExport/components/ImportMappingContent';
 import jcefApi from '@/jcef';
 import { isDesktop } from '@/utils/env';
+import { supportsCsvMappingPreview } from '@/blocks/ImportAndExport/utils/csvOptions';
 
 interface IProps {
   className?: string;
@@ -23,6 +24,7 @@ export default memo<IProps>((_props) => {
   const [taskId, setTaskId] = useState<number>();
   const [taskDetails, setTaskDetails] = useState<ImportExportTaskDetails>();
   const [importFilePath, setImportFilePath] = useState<string>('');
+  const [importFileFormat, setImportFileFormat] = useState<ImportExportFileType>();
 
   const { importExportDataBoundInfo, setImportExportDataBoundInfo, getTaskList } = useImportExportStore((state) => {
     return {
@@ -50,8 +52,9 @@ export default memo<IProps>((_props) => {
     });
   };
 
-  const handleImportFileChange = (filePath: string) => {
+  const handleImportFileChange = (filePath: string, format: ImportExportFileType) => {
     setImportFilePath(filePath);
+    setImportFileFormat(format);
   };
 
   const renderFooter = () => {
@@ -114,6 +117,20 @@ export default memo<IProps>((_props) => {
     setTaskDetails(_taskDetails);
   };
 
+  const importMappingTarget =
+    importExportDataBoundInfo?.type === ImportExportType.IMPORT &&
+    importFilePath &&
+    supportsCsvMappingPreview(importFileFormat) &&
+    typeof importExportDataBoundInfo.dataSourceId === 'number' &&
+    importExportDataBoundInfo.databaseName
+      ? {
+          dataSourceId: importExportDataBoundInfo.dataSourceId,
+          databaseName: importExportDataBoundInfo.databaseName,
+          schemaName: importExportDataBoundInfo.schemaName,
+          tableName: importExportDataBoundInfo.tableName || '',
+        }
+      : null;
+
   return (
     <Modal
       open={!!importExportDataBoundInfo}
@@ -135,14 +152,16 @@ export default memo<IProps>((_props) => {
     >
       {taskId ? (
         <Log onTaskChange={handleTaskChange} taskId={taskId} />
-      ) : importExportDataBoundInfo?.type === ImportExportType.IMPORT && importFilePath ? (
+      ) : importMappingTarget ? (
         <ImportMappingContent
-          dataSourceId={importExportDataBoundInfo.dataSourceId}
-          databaseName={importExportDataBoundInfo.databaseName}
-          tableName={importExportDataBoundInfo.tableName || ''}
+          dataSourceId={importMappingTarget.dataSourceId}
+          databaseName={importMappingTarget.databaseName}
+          schemaName={importMappingTarget.schemaName}
+          tableName={importMappingTarget.tableName}
           filePath={importFilePath}
-          onDone={() => {
-            setImportExportDataBoundInfo(null);
+          onSubmitted={(submittedTaskId) => {
+            setTaskId(submittedTaskId);
+            getTaskList();
           }}
         />
       ) : (

@@ -4,8 +4,8 @@ import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -81,5 +81,51 @@ class CsvParserTest {
         CsvParser emptyAsText = new CsvParser("UTF-8", ",", "\"", "\"", true, false);
         assertEquals("", emptyAsText.parse("name,note\nAda,\n".getBytes(StandardCharsets.UTF_8), 50)
                 .rows().get(1).get(1));
+    }
+
+    @Test
+    void detectsUtfBomAndKeepsQuotedEmptyDistinctFromNull() {
+        CsvParser parser = new CsvParser("AUTO", ",", "\"", "\"", true, true);
+        byte[] body = "name,note\nAda,\"\"\nGrace,\n".getBytes(StandardCharsets.UTF_16LE);
+        byte[] bytes = new byte[body.length + 2];
+        bytes[0] = (byte) 0xFF;
+        bytes[1] = (byte) 0xFE;
+        System.arraycopy(body, 0, bytes, 2, body.length);
+
+        CsvParser.CsvResult result = parser.parse(bytes, 50);
+
+        assertEquals("name", result.rows().get(0).get(0));
+        assertEquals("", result.rows().get(1).get(1));
+        assertEquals(null, result.rows().get(2).get(1));
+    }
+
+    @Test
+    void supportsBackslashEscapedQuotesWhenConfigured() {
+        CsvParser parser = new CsvParser("UTF-8", ",", "\"", "\\", true, true);
+
+        CsvParser.CsvResult result = parser.parse("name,note\nAda,\"hello \\\"db\\\"\"\n".getBytes(StandardCharsets.UTF_8),
+                50);
+
+        assertEquals("hello \"db\"", result.rows().get(1).get(1));
+    }
+
+    @Test
+    void preservesLiteralBackslashesWhenTheyDoNotEscapeQuoteOrEscape() {
+        CsvParser parser = new CsvParser("UTF-8", ",", "\"", "\\", true, true);
+
+        CsvParser.CsvResult result = parser.parse("name,path\nAda,\"C:\\temp\\new\"\n".getBytes(StandardCharsets.UTF_8),
+                50);
+
+        assertEquals("C:\\temp\\new", result.rows().get(1).get(1));
+    }
+
+    @Test
+    void keepsFinalSingleColumnQuotedEmptyRow() {
+        CsvParser parser = new CsvParser("UTF-8", ",", "\"", "\"", false, true);
+
+        CsvParser.CsvResult result = parser.parse("\"\"".getBytes(StandardCharsets.UTF_8), 50);
+
+        assertEquals(1, result.rows().size());
+        assertEquals("", result.rows().get(0).get(0));
     }
 }

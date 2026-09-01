@@ -24,4 +24,10 @@ public class ImportTaskSpec implements TaskSpec {
     private String format;
 
     private String dataTimeFormat;
+
+    private CsvOptions csvOptions;
+
+    private java.util.List<java.util.Map<String, String>> mappings;
+
+    private String unmappedTarget;
 }

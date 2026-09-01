@@ -1,8 +1,12 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.util.ConfigUtils;
+import ai.chat2db.spi.DefaultMetaService;
+import ai.chat2db.spi.IDbMetaData;
+import ai.chat2db.spi.IPlugin;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
 
@@ -10,7 +14,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.math.BigDecimal;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -26,12 +32,22 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DbImportPreviewServiceImplTest {
 
+    private static final String DB_TYPE = "MAPPED_IMPORT_TEST";
+
     @TempDir
     Path tempDir;
+
+    private IPlugin previousPlugin;
 
     @AfterEach
     void clearContext() {
         Chat2DBContext.removeContext();
+        if (previousPlugin == null) {
+            Chat2DBContext.PLUGIN_MAP.remove(DB_TYPE);
+        } else {
+            Chat2DBContext.PLUGIN_MAP.put(DB_TYPE, previousPlugin);
+            previousPlugin = null;
+        }
     }
 
     @Test
@@ -81,6 +97,55 @@ class DbImportPreviewServiceImplTest {
         bindRow(statement, row, targetColumns, sourceToTarget, "DEFAULT");
 
         assertEquals(List.of("setString:1:Ada"), calls);
+    }
+
+    @Test
+    void nullStrategyExcludesUnmappedAutoIncrementColumns() throws Exception {
+        List<Map<String, Object>> targetColumns = List.of(
+                target("id", "BIGINT", false, true, null),
+                target("name", "VARCHAR", true, false, null),
+                target("created_by", "VARCHAR", true, false, null));
+        Map<Integer, String> sourceToTarget = Map.of(0, "name");
+        Map<Integer, ExcelParser.CellValue> row = Map.of(0, new ExcelParser.CellValue("Ada", "string"));
+        List<String> calls = new ArrayList<>();
+        PreparedStatement statement = recordingStatement(calls);
+
+        bindRow(statement, row, targetColumns, sourceToTarget, "NULL");
+
+        assertEquals(List.of("setString:1:Ada", "setNull:2"), calls);
+    }
+
+    @Test
+    void mappedInsertUsesTrustedQualifiedDialectTableName() throws Exception {
+        previousPlugin = Chat2DBContext.PLUGIN_MAP.put(DB_TYPE, plugin());
+        ConnectInfo connectInfo = connectInfo(7L, "trusted_db", "trusted_schema");
+        connectInfo.setDbType(DB_TYPE);
+        Chat2DBContext.putContext(connectInfo);
+        List<Map<String, Object>> targetColumns = List.of(target("amount", "DOUBLE", true, false, null));
+
+        String sql = buildInsertSql("trusted_db", "trusted_schema", "orders", targetColumns,
+                Map.of(0, "amount"), "DEFAULT");
+
+        assertEquals("INSERT INTO [trusted_db].[trusted_schema].[orders] ([amount]) VALUES (?)", sql);
+    }
+
+    @Test
+    void valueBindingPreservesImportedTextAndParsesFloatingPointDecimals() throws Exception {
+        List<Map<String, Object>> targetColumns = List.of(
+                target("rate", "DOUBLE", true, false, null),
+                target("ratio", "FLOAT", true, false, null),
+                target("formula", "VARCHAR", true, false, null));
+        Map<Integer, String> sourceToTarget = Map.of(0, "rate", 1, "ratio", 2, "formula");
+        Map<Integer, ExcelParser.CellValue> row = Map.of(
+                0, new ExcelParser.CellValue("1.25", "string"),
+                1, new ExcelParser.CellValue("2.5", "string"),
+                2, new ExcelParser.CellValue("=1+1", "string"));
+        List<String> calls = new ArrayList<>();
+        PreparedStatement statement = recordingStatement(calls);
+
+        bindRow(statement, row, targetColumns, sourceToTarget, "DEFAULT");
+
+        assertEquals(List.of("setDouble:1:1.25", "setDouble:2:2.5", "setString:3:=1+1"), calls);
     }
 
     @Test
@@ -166,6 +231,21 @@ class DbImportPreviewServiceImplTest {
         invoke(method, null, statement, row, targetColumns, sourceToTarget, strategy);
     }
 
+    private static String buildInsertSql(String databaseName, String schemaName, String tableName,
+            List<Map<String, Object>> targetColumns, Map<Integer, String> sourceToTarget, String strategy)
+            throws Exception {
+        Class<?> targetMetadataClass = Class.forName(
+                "ai.chat2db.community.domain.core.impl.db.DbImportPreviewServiceImpl$TargetMetadata");
+        Constructor<?> constructor = targetMetadataClass
+                .getDeclaredConstructor(String.class, String.class, String.class, List.class);
+        constructor.setAccessible(true);
+        Object targetMetadata = constructor.newInstance(databaseName, schemaName, tableName, targetColumns);
+        Method method = DbImportPreviewServiceImpl.class.getDeclaredMethod("buildInsertSql", targetMetadataClass,
+                List.class, Map.class, String.class);
+        method.setAccessible(true);
+        return invoke(method, null, targetMetadata, targetColumns, sourceToTarget, strategy);
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T invoke(Method method, Object target, Object... args) throws Exception {
         try {
@@ -205,10 +285,44 @@ class DbImportPreviewServiceImplTest {
                         case "setString" -> calls.add("setString:" + args[0] + ":" + args[1]);
                         case "setNull" -> calls.add("setNull:" + args[0]);
                         case "setObject" -> calls.add("setObject:" + args[0] + ":" + args[1]);
+                        case "setDouble" -> calls.add("setDouble:" + args[0] + ":" + args[1]);
+                        case "setBigDecimal" -> calls.add("setBigDecimal:" + args[0] + ":"
+                                + ((BigDecimal) args[1]).toPlainString());
                         default -> {
                         }
                     }
                     return null;
                 });
+    }
+
+    private static IPlugin plugin() {
+        DBConfig config = new DBConfig();
+        config.setDbType(DB_TYPE);
+        config.setDefaultDriverConfig(new DriverConfig());
+        IDbMetaData metaData = new DefaultMetaService() {
+            @Override
+            public String getMetaDataName(String... names) {
+                return java.util.Arrays.stream(names)
+                        .filter(org.apache.commons.lang3.StringUtils::isNotBlank)
+                        .map(name -> "[" + name.replace("]", "]]") + "]")
+                        .collect(java.util.stream.Collectors.joining("."));
+            }
+
+            @Override
+            public String getQualifiedTableName(String databaseName, String schemaName, String tableName) {
+                return getMetaDataName(databaseName, schemaName, tableName);
+            }
+        };
+        return new IPlugin() {
+            @Override
+            public DBConfig getDBConfig() {
+                return config;
+            }
+
+            @Override
+            public IDbMetaData getDbMetaData() {
+                return metaData;
+            }
+        };
     }
 }
