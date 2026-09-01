@@ -37,7 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MysqlConsoleTransactionIT {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(
+            System.getProperty("chat2db.mysql.test.image", "mysql:8.0"))
             .withDatabaseName("c2d_tx_test")
             .withUsername("root")
             .withPassword("")

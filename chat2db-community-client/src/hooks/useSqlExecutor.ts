@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { IManageResultData, IExecuteSqlParams } from '@/typings';
 import executeSqlServer from '@/service/executeSql';
 import transactionServer from '@/service/transaction';
+import { ensureManualTransactionStarted } from '@/utils/transactionExecution';
 import type { ISqlEditorExecuteRequest } from '@/service/dmlRequest';
 import useAbortRequest from './useAbortRequest';
 import { isDesktop } from '@/utils/env';
@@ -104,37 +105,11 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
   );
 
   // When the console is in manual transaction mode, open a server-side transaction before the
-  // first execution so subsequent executions reuse the bound connection. No-op in auto mode or
-  // when a transaction is already open. Failures fall back to auto-commit (the execution still
-  // runs, just without a bound transaction) so a transient begin error never blocks the user.
+  // first execution so subsequent executions reuse the bound connection. A begin failure blocks
+  // execution: silently falling back to auto-commit would commit work the user expects to control.
   const ensureTransactionBegun = useCallback(async (params: IExecuteSqlParams) => {
-    const consoleId = params.consoleId;
-    if (consoleId == null || typeof consoleId !== 'number') {
-      return;
-    }
-    if (params.dataSourceId == null) {
-      return;
-    }
     const store = useWorkspaceStore.getState();
-    const state = store.getTransactionState(consoleId);
-    if (!state || state.mode !== 'manual' || state.inTransaction) {
-      return;
-    }
-    try {
-      const result = await transactionServer.beginTransaction({
-        dataSourceId: params.dataSourceId,
-        databaseName: params.databaseName,
-        schemaName: params.schemaName,
-        consoleId,
-      });
-      store.setTransactionState(consoleId, {
-        inTransaction: result?.inTransaction ?? false,
-        lastError: result?.lastError,
-      });
-    } catch (error) {
-      // Begin failed: record the error and let execution proceed in auto-commit mode.
-      store.setTransactionState(consoleId, { inTransaction: false, lastError: String(error) });
-    }
+    await ensureManualTransactionStarted(params, store, transactionServer.beginTransaction);
   }, []);
 
   // execute sql
