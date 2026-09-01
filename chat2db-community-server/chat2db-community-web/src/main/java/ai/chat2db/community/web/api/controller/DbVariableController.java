@@ -3,6 +3,7 @@ package ai.chat2db.community.web.api.controller;
 import ai.chat2db.community.domain.api.service.db.IDbVariableService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
+import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
@@ -11,7 +12,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -35,9 +35,8 @@ public class DbVariableController {
      * Endpoint: {@code GET /api/rdb/variable/list?scope=GLOBAL&kind=VARIABLES}.
      */
     @GetMapping("/list")
-    public DataResult<List<Map<String, Object>>> list(@RequestParam("scope") String scope,
-                                                      @RequestParam("kind") String kind) {
-        return DataResult.of(variableService.variables(scope, kind));
+    public DataResult<List<Map<String, Object>>> list(@Valid VariableListRequest request) {
+        return DataResult.of(variableService.variables(request.getScope(), request.getKind()));
     }
 
     /**
@@ -46,8 +45,8 @@ public class DbVariableController {
      * Endpoint: {@code GET /api/rdb/variable/editable?name=wait_timeout}.
      */
     @GetMapping("/editable")
-    public DataResult<IDbVariableService.EditMeta> editable(@RequestParam("name") String name) {
-        return DataResult.of(variableService.editable(name));
+    public DataResult<IDbVariableService.EditMeta> editable(@Valid VariableNameRequest request) {
+        return DataResult.of(variableService.editable(request.getName()));
     }
 
     /**
@@ -62,7 +61,22 @@ public class DbVariableController {
     }
 
     @Data
-    public static class SetVariableRequest {
+    public static class VariableListRequest extends DataSourceBaseRequest {
+        @NotBlank
+        private String scope;
+
+        @NotBlank
+        private String kind;
+    }
+
+    @Data
+    public static class VariableNameRequest extends DataSourceBaseRequest {
+        @NotBlank
+        private String name;
+    }
+
+    @Data
+    public static class SetVariableRequest extends DataSourceBaseRequest {
         @NotBlank
         private String variableName;
 

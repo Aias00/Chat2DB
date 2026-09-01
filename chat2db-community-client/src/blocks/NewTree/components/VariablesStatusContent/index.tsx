@@ -45,7 +45,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
     setLoading(true);
     setError(null);
     sqlService
-      .getVariableList({ scope: view.scope, kind: view.kind })
+      .getVariableList({ dataSourceId, scope: view.scope, kind: view.kind })
       .then((list) => {
         setData((prev) => ({ ...prev, [view.key]: list || [] }));
       })
@@ -53,7 +53,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [dataSourceId]);
 
   useEffect(() => {
     const view = VIEWS.find((v) => v.key === activeKey)!;
@@ -63,14 +63,14 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
   const editMetaByName = useCallback(
     (name: string): IVariableEditMeta | null | undefined => {
       if (!(name in metaCache)) {
-        void sqlService.getVariableEditable({ name }).then((m) => {
+        void sqlService.getVariableEditable({ dataSourceId, name }).then((m) => {
           setMetaCache((prev) => ({ ...prev, [name]: m }));
         });
         return undefined;
       }
       return metaCache[name];
     },
-    [metaCache],
+    [dataSourceId, metaCache],
   );
 
   const currentView = VIEWS.find((v) => v.key === activeKey)!;
@@ -84,7 +84,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
   }, [data, activeKey, filter]);
 
   const openEdit = async (record: IVariableItem) => {
-    const meta = await sqlService.getVariableEditable({ name: record.name });
+    const meta = await sqlService.getVariableEditable({ dataSourceId, name: record.name });
     setEditTarget(record);
     setEditMeta(meta || null);
     setConfirmName('');
@@ -100,7 +100,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
     form.validateFields().then((values) => {
       const scope = values.scope;
       sqlService
-        .previewSetVariableSql({ variableName: editTarget.name, value: values.value, scope })
+        .previewSetVariableSql({ dataSourceId, variableName: editTarget.name, value: values.value, scope })
         .then((sql) => {
           Modal.confirm({
             title: i18n('workspace.ops.variablePreviewTitle'),

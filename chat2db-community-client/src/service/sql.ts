@@ -444,18 +444,18 @@ export interface IVariableEditMeta {
   highRisk: boolean;
 }
 
-const getVariableList = createRequest<{ scope: string; kind: string }, IVariableItem[]>(
+const getVariableList = createRequest<{ dataSourceId: number; scope: string; kind: string }, IVariableItem[]>(
   '/api/rdb/variable/list',
   { method: 'get' },
 );
 
-const getVariableEditable = createRequest<{ name: string }, IVariableEditMeta | null>(
+const getVariableEditable = createRequest<{ dataSourceId: number; name: string }, IVariableEditMeta | null>(
   '/api/rdb/variable/editable',
   { method: 'get' },
 );
 
 const previewSetVariableSql = createRequest<
-  { variableName: string; value: string; scope: string },
+  { dataSourceId: number; variableName: string; value: string; scope: string },
   string
 >('/api/rdb/variable/set_preview', { method: 'post' });
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
