@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { WorkspaceTabType } from '@/constants/workspace';
 import type { IWorkspaceTab } from '@/typings';
-import { confirmDirtyEditorTabs, isEditorCloseConfirmationEnabled, type EditorCloseGuardMap } from './editorCloseGuard';
+import {
+  confirmDirtyEditorTabs,
+  isEditorCloseConfirmationEnabled,
+  prepareEditorsForApplicationExit,
+  type EditorCloseGuardMap,
+} from './editorCloseGuard';
 
 const editorOne: IWorkspaceTab = {
   id: 'editor-1',
@@ -98,6 +103,34 @@ async function run() {
   const alreadySaved = await confirmDirtyEditorTabs([editorOne], editorList, async () => 'saved');
   assert.equal(alreadySaved, true, 'a decision handler may complete the save while its dialog is open');
 
+  let persistedDrafts = 0;
+  let applicationExitPrompts = 0;
+  assert.equal(
+    await prepareEditorsForApplicationExit(
+      [editorOne, editorTwo],
+      {
+        [editorOne.id]: {
+          hasUnsavedChangesBeforeClose: () => true,
+          persistBeforeApplicationExit: async () => {
+            persistedDrafts += 1;
+            return true;
+          },
+        },
+        [editorTwo.id]: {
+          hasUnsavedChangesBeforeClose: () => true,
+        },
+      },
+      async () => {
+        applicationExitPrompts += 1;
+        return 'discard';
+      },
+      true,
+    ),
+    true,
+  );
+  assert.equal(persistedDrafts, 1, 'application exit flushes recoverable console drafts');
+  assert.equal(applicationExitPrompts, 1, 'only non-auto-saved editors require an application-exit prompt');
+
   const workspaceTabsSource = readFileSync('src/pages/main/workspace/components/WorkspaceTabs/index.tsx', 'utf8');
   const consoleActionSource = readFileSync('src/store/workspace/slices/console/action.ts', 'utf8');
   const editorSource = readFileSync('src/components/SQLEditor/editor/SQLEditorWithOperation/index.tsx', 'utf8');
@@ -128,6 +161,21 @@ async function run() {
     confirmationSource.match(/style=\{footerButtonStyle\}/g)?.length,
     3,
     'all close-dialog actions share the same horizontal alignment',
+  );
+  assert.match(
+    confirmationSource,
+    /const handleSave = \(\) => \{[\s\S]*?onDecision\('save'\)/,
+    'the save action resolves the close dialog before the guard starts saving',
+  );
+  assert.doesNotMatch(
+    confirmationSource,
+    /await editor\.saveBeforeClose\(\)/,
+    'the close dialog must not keep a second save modal blocked behind it',
+  );
+  assert.match(
+    confirmationSource,
+    /afterClose: \(\) => \{[\s\S]*?resolve\(selectedDecision \?\? 'cancel'\)/,
+    'the guard waits for the close mask to finish its exit lifecycle',
   );
 
   console.log('Editor close guard tests passed');
