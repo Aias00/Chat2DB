@@ -313,4 +313,13 @@ export default {
   'workspace.routine.tips.onlyMysqlRoutine': 'Only MySQL functions and procedures are supported for now',
   'workspace.routine.tips.refreshSuccess': 'Reloaded server DDL',
   'workspace.routine.tips.revertSuccess': 'Reverted to the loaded version',
+  'workspace.databaseAccount.directColumnGrant': 'Direct column grant',
+  'workspace.databaseAccount.inheritedPrivilege': 'Broader access also applies',
+  'workspace.databaseAccount.inheritedFromGLOBAL': 'Global grant',
+  'workspace.databaseAccount.inheritedFromDATABASE': 'Database grant',
+  'workspace.databaseAccount.inheritedFromTABLE': 'Table grant',
+  'workspace.databaseAccount.noColumnDeny':
+    'Revoking a direct column grant does not deny access inherited from a broader grant.',
+  'workspace.databaseAccount.inheritedOnlyRevokeBlocked':
+    'The selected access is not a direct column grant and cannot be revoked at column scope.',
 };

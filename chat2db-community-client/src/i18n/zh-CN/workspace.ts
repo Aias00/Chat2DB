@@ -304,4 +304,11 @@ export default {
   'workspace.routine.tips.onlyMysqlRoutine': '当前仅支持 MySQL 函数和存储过程',
   'workspace.routine.tips.refreshSuccess': '已重新加载服务端 DDL',
   'workspace.routine.tips.revertSuccess': '已回滚到已加载版本',
+  'workspace.databaseAccount.directColumnGrant': '直接列权限',
+  'workspace.databaseAccount.inheritedPrivilege': '同时存在更大范围的继承权限',
+  'workspace.databaseAccount.inheritedFromGLOBAL': '全局权限',
+  'workspace.databaseAccount.inheritedFromDATABASE': '数据库权限',
+  'workspace.databaseAccount.inheritedFromTABLE': '表权限',
+  'workspace.databaseAccount.noColumnDeny': '撤销直接列权限不会拒绝从更大范围权限继承的访问。',
+  'workspace.databaseAccount.inheritedOnlyRevokeBlocked': '所选访问并非直接列权限，不能在列范围撤销。',
 };

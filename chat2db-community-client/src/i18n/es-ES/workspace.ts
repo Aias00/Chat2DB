@@ -315,4 +315,13 @@ export default {
   'workspace.routine.tips.onlyMysqlRoutine': 'Por ahora solo se admiten funciones y procedimientos de MySQL',
   'workspace.routine.tips.refreshSuccess': 'Se volvió a cargar el DDL del servidor',
   'workspace.routine.tips.revertSuccess': 'Se revirtió a la versión cargada',
+  'workspace.databaseAccount.directColumnGrant': 'Permiso directo de columna',
+  'workspace.databaseAccount.inheritedPrivilege': 'Tambien se aplica un acceso mas amplio',
+  'workspace.databaseAccount.inheritedFromGLOBAL': 'Permiso global',
+  'workspace.databaseAccount.inheritedFromDATABASE': 'Permiso de base de datos',
+  'workspace.databaseAccount.inheritedFromTABLE': 'Permiso de tabla',
+  'workspace.databaseAccount.noColumnDeny':
+    'Revocar un permiso directo de columna no deniega el acceso heredado de un permiso mas amplio.',
+  'workspace.databaseAccount.inheritedOnlyRevokeBlocked':
+    'El acceso seleccionado no es un permiso directo de columna y no puede revocarse a nivel de columna.',
 };
