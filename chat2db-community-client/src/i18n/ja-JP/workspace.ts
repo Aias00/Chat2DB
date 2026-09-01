@@ -302,6 +302,8 @@ export default {
   'workspace.ops.sessionStatus': 'セッションステータス',
   'workspace.ops.variableName': '名前',
   'workspace.ops.variableValue': '値',
+  'workspace.ops.variableSource': 'ソース',
+  'workspace.ops.variablePath': 'パス',
   'workspace.ops.variableAction': '操作',
   'workspace.ops.variableEdit': '編集',
   'workspace.ops.variableReadOnly': '読み取り専用',

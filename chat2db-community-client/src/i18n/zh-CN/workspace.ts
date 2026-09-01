@@ -293,6 +293,8 @@ export default {
   'workspace.ops.sessionStatus': '会话状态',
   'workspace.ops.variableName': '名称',
   'workspace.ops.variableValue': '值',
+  'workspace.ops.variableSource': '来源',
+  'workspace.ops.variablePath': '路径',
   'workspace.ops.variableAction': '操作',
   'workspace.ops.variableEdit': '编辑',
   'workspace.ops.variableReadOnly': '只读',

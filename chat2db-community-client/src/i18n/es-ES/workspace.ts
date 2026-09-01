@@ -304,6 +304,8 @@ export default {
   'workspace.ops.sessionStatus': 'Estado de sesión',
   'workspace.ops.variableName': 'Nombre',
   'workspace.ops.variableValue': 'Valor',
+  'workspace.ops.variableSource': 'Origen',
+  'workspace.ops.variablePath': 'Ruta',
   'workspace.ops.variableAction': 'Acción',
   'workspace.ops.variableEdit': 'Editar',
   'workspace.ops.variableReadOnly': 'Solo lectura',

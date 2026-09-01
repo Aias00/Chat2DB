@@ -119,6 +119,12 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
   const columns: ColumnsType<IVariableItem> = [
     { title: i18n('workspace.ops.variableName'), dataIndex: 'name', width: 320 },
     { title: i18n('workspace.ops.variableValue'), dataIndex: 'value', ellipsis: true },
+    ...(currentView.kind === 'VARIABLES'
+      ? [
+          { title: i18n('workspace.ops.variableSource'), dataIndex: 'source', width: 160, ellipsis: true },
+          { title: i18n('workspace.ops.variablePath'), dataIndex: 'path', width: 260, ellipsis: true },
+        ]
+      : []),
     {
       title: i18n('workspace.ops.variableAction'),
       width: 140,

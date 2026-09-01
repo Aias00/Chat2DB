@@ -434,6 +434,10 @@ const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', {
 export interface IVariableItem {
   name: string;
   value: string | null;
+  source?: string | null;
+  path?: string | null;
+  minValue?: string | null;
+  maxValue?: string | null;
 }
 
 export interface IVariableEditMeta {
@@ -442,6 +446,10 @@ export interface IVariableEditMeta {
   dynamicScopes: Array<'SESSION' | 'GLOBAL'>;
   persistScopes: Array<'PERSIST' | 'PERSIST_ONLY'>;
   highRisk: boolean;
+  source?: string | null;
+  path?: string | null;
+  minValue?: string | null;
+  maxValue?: string | null;
 }
 
 const getVariableList = createRequest<{ dataSourceId: number; scope: string; kind: string }, IVariableItem[]>(

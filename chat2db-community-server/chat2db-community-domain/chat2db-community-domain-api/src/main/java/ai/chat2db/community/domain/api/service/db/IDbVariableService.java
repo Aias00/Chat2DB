@@ -15,7 +15,8 @@ public interface IDbVariableService {
      *
      * @param scope GLOBAL or SESSION.
      * @param kind  VARIABLES or STATUS.
-     * @return name/value pairs; STATUS views never mutate server state.
+     * @return name/value pairs plus server-provided metadata when available; STATUS
+     *         views never mutate server state.
      */
     List<Map<String, Object>> variables(String scope, String kind);
 
@@ -45,6 +46,6 @@ public interface IDbVariableService {
      * Edit metadata for a registered variable.
      */
     record EditMeta(String name, String type, List<String> dynamicScopes, List<String> persistScopes,
-                    boolean highRisk) {
+                    boolean highRisk, String source, String path, String minValue, String maxValue) {
     }
 }

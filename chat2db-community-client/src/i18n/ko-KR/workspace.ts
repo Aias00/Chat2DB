@@ -300,6 +300,8 @@ export default {
   'workspace.ops.sessionStatus': '세션 상태',
   'workspace.ops.variableName': '이름',
   'workspace.ops.variableValue': '값',
+  'workspace.ops.variableSource': '출처',
+  'workspace.ops.variablePath': '경로',
   'workspace.ops.variableAction': '작업',
   'workspace.ops.variableEdit': '편집',
   'workspace.ops.variableReadOnly': '읽기 전용',
