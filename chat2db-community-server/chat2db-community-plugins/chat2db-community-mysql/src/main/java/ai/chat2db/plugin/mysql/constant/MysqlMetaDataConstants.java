@@ -95,6 +95,7 @@ public final class MysqlMetaDataConstants {
     public static final String FIELD_TABLESPACE_MAX_SIZE = "MAXIMUM_SIZE";
     public static final String FIELD_TABLESPACE_NAME = "NAME";
     public static final String FIELD_TABLESPACE_NAME_REF = "TABLESPACE_NAME";
+    public static final String FIELD_TABLESPACE_OCCUPYING_OBJECT = "OBJECT_NAME";
     public static final String FIELD_TABLESPACE_SPACE = "SPACE";
     public static final String FIELD_TABLESPACE_STATUS = "STATUS";
     public static final String FIELD_TABLESPACE_TABLE_SCHEMA = "TABLE_SCHEMA";
@@ -179,20 +180,36 @@ public final class MysqlMetaDataConstants {
                     + "AND T.NAME NOT LIKE 'innodb_undo_%' "
                     + "AND T.NAME NOT LIKE 'innodb_temp_%' "
                     + "ORDER BY T.NAME";
+    public static final String TABLESPACES_SQL_MYSQL57 =
+            "SELECT T.SPACE, T.NAME, 'InnoDB' AS ENGINE, T.PAGE_SIZE AS FILE_BLOCK_SIZE, "
+                    + "F.FILE_NAME, F.AUTOEXTEND_NEXT_SIZE, F.MAXIMUM_SIZE, "
+                    + "F.TOTAL_EXTENTS, F.EXTENT_SIZE, F.INITIAL_SIZE, F.STATUS "
+                    + "FROM INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES T "
+                    + "LEFT JOIN INFORMATION_SCHEMA.FILES F ON F.TABLESPACE_NAME = T.NAME "
+                    + "WHERE T.SPACE_TYPE = 'General' ORDER BY T.NAME";
     /**
      * Single-tablespace detail. The name is interpolated as an escaped string literal
      * (INFORMATION_SCHEMA does not accept a bound parameter for the identifier here).
      */
     public static final String TABLESPACE_DETAIL_SQL_TEMPLATE = TABLESPACES_SQL.replace(
             "ORDER BY T.NAME", "AND T.NAME = '%s' ORDER BY T.NAME");
+    public static final String TABLESPACE_DETAIL_SQL_TEMPLATE_MYSQL57 = TABLESPACES_SQL_MYSQL57.replace(
+            "ORDER BY T.NAME", "AND T.NAME = '%s' ORDER BY T.NAME");
     /**
      * Tables occupying a tablespace. The tablespace name is a value (not an identifier), so it is
      * bound as a prepared-statement parameter.
      */
     public static final String TABLESPACE_OCCUPYING_TABLES_SQL =
-            "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+            "SELECT CONCAT(TABLE_SCHEMA, '.', TABLE_NAME) AS OBJECT_NAME "
+                    + "FROM INFORMATION_SCHEMA.TABLES "
                     + "WHERE TABLESPACE_NAME = ? AND TABLE_TYPE = 'BASE TABLE' "
-                    + "ORDER BY TABLE_SCHEMA, TABLE_NAME";
+                    + "UNION "
+                    + "SELECT CONCAT(P.TABLE_SCHEMA, '.', P.TABLE_NAME, ' PARTITION ', P.PARTITION_NAME, "
+                    + "IF(P.SUBPARTITION_NAME IS NULL OR P.SUBPARTITION_NAME = '', '', "
+                    + "CONCAT(' SUBPARTITION ', P.SUBPARTITION_NAME))) AS OBJECT_NAME "
+                    + "FROM INFORMATION_SCHEMA.PARTITIONS P "
+                    + "WHERE P.TABLESPACE_NAME = ? AND P.PARTITION_NAME IS NOT NULL "
+                    + "ORDER BY OBJECT_NAME";
     public static final String ROUTINES_SQL = "SELECT SPECIFIC_NAME, ROUTINE_COMMENT, ROUTINE_DEFINITION FROM information_schema.routines WHERE routine_type = '%s' AND ROUTINE_SCHEMA ='%s'  AND routine_name = '%s';";
     public static final String TRIGGER_SQL = "show create trigger %s.%s";
     public static final String TRIGGER_SQL_LIST = "SELECT TRIGGER_NAME FROM INFORMATION_SCHEMA.TRIGGERS where TRIGGER_SCHEMA = '%s';";

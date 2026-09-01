@@ -51,6 +51,14 @@ public interface IDbManager {
     }
 
     /**
+     * Whether the current dialect/server supports writable InnoDB General Tablespace management.
+     * MySQL supports create/drop/table placement/migration from 5.7.6 onward.
+     */
+    default boolean supportsTablespaceManagement() {
+        return false;
+    }
+
+    /**
      * Renames a tablespace. MySQL 8.0+ only; dialects/versions that do not support rename should
      * throw {@link ai.chat2db.community.tools.exception.BusinessException} with key
      * {@code tablespace.rename.notSupported}.

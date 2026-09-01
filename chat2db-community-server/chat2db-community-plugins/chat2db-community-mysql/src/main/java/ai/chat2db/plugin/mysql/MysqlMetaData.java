@@ -7,6 +7,7 @@ import ai.chat2db.plugin.mysql.enums.MysqlViewSqlSecurityOptionEnum;
 import ai.chat2db.plugin.mysql.identifier.MysqlIdentifierProcessor;
 import ai.chat2db.plugin.mysql.enums.type.*;
 import ai.chat2db.plugin.mysql.value.MysqlValueProcessor;
+import ai.chat2db.plugin.mysql.util.MysqlVersionUtils;
 import ai.chat2db.community.tools.util.I18nUtils;
 import ai.chat2db.spi.IDbMetaData;
 import ai.chat2db.spi.ISQLIdentifierProcessor;
@@ -63,7 +64,7 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
 
     @Override
     public List<Tablespace> tablespaces(Connection connection) {
-        return DefaultSQLExecutor.getInstance().execute(connection, TABLESPACES_SQL, resultSet -> {
+        return DefaultSQLExecutor.getInstance().execute(connection, tablespaceListSql(), resultSet -> {
             Map<String, Tablespace> byName = new LinkedHashMap<>();
             while (resultSet.next()) {
                 String name = resultSet.getString(FIELD_TABLESPACE_NAME);
@@ -111,7 +112,7 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
         if (StringUtils.isBlank(tablespaceName)) {
             return null;
         }
-        String sql = String.format(TABLESPACE_DETAIL_SQL_TEMPLATE,
+        String sql = String.format(tablespaceDetailSqlTemplate(),
                 getSQLIdentifierProcessor().escapeString(tablespaceName));
         List<Tablespace> tablespaces = DefaultSQLExecutor.getInstance().execute(connection, sql,
                 resultSet -> {
@@ -151,14 +152,31 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
      */
     public List<String> occupyingTables(Connection connection, String tablespaceName) {
         return DefaultSQLExecutor.getInstance().preExecute(connection, TABLESPACE_OCCUPYING_TABLES_SQL,
-                new String[] {tablespaceName}, resultSet -> {
+                new String[] {tablespaceName, tablespaceName}, resultSet -> {
                     List<String> tables = new ArrayList<>();
                     while (resultSet.next()) {
-                        tables.add(resultSet.getString(FIELD_TABLESPACE_TABLE_SCHEMA)
-                                + SQLConstants.DOT + resultSet.getString(FIELD_TABLE_NAME));
+                        tables.add(resultSet.getString(FIELD_TABLESPACE_OCCUPYING_OBJECT));
                     }
                     return tables;
                 });
+    }
+
+    private String tablespaceListSql() {
+        return useMysql57TablespaceMetadata() ? TABLESPACES_SQL_MYSQL57 : TABLESPACES_SQL;
+    }
+
+    private String tablespaceDetailSqlTemplate() {
+        return useMysql57TablespaceMetadata() ? TABLESPACE_DETAIL_SQL_TEMPLATE_MYSQL57
+                : TABLESPACE_DETAIL_SQL_TEMPLATE;
+    }
+
+    private boolean useMysql57TablespaceMetadata() {
+        if (Chat2DBContext.getConnectInfo() == null) {
+            return false;
+        }
+        String version = Chat2DBContext.getDbVersion();
+        return MysqlVersionUtils.supportsGeneralTablespace(version)
+                && !MysqlVersionUtils.supportsTablespaceRename(version);
     }
 
 

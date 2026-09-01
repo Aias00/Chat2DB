@@ -64,8 +64,11 @@ public class MysqlTablespaceSqlBuilder implements ITablespaceSqlBuilder {
 
     private String firstDataFile(Tablespace tablespace) {
         if (tablespace.getDataFiles() != null && !tablespace.getDataFiles().isEmpty()) {
-            return tablespace.getDataFiles().get(0);
+            String dataFile = tablespace.getDataFiles().get(0);
+            if (StringUtils.isNotBlank(dataFile)) {
+                return dataFile;
+            }
         }
-        return StringUtils.EMPTY;
+        throw new IllegalArgumentException("Data file is required for MySQL general tablespace creation");
     }
 }

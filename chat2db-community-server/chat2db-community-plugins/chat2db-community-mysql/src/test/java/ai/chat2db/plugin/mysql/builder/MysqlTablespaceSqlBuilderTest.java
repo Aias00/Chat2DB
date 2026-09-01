@@ -20,7 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_DETAIL_SQL_TEMPLATE;
+import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_DETAIL_SQL_TEMPLATE_MYSQL57;
+import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_OCCUPYING_TABLES_SQL;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACES_SQL;
+import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACES_SQL_MYSQL57;
 
 /**
  * Unit tests for {@link MysqlTablespaceSqlBuilder} DDL generation and the table-option emit in
@@ -110,6 +113,17 @@ class MysqlTablespaceSqlBuilderTest {
     }
 
     @Test
+    void shouldRejectBlankDataFilePath() {
+        MysqlTablespaceSqlBuilder builder = new MysqlTablespaceSqlBuilder();
+        Tablespace tablespace = Tablespace.builder()
+                .name("ts_archive")
+                .dataFiles(List.of(""))
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> builder.buildCreateTablespace(tablespace));
+    }
+
+    @Test
     void shouldEmitTablespaceOptionInCreateTable() {
         MysqlSqlBuilder builder = new MysqlSqlBuilder();
         TableColumn column = TableColumn.builder()
@@ -178,8 +192,15 @@ class MysqlTablespaceSqlBuilderTest {
         assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.TABLESPACES"));
         assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.FILES"));
         assertTrue(TABLESPACES_SQL.contains("T.ENGINE = 'InnoDB'"));
+        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("INFORMATION_SCHEMA.TABLES"));
+        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("INFORMATION_SCHEMA.PARTITIONS"));
+        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("PARTITION"));
         assertEquals(TABLESPACES_SQL.replace("ORDER BY T.NAME", "AND T.NAME = '%s' ORDER BY T.NAME"),
                 TABLESPACE_DETAIL_SQL_TEMPLATE);
+        assertTrue(TABLESPACES_SQL_MYSQL57.contains("INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES"));
+        assertTrue(TABLESPACES_SQL_MYSQL57.contains("T.SPACE_TYPE = 'General'"));
+        assertEquals(TABLESPACES_SQL_MYSQL57.replace("ORDER BY T.NAME", "AND T.NAME = '%s' ORDER BY T.NAME"),
+                TABLESPACE_DETAIL_SQL_TEMPLATE_MYSQL57);
     }
 
     @Test
@@ -207,6 +228,19 @@ class MysqlTablespaceSqlBuilderTest {
     }
 
     @Test
+    void shouldReadBackTableAndPartitionOccupancy() {
+        Map<String, Object> tableRow = new HashMap<>();
+        tableRow.put("OBJECT_NAME", "app.orders");
+        Map<String, Object> partitionRow = new HashMap<>();
+        partitionRow.put("OBJECT_NAME", "app.orders_archive PARTITION p2024");
+        Connection connection = connectionReturning(resultSet(List.of(tableRow, partitionRow)));
+
+        List<String> occupyingTables = new MysqlMetaData().occupyingTables(connection, "ts_archive");
+
+        assertEquals(List.of("app.orders", "app.orders_archive PARTITION p2024"), occupyingTables);
+    }
+
+    @Test
     void shouldPreserveTablespacePlacementAcrossCreateAndMigration() {
         MysqlSqlBuilder builder = new MysqlSqlBuilder();
         TableColumn column = TableColumn.builder().name("id").columnType("BIGINT").nullable(0).build();
@@ -223,6 +257,13 @@ class MysqlTablespaceSqlBuilderTest {
 
     @Test
     void shouldGatesRenameByServerVersion() {
+        assertTrue(MysqlVersionUtils.supportsGeneralTablespace("5.7.6"));
+        assertTrue(MysqlVersionUtils.supportsGeneralTablespace("5.7.44"));
+        assertTrue(MysqlVersionUtils.supportsGeneralTablespace("8.0.36"));
+        assertFalse(MysqlVersionUtils.supportsGeneralTablespace("5.7.5"));
+        assertFalse(MysqlVersionUtils.supportsGeneralTablespace("5.6.51"));
+        assertFalse(MysqlVersionUtils.supportsGeneralTablespace(""));
+
         assertTrue(MysqlVersionUtils.supportsTablespaceRename("8.0.36"));
         assertTrue(MysqlVersionUtils.supportsTablespaceRename("8.4.0"));
         assertTrue(MysqlVersionUtils.supportsTablespaceRename("9.0.0"));

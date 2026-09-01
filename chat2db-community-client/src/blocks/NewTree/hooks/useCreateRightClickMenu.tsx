@@ -202,6 +202,7 @@ export const useCreateRightClickMenu = () => {
       schemaName,
       tableName,
       tablespaceName,
+      tablespaceRenameSupported,
       environmentId,
       environment,
       identityColor,
@@ -361,20 +362,34 @@ export const useCreateRightClickMenu = () => {
           tablespaceName: tablespaceName!,
         })
         .then((prepared) => {
+          const occupyingTables = prepared.occupyingTables || [];
+          const occupied = occupyingTables.length > 0;
           openUnifiedConfirmationModal({
             title: i18n('workspace.tablespace.deleteTitle'),
             width: 560,
             content: (
-              <DeleteDatabaseSchemaConfirmContent sqlPreview={prepared.sqlPreview} objectType="tablespace" />
+              <DeleteDatabaseSchemaConfirmContent
+                sqlPreview={prepared.sqlPreview}
+                objectType="tablespace"
+                warningDesc={
+                  occupied
+                    ? i18n('workspace.tablespace.deleteBlockedByOccupancy')
+                    : i18n('workspace.deleteDatabaseSchema.tablespace.warningDesc')
+                }
+                occupyingTables={occupyingTables}
+              />
             ),
-            needInputConfirmText: prepared.confirmName,
-            inputConfirmLabel: renderDeleteInputConfirmLabel(
-              'workspace.tablespace.inputTablespaceName',
-              prepared.confirmName,
-            ),
-            inputConfirmPlaceholder: prepared.confirmName,
-            inputConfirmMismatchTip: i18n('workspace.tablespace.confirmNameMismatch'),
+            okButtonDisabled: occupied,
+            needInputConfirmText: occupied ? undefined : prepared.confirmName,
+            inputConfirmLabel: occupied
+              ? undefined
+              : renderDeleteInputConfirmLabel('workspace.tablespace.inputTablespaceName', prepared.confirmName),
+            inputConfirmPlaceholder: occupied ? undefined : prepared.confirmName,
+            inputConfirmMismatchTip: occupied ? undefined : i18n('workspace.tablespace.confirmNameMismatch'),
             onOk: (confirmName) => {
+              if (occupied) {
+                return Promise.resolve();
+              }
               return tablespaceService
                 .executeDelete({
                   dataSourceId: dataSourceId!,
@@ -388,6 +403,22 @@ export const useCreateRightClickMenu = () => {
             },
           });
         });
+    };
+
+    const openTablespaceSqlPreviewModal = (title: string, sqlPreview: string, onOk: () => Promise<any>) => {
+      openUnifiedConfirmationModal({
+        title,
+        width: 560,
+        headerIconCode: 'icon-sql',
+        content: (
+          <DeleteDatabaseSchemaConfirmContent
+            sqlPreview={sqlPreview}
+            objectType="tablespace"
+            warningDesc={i18n('workspace.tablespace.sqlPreviewWarning')}
+          />
+        ),
+        onOk: () => onOk(),
+      });
     };
 
     const operationColumnConfig: { [key in string]: IOperationColumnConfigItem } = {
@@ -489,44 +520,61 @@ export const useCreateRightClickMenu = () => {
         text: i18n('workspace.tablespace.create'),
         icon: 'icon-newdatabase',
         handle: () => {
-          createTablespaceForm.resetFields();
-          staticModal.confirm({
-            title: i18n('workspace.tablespace.createTitle'),
-            content: <CreateTablespaceContent form={createTablespaceForm} />,
-            onOk: () => {
-              return createTablespaceForm.validateFields().then((values) => {
-                return tablespaceService
-                  .createSql({
-                    dataSourceId: dataSourceId!,
-                    name: values.name,
-                    dataFile: values.dataFile,
-                    fileBlockSize: values.fileBlockSize,
-                  })
-                  .then((preview) => {
-                    return sqlService
-                      .executeDDL({
+          tablespaceService
+            .capability({ dataSourceId: dataSourceId! })
+            .then((cap) => {
+              if (!cap.manageSupported) {
+                staticMessage.warning(i18n('workspace.tablespace.manageNotSupported'));
+                return;
+              }
+              createTablespaceForm.resetFields();
+              staticModal.confirm({
+                title: i18n('workspace.tablespace.createTitle'),
+                content: <CreateTablespaceContent form={createTablespaceForm} />,
+                onOk: () => {
+                  return createTablespaceForm.validateFields().then((values) => {
+                    return tablespaceService
+                      .createSql({
                         dataSourceId: dataSourceId!,
-                        sql: preview.sql,
+                        name: values.name,
+                        dataFile: values.dataFile,
+                        fileBlockSize: values.fileBlockSize,
                       })
-                      .then((result) => {
-                        if (!result.success) {
-                          staticMessage.error(result.message);
-                          return Promise.reject(new Error(result.message));
-                        }
-                        staticMessage.success(i18n('workspace.tablespace.createSuccess'));
-                        refreshCurrentNode();
-                        return result;
+                      .then((preview) => {
+                        openTablespaceSqlPreviewModal(
+                          i18n('workspace.tablespace.createPreviewTitle'),
+                          preview.sql,
+                          () =>
+                            sqlService
+                              .executeDDL({
+                                dataSourceId: dataSourceId!,
+                                sql: preview.sql,
+                              })
+                              .then((result) => {
+                                if (!result.success) {
+                                  staticMessage.error(result.message);
+                                  return Promise.reject(new Error(result.message));
+                                }
+                                staticMessage.success(i18n('workspace.tablespace.createSuccess'));
+                                refreshCurrentNode();
+                                return result;
+                              }),
+                        );
                       });
                   });
+                },
               });
-            },
-          });
+            })
+            .catch(() => {
+              staticMessage.warning(i18n('workspace.tablespace.manageNotSupported'));
+            });
         },
       },
 
       [OperationColumn.RenameTablespace]: {
         text: i18n('workspace.tablespace.rename'),
         icon: 'icon-edit',
+        discard: tablespaceRenameSupported === false,
         handle: () => {
           tablespaceService
             .capability({ dataSourceId: dataSourceId! })
@@ -544,19 +592,32 @@ export const useCreateRightClickMenu = () => {
                 onOk: () => {
                   return createTablespaceForm.validateFields().then((values) => {
                     return tablespaceService
-                      .modify({
+                      .modifySql({
                         dataSourceId: dataSourceId!,
                         oldName: tablespaceName!,
                         newName: values.name,
                       })
-                      .then((result) => {
-                        if (!result.success) {
-                          staticMessage.error(result.message);
-                          return Promise.reject(new Error(result.message));
-                        }
-                        staticMessage.success(i18n('workspace.tablespace.renameSuccess'));
-                        refreshAfterDelete();
-                        return result;
+                      .then((preview) => {
+                        openTablespaceSqlPreviewModal(
+                          i18n('workspace.tablespace.renamePreviewTitle'),
+                          preview.sql,
+                          () =>
+                            tablespaceService
+                              .modify({
+                                dataSourceId: dataSourceId!,
+                                oldName: tablespaceName!,
+                                newName: values.name,
+                              })
+                              .then((result) => {
+                                if (!result.success) {
+                                  staticMessage.error(result.message);
+                                  return Promise.reject(new Error(result.message));
+                                }
+                                staticMessage.success(i18n('workspace.tablespace.renameSuccess'));
+                                refreshAfterDelete();
+                                return result;
+                              }),
+                        );
                       });
                   });
                 },

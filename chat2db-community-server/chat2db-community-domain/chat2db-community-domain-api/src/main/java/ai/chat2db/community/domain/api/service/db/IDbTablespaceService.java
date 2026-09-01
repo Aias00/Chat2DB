@@ -31,6 +31,11 @@ public interface IDbTablespaceService {
     Sql createTablespace(DbTablespaceCreateRequest param);
 
     /**
+     * Builds (preview only) the SQL for renaming a tablespace.
+     */
+    Sql modifyTablespaceSql(DbTablespaceModifyRequest param);
+
+    /**
      * Renames a tablespace (MySQL 8.0+; the manager version-gates this).
      */
     void modifyTablespace(DbTablespaceModifyRequest param);

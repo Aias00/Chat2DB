@@ -5,5 +5,9 @@ import lombok.Data;
 @Data
 public class TablespaceCapabilityResponse {
 
+    private boolean manageSupported;
+
     private boolean renameSupported;
+
+    private String serverVersion;
 }

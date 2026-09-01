@@ -82,6 +82,17 @@ public class DbTablespaceController {
     /**
      * Renames a tablespace (MySQL 8.0+; the service version-gates this).
      * <p>
+     * Endpoint: {@code POST /api/rdb/tablespace/modify_sql}.
+     */
+    @PostMapping("/modify_sql")
+    public DataResult<Sql> modifyTablespaceSql(@Valid @RequestBody TablespaceModifyRequest request) {
+        DbTablespaceModifyRequest param = dbWebConverter.request2param(request);
+        return DataResult.of(tablespaceService.modifyTablespaceSql(param));
+    }
+
+    /**
+     * Renames a tablespace (MySQL 8.0+; the service version-gates this).
+     * <p>
      * Endpoint: {@code POST /api/rdb/tablespace/modify}.
      */
     @PostMapping("/modify")

@@ -15,6 +15,7 @@ import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.domain.api.service.db.IDbDatabaseObjectDeleteService;
 import ai.chat2db.community.domain.core.cache.CacheKey;
 import ai.chat2db.community.domain.core.cache.CacheManage;
+import ai.chat2db.community.domain.core.cache.MemoryCacheManage;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import org.apache.commons.collections4.CollectionUtils;
@@ -208,7 +209,8 @@ public class DbDatabaseObjectDeleteServiceImpl implements IDbDatabaseObjectDelet
 
     private void assertTablespaceManagementSupported(String dbType) {
         DBConfig dbConfig = Chat2DBContext.getDBConfig(dbType);
-        if (dbConfig == null || !dbConfig.isSupportTablespace()) {
+        if (dbConfig == null || !dbConfig.isSupportTablespace()
+                || !Chat2DBContext.getDbManager(dbType).supportsTablespaceManagement()) {
             throw new BusinessException("tablespace.notSupported");
         }
     }
@@ -217,7 +219,9 @@ public class DbDatabaseObjectDeleteServiceImpl implements IDbDatabaseObjectDelet
         if (dataSourceId == null) {
             return;
         }
-        CacheManage.fuzzyDelete(CacheKey.getTablespacesKey(dataSourceId));
+        String cacheKey = CacheKey.getTablespacesKey(dataSourceId);
+        CacheManage.fuzzyDelete(cacheKey);
+        MemoryCacheManage.remove(cacheKey);
     }
 
     private ConnectionProfile requireCurrentProfile() {

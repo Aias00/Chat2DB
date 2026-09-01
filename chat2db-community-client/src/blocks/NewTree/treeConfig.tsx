@@ -458,9 +458,10 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
 
   [TreeNodeType.TABLESPACES]: {
     getChildren: (extraParams: any) => {
-      return tablespaceService
-        .list({ dataSourceId: extraParams.dataSourceId, refresh: extraParams.refresh })
-        .then((tablespaces: any[]) => {
+      return Promise.all([
+        tablespaceService.list({ dataSourceId: extraParams.dataSourceId, refresh: extraParams.refresh }),
+        tablespaceService.capability({ dataSourceId: extraParams.dataSourceId }).catch(() => undefined),
+      ]).then(([tablespaces, capability]) => {
           return (tablespaces || []).map((tablespace) => {
             const key = treeConfig[TreeNodeType.TABLESPACE].createTreeNodeKey!({
               dataSourceId: extraParams.dataSourceId,
@@ -475,6 +476,9 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
               extraParams: {
                 ...extraParams,
                 tablespaceName: tablespace.name,
+                tablespaceManageSupported: capability?.manageSupported,
+                tablespaceRenameSupported: capability?.renameSupported,
+                tablespaceServerVersion: capability?.serverVersion,
               },
             };
           });

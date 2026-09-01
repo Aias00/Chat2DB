@@ -53,7 +53,9 @@ export interface Tablespace {
 }
 
 export interface TablespaceCapability {
+  manageSupported: boolean;
   renameSupported: boolean;
+  serverVersion?: string;
 }
 
 const list = createRequest<ITablespaceListParams, Tablespace[]>('/api/rdb/tablespace/list', {
@@ -76,6 +78,11 @@ const modify = createRequest<ITablespaceModifyParams, { success: boolean; messag
   { method: 'post', errorLevel: 'toast' },
 );
 
+const modifySql = createRequest<ITablespaceModifyParams, { sql: string }>('/api/rdb/tablespace/modify_sql', {
+  method: 'post',
+  errorLevel: 'toast',
+});
+
 const capability = createRequest<ITablespaceBaseParams, TablespaceCapability>(
   '/api/rdb/tablespace/capability',
   { method: 'get', errorLevel: false },
@@ -96,6 +103,7 @@ export default {
   detail,
   createSql,
   modify,
+  modifySql,
   capability,
   prepareDelete,
   executeDelete,

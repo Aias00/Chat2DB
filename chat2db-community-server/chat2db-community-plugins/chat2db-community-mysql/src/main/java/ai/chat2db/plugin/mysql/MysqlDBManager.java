@@ -243,11 +243,17 @@ public class MysqlDBManager extends DefaultDBManager implements IDbManager {
 
     @Override
     public void createTablespace(Connection connection, Tablespace tablespace) {
+        if (!supportsTablespaceManagement()) {
+            throw new BusinessException("tablespace.notSupported");
+        }
         executeDropSql(connection, new MysqlSqlBuilder().ddl().tablespace().buildCreateTablespace(tablespace));
     }
 
     @Override
     public void dropTablespace(Connection connection, String tablespaceName) {
+        if (!supportsTablespaceManagement()) {
+            throw new BusinessException("tablespace.notSupported");
+        }
         executeDropSql(connection, new MysqlSqlBuilder().ddl().tablespace().buildDropTablespace(tablespaceName));
     }
 
@@ -261,8 +267,14 @@ public class MysqlDBManager extends DefaultDBManager implements IDbManager {
     }
 
     @Override
+    public boolean supportsTablespaceManagement() {
+        return MysqlVersionUtils.supportsGeneralTablespace(Chat2DBContext.getDbVersion());
+    }
+
+    @Override
     public boolean supportsTablespaceRename() {
-        return MysqlVersionUtils.supportsTablespaceRename(Chat2DBContext.getDbVersion());
+        return supportsTablespaceManagement()
+                && MysqlVersionUtils.supportsTablespaceRename(Chat2DBContext.getDbVersion());
     }
 
     void executeDropSql(Connection connection, String sql) {
