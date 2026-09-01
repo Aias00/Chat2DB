@@ -58,6 +58,7 @@ public final class MysqlMetaDataConstants {
     public static final String FIELD_COLUMN_KEY = "COLUMN_KEY";
     public static final String FIELD_COLUMN_NAME = "Column_name";
     public static final String FIELD_COLUMN_NAME_UPPER = "COLUMN_NAME";
+    public static final String FIELD_GENERATION_EXPRESSION = "GENERATION_EXPRESSION";
     public static final String FIELD_COLUMN_TYPE = "COLUMN_TYPE";
     public static final String FIELD_CREATE_FUNCTION = "Create Function";
     public static final String FIELD_CREATE_PROCEDURE = "Create Procedure";
@@ -109,6 +110,8 @@ public final class MysqlMetaDataConstants {
     public static final String OPTION_ENGINES = "engines";
     public static final String SQL_AS = " AS \n";
     public static final String SQL_AUTO_INCREMENT = "auto_increment";
+    public static final String SQL_GENERATED = "generated";
+    public static final String SQL_HIDDEN_COLUMN_MARKER = "!hidden!";
     public static final String SQL_DOT = ".";
     public static final String SQL_ENUM_TYPE = "ENUM";
     public static final String SQL_FULLTEXT_INDEX_TYPE = "FULLTEXT";
