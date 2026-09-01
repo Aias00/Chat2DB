@@ -1,7 +1,11 @@
 package ai.chat2db.plugin.mysql;
 
 import ai.chat2db.community.domain.api.config.DriverConfig;
+import ai.chat2db.community.domain.api.enums.plugin.EditStatusEnum;
+import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
+import ai.chat2db.community.domain.api.model.metadata.TableMeta;
+import ai.chat2db.plugin.mysql.builder.MysqlSqlBuilder;
 import ai.chat2db.plugin.mysql.enums.type.MysqlColumnTypeEnum;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.model.request.TableMetadataRequest;
@@ -13,6 +17,7 @@ import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -30,10 +35,13 @@ class MysqlGeneratedColumnSupportTest {
     }
 
     @Test
-    void generatedColumnSqlRequiresMysql57OrNewer() {
+    void generatedColumnSqlRequiresMysql576OrNewer() {
         TableColumn column = generatedColumn();
 
         withMysqlVersion("5.6.51");
+        assertThrows(IllegalArgumentException.class, () -> MysqlColumnTypeEnum.INT.buildCreateColumnSql(column));
+
+        withMysqlVersion("5.7.5");
         assertThrows(IllegalArgumentException.class, () -> MysqlColumnTypeEnum.INT.buildCreateColumnSql(column));
 
         withMysqlVersion("5.7.44");
@@ -68,6 +76,19 @@ class MysqlGeneratedColumnSupportTest {
     }
 
     @Test
+    void generatedColumnExpressionRejectsUnsafeStatementKeywordsOutsideQuotes() {
+        TableColumn column = generatedColumn();
+
+        withMysqlVersion("8.0.36");
+        column.setGenerationExpression("concat(`drop`, 'table')");
+        assertTrue(MysqlColumnTypeEnum.INT.buildCreateColumnSql(column)
+                .contains("GENERATED ALWAYS AS (concat(`drop`, 'table')) VIRTUAL"));
+
+        column.setGenerationExpression("`price`; DROP TABLE `orders`");
+        assertThrows(IllegalArgumentException.class, () -> MysqlColumnTypeEnum.INT.buildCreateColumnSql(column));
+    }
+
+    @Test
     void aiCreateColumnSqlIncludesGeneratedColumnSyntaxWithoutDefaultOrAutoIncrement() {
         TableColumn column = generatedColumn();
         column.setDefaultValue("0");
@@ -82,9 +103,33 @@ class MysqlGeneratedColumnSupportTest {
     }
 
     @Test
+    void tableMetaExposesGeneratedColumnCapabilityFromServerVersion() {
+        MysqlMetaData metaData = new MysqlMetaData();
+
+        withMysqlVersion("5.6.51");
+        TableMeta mysql56 = metaData.getTableMeta(null, null, null);
+        assertEquals(Boolean.FALSE, mysql56.getGeneratedColumnSupported());
+        assertEquals("5.7.6", mysql56.getGeneratedColumnMinVersion());
+        assertTrue(mysql56.getGeneratedColumnUnsupportedReason().contains("5.7.6"));
+
+        withMysqlVersion("5.7.5");
+        TableMeta mysql575 = metaData.getTableMeta(null, null, null);
+        assertEquals(Boolean.FALSE, mysql575.getGeneratedColumnSupported());
+        assertEquals("5.7.6", mysql575.getGeneratedColumnMinVersion());
+        assertTrue(mysql575.getGeneratedColumnUnsupportedReason().contains("5.7.6"));
+
+        withMysqlVersion("5.7.44-log");
+        TableMeta mysql57 = metaData.getTableMeta(null, null, null);
+        assertEquals(Boolean.TRUE, mysql57.getGeneratedColumnSupported());
+        assertEquals("5.7.6", mysql57.getGeneratedColumnMinVersion());
+        assertEquals(null, mysql57.getGeneratedColumnUnsupportedReason());
+    }
+
+    @Test
     void metadataReadbackIncludesGenerationExpressionAndStorageType() {
         MysqlMetaData metaData = new MysqlMetaData();
 
+        withMysqlVersion("8.0.36");
         List<TableColumn> columns = metaData.columns(connectionReturningGeneratedColumn(), new TableMetadataRequest(
                 "shop", null, "products"));
 
@@ -93,6 +138,92 @@ class MysqlGeneratedColumnSupportTest {
         assertEquals(Boolean.TRUE, column.getGeneratedColumn());
         assertEquals("`price` * 2", column.getGenerationExpression());
         assertEquals("STORED", column.getGeneratedColumnType());
+    }
+
+    @Test
+    void metadataReadbackSkipsGenerationExpressionOnUnsupportedServerVersions() {
+        MysqlMetaData metaData = new MysqlMetaData();
+
+        withMysqlVersion("5.6.51");
+        List<TableColumn> columns = metaData.columns(connectionReturningGeneratedColumn(), new TableMetadataRequest(
+                "shop", null, "products"));
+
+        assertEquals(1, columns.size());
+        assertEquals(null, columns.get(0).getGenerationExpression());
+        assertEquals(null, columns.get(0).getGeneratedColumnType());
+    }
+
+    @Test
+    void metadataReadbackKeepsGeneratedFlagWhenExpressionIsHiddenByPrivileges() {
+        MysqlMetaData metaData = new MysqlMetaData();
+
+        withMysqlVersion("8.0.36");
+        List<TableColumn> columns = metaData.columns(connectionReturningGeneratedColumnWithHiddenExpression(),
+                new TableMetadataRequest("shop", null, "products"));
+
+        assertEquals(1, columns.size());
+        TableColumn column = columns.get(0);
+        assertEquals(Boolean.TRUE, column.getGeneratedColumn());
+        assertEquals(null, column.getGenerationExpression());
+        assertEquals("STORED", column.getGeneratedColumnType());
+    }
+
+    @Test
+    void generatedColumnStorageConversionRequiresExplicitRebuildConfirmation() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table oldTable = Table.builder()
+                .databaseName("shop")
+                .name("products")
+                .columnList(List.of(generatedColumn()))
+                .indexList(List.of())
+                .build();
+        TableColumn converted = generatedColumn();
+        converted.setOldName("double_price");
+        converted.setGeneratedColumnType("STORED");
+        converted.setEditStatus(EditStatusEnum.MODIFY.name());
+        Table newTable = Table.builder()
+                .databaseName("shop")
+                .name("products")
+                .columnList(List.of(converted))
+                .indexList(List.of())
+                .build();
+
+        withMysqlVersion("8.0.36");
+        assertThrows(IllegalArgumentException.class, () -> builder.buildAlterTable(oldTable, newTable));
+
+        newTable.setAllowGeneratedColumnStorageRebuild(Boolean.TRUE);
+        String sql = builder.buildAlterTable(oldTable, newTable);
+        assertTrue(sql.contains("MODIFY COLUMN `double_price` INT GENERATED ALWAYS AS (`price` * 2) STORED"), sql);
+    }
+
+    @Test
+    void hiddenGeneratedExpressionBlocksUnrelatedColumnModification() {
+        TableColumn hiddenGenerated = generatedColumn();
+        hiddenGenerated.setGeneratedColumn(Boolean.TRUE);
+        hiddenGenerated.setGenerationExpression(null);
+        Table oldTable = Table.builder()
+                .name("orders")
+                .columnList(List.of(hiddenGenerated))
+                .indexList(List.of())
+                .build();
+
+        TableColumn modified = generatedColumn();
+        modified.setGeneratedColumn(Boolean.TRUE);
+        modified.setOldName(modified.getName());
+        modified.setGenerationExpression(null);
+        modified.setComment("updated comment");
+        modified.setEditStatus(EditStatusEnum.MODIFY.name());
+        Table newTable = Table.builder()
+                .name("orders")
+                .columnList(List.of(modified))
+                .indexList(List.of())
+                .allowGeneratedColumnStorageRebuild(true)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> new MysqlSqlBuilder().buildAlterTable(oldTable, newTable));
+
+        assertTrue(exception.getMessage().contains("generation expression is unavailable"));
     }
 
     private static TableColumn generatedColumn() {
@@ -144,6 +275,35 @@ class MysqlGeneratedColumnSupportTest {
         });
     }
 
+    private static Connection connectionReturningGeneratedColumnWithHiddenExpression() {
+        ResultSet resultSet = resultSet(Map.ofEntries(
+                Map.entry("COLUMN_NAME", "double_price"),
+                Map.entry("DATA_TYPE", "int"),
+                Map.entry("COLUMN_DEFAULT", ""),
+                Map.entry("EXTRA", "STORED GENERATED"),
+                Map.entry("COLUMN_COMMENT", ""),
+                Map.entry("COLUMN_KEY", ""),
+                Map.entry("IS_NULLABLE", "YES"),
+                Map.entry("GENERATION_EXPRESSION", new SQLException("permission denied")),
+                Map.entry("ORDINAL_POSITION", 1),
+                Map.entry("NUMERIC_SCALE", 0),
+                Map.entry("CHARACTER_SET_NAME", ""),
+                Map.entry("COLLATION_NAME", ""),
+                Map.entry("COLUMN_TYPE", "int")));
+        PreparedStatement statement = proxy(PreparedStatement.class, (method, args) -> switch (method) {
+            case "execute" -> true;
+            case "getResultSet" -> resultSet;
+            case "close" -> null;
+            default -> defaultValue(method);
+        });
+        return proxy(Connection.class, (method, args) -> {
+            if ("prepareStatement".equals(method)) {
+                return statement;
+            }
+            return defaultValue(method);
+        });
+    }
+
     private static ResultSet resultSet(Map<String, Object> row) {
         final boolean[] next = {true};
         return proxy(ResultSet.class, (method, args) -> switch (method) {
@@ -154,6 +314,9 @@ class MysqlGeneratedColumnSupportTest {
             }
             case "getString" -> {
                 Object value = row.get(String.valueOf(args[0]).toUpperCase(Locale.ROOT));
+                if (value instanceof Throwable throwable) {
+                    throw throwable;
+                }
                 yield value == null ? null : String.valueOf(value);
             }
             case "getInt" -> {

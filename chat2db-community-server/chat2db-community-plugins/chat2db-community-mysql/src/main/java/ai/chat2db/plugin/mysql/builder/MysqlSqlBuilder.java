@@ -171,6 +171,7 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
         if (!Objects.equals(oldTable.getIncrementValue(), newTable.getIncrementValue())) {
             script.append(SQLConstants.TAB).append(SQL_AUTO_INCREMENT_ASSIGNMENT).append(newTable.getIncrementValue()).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
+        requireGeneratedColumnStorageRebuildConfirmation(oldTable, newTable);
         List<TableColumn> addColumnList = new ArrayList<>();
         for (TableColumn tableColumn : newTable.getColumnList()) {
             if (tableColumn.getEditStatus() != null ? tableColumn.getEditStatus().equals(EditStatusEnum.ADD.name()) : false) {
@@ -227,6 +228,49 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
             }
         }
         return PREVIOUS_COLUMN_NOT_FOUND;
+    }
+
+    private void requireGeneratedColumnStorageRebuildConfirmation(Table oldTable, Table newTable) {
+        if (oldTable == null || CollectionUtils.isEmpty(oldTable.getColumnList())
+                || CollectionUtils.isEmpty(newTable.getColumnList())) {
+            return;
+        }
+        boolean storageRebuildConfirmed = Boolean.TRUE.equals(newTable.getAllowGeneratedColumnStorageRebuild());
+        for (TableColumn newColumn : newTable.getColumnList()) {
+            if (!EditStatusEnum.MODIFY.name().equals(newColumn.getEditStatus())) {
+                continue;
+            }
+            TableColumn oldColumn = findOldColumn(oldTable.getColumnList(), newColumn);
+            if (isGeneratedColumn(oldColumn) && StringUtils.isBlank(oldColumn.getGenerationExpression())
+                    && StringUtils.isBlank(newColumn.getGenerationExpression())) {
+                throw new IllegalArgumentException("Cannot modify a generated column while its generation expression "
+                        + "is unavailable; refresh with sufficient metadata permissions before previewing SQL.");
+            }
+            if (!storageRebuildConfirmed && isGeneratedColumn(oldColumn) && isGeneratedColumn(newColumn)
+                    && !StringUtils.equals(generatedColumnStorage(oldColumn), generatedColumnStorage(newColumn))) {
+                throw new IllegalArgumentException("Converting a generated column between VIRTUAL and STORED rebuilds "
+                        + "the table and may lock rows or validate existing data; confirm generated-column storage "
+                        + "rebuild before previewing SQL.");
+            }
+        }
+    }
+
+    private static TableColumn findOldColumn(List<TableColumn> oldColumns, TableColumn newColumn) {
+        String oldName = StringUtils.defaultIfBlank(newColumn.getOldName(), newColumn.getName());
+        return oldColumns.stream()
+                .filter(column -> StringUtils.equals(column.getName(), oldName))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean isGeneratedColumn(TableColumn column) {
+        return column != null
+                && (Boolean.TRUE.equals(column.getGeneratedColumn())
+                || StringUtils.isNotBlank(column.getGenerationExpression()));
+    }
+
+    private static String generatedColumnStorage(TableColumn column) {
+        return MysqlSqlGuards.requireGeneratedColumnStorageType(column == null ? null : column.getGeneratedColumnType());
     }
 
     @Override

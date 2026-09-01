@@ -361,6 +361,7 @@ export interface IModifyTableSqlParams {
   oldTable?: IEditTableInfo;
   newTable: IEditTableInfo;
   refresh: boolean;
+  allowGeneratedColumnStorageRebuild?: boolean;
 }
 
 /** Get the sql to modify the table */

@@ -172,7 +172,7 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
 
         script.append(buildDataType(column, type)).append(" ");
 
-        boolean generated = StringUtils.isNotBlank(column.getGenerationExpression());
+        boolean generated = isGeneratedColumn(column);
         if (generated) {
             // MySQL column grammar: data_type [GENERATED ALWAYS] AS (expr) [VIRTUAL|STORED]
             // [NOT NULL] [UNIQUE ...] [COMMENT ...]. Generated columns cannot carry a
@@ -208,7 +208,7 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
 
     @Override
     public String buildAICreateColumnSql(TableColumn column) {
-        if (StringUtils.isNotBlank(column.getGenerationExpression())) {
+        if (isGeneratedColumn(column)) {
             return buildCreateColumnSql(column);
         }
         MysqlColumnTypeEnum type = COLUMN_TYPE_MAP.get(column.getColumnType().toUpperCase());
@@ -255,8 +255,15 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             dbVersion = Chat2DBContext.getDbVersion();
         }
         if (!MysqlSqlGuards.supportsGeneratedColumns(dbVersion)) {
-            throw new IllegalArgumentException("Generated columns require MySQL 5.7 or newer");
+            throw new IllegalArgumentException("Generated columns require MySQL "
+                    + MysqlSqlGuards.GENERATED_COLUMN_MIN_VERSION + " or newer");
         }
+    }
+
+    private static boolean isGeneratedColumn(TableColumn column) {
+        return column != null
+                && (Boolean.TRUE.equals(column.getGeneratedColumn())
+                || StringUtils.isNotBlank(column.getGenerationExpression()));
     }
 
     private String buildCollation(TableColumn column, MysqlColumnTypeEnum type) {

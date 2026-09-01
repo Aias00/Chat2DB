@@ -231,6 +231,7 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String tableName) {
         String sql = String.format(SELECT_TABLE_COLUMNS, getSQLIdentifierProcessor().escapeString(databaseName), getSQLIdentifierProcessor().escapeString(tableName));
         List<TableColumn> tableColumns = new ArrayList<>();
+        boolean supportsGeneratedColumnMetadata = MysqlSqlGuards.supportsGeneratedColumns(Chat2DBContext.getDbVersion());
         return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
             while (resultSet.next()) {
                 TableColumn column = new TableColumn();
@@ -240,19 +241,14 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                 column.setName(resultSet.getString(FIELD_COLUMN_NAME_UPPER));
                 column.setColumnType(resultSet.getString(FIELD_DATA_TYPE).toUpperCase());
                 column.setDefaultValue(resultSet.getString(FIELD_COLUMN_DEFAULT));
-                column.setAutoIncrement(resultSet.getString(FIELD_EXTRA).contains(SQL_AUTO_INCREMENT));
-                column.setOnUpdateCurrentTimestamp(resultSet.getString(FIELD_EXTRA).contains(SQL_ON_UPDATE_CURRENT_TIMESTAMP));
+                String extra = resultSet.getString(FIELD_EXTRA);
+                column.setAutoIncrement(StringUtils.contains(extra, SQL_AUTO_INCREMENT));
+                column.setOnUpdateCurrentTimestamp(StringUtils.contains(extra, SQL_ON_UPDATE_CURRENT_TIMESTAMP));
                 column.setComment(resultSet.getString(FIELD_COLUMN_COMMENT));
                 column.setPrimaryKey(SQL_PRIMARY_KEY_FLAG.equalsIgnoreCase(resultSet.getString(FIELD_COLUMN_KEY)));
                 column.setNullable(SQL_YES.equalsIgnoreCase(resultSet.getString(FIELD_IS_NULLABLE)) ? 1 : 0);
-                String extra = resultSet.getString(FIELD_EXTRA);
-                String generationExpression = resultSet.getString(FIELD_GENERATION_EXPRESSION);
-                if (StringUtils.isNotBlank(generationExpression)) {
-                    // VIRTUAL GENERATED / STORED GENERATED appear in EXTRA for generated columns.
-                    column.setGeneratedColumn(Boolean.TRUE);
-                    column.setGenerationExpression(generationExpression);
-                    column.setGeneratedColumnType(
-                            StringUtils.containsIgnoreCase(extra, SQL_VIRTUAL_GENERATED) ? "VIRTUAL" : "STORED");
+                if (supportsGeneratedColumnMetadata) {
+                    readGeneratedColumnMetadata(resultSet, column, extra);
                 }
                 column.setOrdinalPosition(resultSet.getInt(FIELD_ORDINAL_POSITION));
                 column.setDecimalDigits(resultSet.getInt(FIELD_NUMERIC_SCALE));
@@ -264,6 +260,25 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
             }
             return tableColumns;
         });
+    }
+
+    private void readGeneratedColumnMetadata(ResultSet resultSet, TableColumn column, String extra) {
+        String generationExpression = null;
+        try {
+            generationExpression = resultSet.getString(FIELD_GENERATION_EXPRESSION);
+        } catch (SQLException e) {
+            log.warn("Could not read MySQL generated column expression for column {}; metadata may be hidden by "
+                    + "server version or current privileges", column.getName(), e);
+        }
+        boolean generated = StringUtils.isNotBlank(generationExpression)
+                || StringUtils.containsIgnoreCase(extra, SQL_VIRTUAL_GENERATED)
+                || StringUtils.containsIgnoreCase(extra, SQL_STORED_GENERATED);
+        if (!generated) {
+            return;
+        }
+        column.setGeneratedColumn(Boolean.TRUE);
+        column.setGenerationExpression(generationExpression);
+        column.setGeneratedColumnType(StringUtils.containsIgnoreCase(extra, SQL_STORED_GENERATED) ? "STORED" : "VIRTUAL");
     }
 
     private void setColumnSize(TableColumn column, String columnType) {
@@ -457,6 +472,8 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
 
     @Override
     public TableMeta getTableMeta(String databaseName, String schemaName, String tableName) {
+        String dbVersion = Chat2DBContext.getDbVersion();
+        boolean generatedColumnSupported = MysqlSqlGuards.supportsGeneratedColumns(dbVersion);
         return TableMeta.builder()
                 .columnTypes(MysqlColumnTypeEnum.getTypes())
                 .charsets(getCharsets())
@@ -464,6 +481,9 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                 .indexTypes(MysqlIndexTypeEnum.getIndexTypes())
                 .defaultValues(MysqlDefaultValueEnum.getDefaultValues())
                 .engineTypes(getEngineTypes())
+                .generatedColumnSupported(generatedColumnSupported)
+                .generatedColumnMinVersion(MysqlSqlGuards.GENERATED_COLUMN_MIN_VERSION)
+                .generatedColumnUnsupportedReason(MysqlSqlGuards.generatedColumnUnsupportedReason(dbVersion))
                 .build();
     }
 
