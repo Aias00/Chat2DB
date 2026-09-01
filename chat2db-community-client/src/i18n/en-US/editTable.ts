@@ -22,6 +22,7 @@ export default {
   'editTable.label.prefixLength': 'Prefix length',
   'editTable.tips.prefixLengthUnsupported': 'Prefix length is only supported for string or binary columns',
   'editTable.tips.prefixLengthTooLarge': 'Prefix length cannot exceed the column length ({1})',
+  'editTable.tips.rebuildIndexWarning': 'Rebuilding an index can lock the table and may take time on large tables.',
   'editTable.label.defaultValue': 'Default value',
   'editTable.label.updateTime': 'Update based on current timestamp',
   'editTable.label.sparse': 'Sparse',

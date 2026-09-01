@@ -38,14 +38,34 @@ class MysqlMetaDataIndexTest {
         assertEquals(12L, indexes.get(1).getColumnList().get(0).getSubPart());
     }
 
+    @Test
+    void indexesPreservesCompositeSubPartValuesInOrdinalOrder() {
+        MysqlMetaData metaData = new MysqlMetaData();
+        Connection connection = connectionForRows(List.of(
+                indexRow("idx_name_code", "code", 5L, (short) 2),
+                indexRow("idx_name_code", "name", 10L, (short) 1)));
+
+        List<TableIndex> indexes = metaData.indexes(connection, "app", null, "article");
+
+        assertEquals(1, indexes.size());
+        assertEquals("name", indexes.get(0).getColumnList().get(0).getColumnName());
+        assertEquals(10L, indexes.get(0).getColumnList().get(0).getSubPart());
+        assertEquals("code", indexes.get(0).getColumnList().get(1).getColumnName());
+        assertEquals(5L, indexes.get(0).getColumnList().get(1).getSubPart());
+    }
+
     private static Map<String, Object> indexRow(String indexName, String columnName, Long subPart) {
+        return indexRow(indexName, columnName, subPart, (short) 1);
+    }
+
+    private static Map<String, Object> indexRow(String indexName, String columnName, Long subPart, short ordinalPosition) {
         return Map.ofEntries(
                 Map.entry(FIELD_KEY_NAME, indexName),
                 Map.entry(FIELD_NON_UNIQUE, true),
                 Map.entry(FIELD_INDEX_TYPE, "BTREE"),
                 Map.entry(FIELD_INDEX_COMMENT, ""),
                 Map.entry(FIELD_COLUMN_NAME, columnName),
-                Map.entry(FIELD_SEQ_IN_INDEX, (short) 1),
+                Map.entry(FIELD_SEQ_IN_INDEX, ordinalPosition),
                 Map.entry(FIELD_COLLATION, "A"),
                 Map.entry(FIELD_CARDINALITY, 1L),
                 Map.entry(FIELD_SUB_PART, subPart == null ? NullValue.INSTANCE : subPart));
