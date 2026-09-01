@@ -1,6 +1,7 @@
 # MySQL TLS Fixture Matrix
 
 `connector-j-matrix.csv` pins the local unit coverage for Chat2DB's structured MySQL TLS payload against Connector/J `8.0.30` and `5.1.47`.
+`MYSQL-CONN-001/` documents the reproducible real-driver fixture for reviewer handshakes without checking secrets into the repository.
 
 The real handshake fixture remains opt-in because it needs a local TLS-enabled MySQL instance and driver jar:
 

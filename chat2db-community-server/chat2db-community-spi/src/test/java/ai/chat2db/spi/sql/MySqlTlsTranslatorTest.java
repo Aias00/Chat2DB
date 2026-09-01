@@ -396,10 +396,13 @@ class MySqlTlsTranslatorTest {
     }
 
     @Test
-    void v5VerifyIdentityAlsoVerifies() {
+    void v5VerifyIdentityIsRejectedBecauseHostnameVerificationIsNotGuaranteed() {
         Map<String, Object> p = new HashMap<>();
-        MySqlTlsTranslator.apply(ssl(MySqlTlsMode.VERIFY_IDENTITY), connectorJ5(), p);
-        assertEquals("true", p.get("verifyServerCertificate"));
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MySqlTlsTranslator.apply(ssl(MySqlTlsMode.VERIFY_IDENTITY), connectorJ5(), p));
+
+        assertEquals("datasource.tls.verifyIdentityUnsupportedConnectorJ5", exception.getCode());
+        assertTrue(p.isEmpty());
     }
 
     @Test
@@ -421,18 +424,25 @@ class MySqlTlsTranslatorTest {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                 String header = reader.readLine();
                 assertEquals("connector,jdbcDriverClass,jdbcDriver,tlsMode,expectedModeProperty,"
-                        + "expectedModeValue,expectedVerifyServerCertificate", header);
+                        + "expectedModeValue,expectedVerifyServerCertificate,expectedErrorCode", header);
                 String line;
                 while ((line = reader.readLine()) != null) {
                     String[] columns = line.split(",", -1);
-                    assertEquals(7, columns.length, () -> Arrays.toString(columns));
+                    assertEquals(8, columns.length, () -> Arrays.toString(columns));
                     DriverConfig cfg = new DriverConfig();
                     cfg.setJdbcDriverClass(columns[1]);
                     cfg.setJdbcDriver(columns[2]);
                     Map<String, Object> p = new HashMap<>();
 
-                    MySqlTlsTranslator.apply(ssl(MySqlTlsMode.valueOf(columns[3])), cfg, p);
+                    if (!columns[7].isBlank()) {
+                        BusinessException exception = assertThrows(BusinessException.class,
+                                () -> MySqlTlsTranslator.apply(ssl(MySqlTlsMode.valueOf(columns[3])), cfg, p), line);
+                        assertEquals(columns[7], exception.getCode(), line);
+                        assertTrue(p.isEmpty(), line);
+                        continue;
+                    }
 
+                    MySqlTlsTranslator.apply(ssl(MySqlTlsMode.valueOf(columns[3])), cfg, p);
                     assertEquals(columns[5], p.get(columns[4]), line);
                     if (!columns[6].isBlank()) {
                         assertEquals(columns[6], p.get("verifyServerCertificate"), line);

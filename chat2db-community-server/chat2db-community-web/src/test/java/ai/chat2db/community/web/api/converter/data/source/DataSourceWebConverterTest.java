@@ -128,7 +128,7 @@ class DataSourceWebConverterTest {
     }
 
     @Test
-    void mapsExpandedSslFieldsBetweenRequestAndResponse() {
+    void createResponseKeepsPublicSslFieldsAndRedactsSecrets() {
         DataSourceCreateRequest request = new DataSourceCreateRequest();
         SSLInfo ssl = new SSLInfo();
         ssl.setTlsMode("VERIFY_IDENTITY");
@@ -148,11 +148,47 @@ class DataSourceWebConverterTest {
 
         assertEquals("VERIFY_IDENTITY", response.getSsl().getTlsMode());
         assertEquals("JKS", response.getSsl().getTrustStoreType());
-        assertEquals("trust-store", response.getSsl().getTrustStoreBytes());
-        assertEquals("trustpass", response.getSsl().getTrustStorePassword());
         assertEquals("PKCS12", response.getSsl().getKeyStoreType());
-        assertEquals("client-store", response.getSsl().getKeyStoreBytes());
-        assertEquals("clientpass", response.getSsl().getKeyStorePassword());
+        assertNull(response.getSsl().getClientPrivateKeyPem());
+        assertNull(response.getSsl().getClientKeyPassword());
+        assertNull(response.getSsl().getTrustStoreBytes());
+        assertNull(response.getSsl().getTrustStorePassword());
+        assertNull(response.getSsl().getKeyStoreBytes());
+        assertNull(response.getSsl().getKeyStorePassword());
+        assertEquals("key", request.getSsl().getClientPrivateKeyPem());
+        assertEquals("trust-store", request.getSsl().getTrustStoreBytes());
+    }
+
+    @Test
+    void storageResponseRedactsSslSecretsWithoutRemovingPublicTlsFields() {
+        WorkspaceDataSource dataSource = new WorkspaceDataSource();
+        SSLInfo ssl = new SSLInfo();
+        ssl.setTlsMode("VERIFY_IDENTITY");
+        ssl.setCaPem("ca");
+        ssl.setClientCertPem("cert");
+        ssl.setClientPrivateKeyPem("key");
+        ssl.setClientKeyPassword("keypass");
+        ssl.setTrustStoreType("JKS");
+        ssl.setTrustStoreBytes("trust-store");
+        ssl.setTrustStorePassword("trustpass");
+        ssl.setKeyStoreType("PKCS12");
+        ssl.setKeyStoreBytes("client-store");
+        ssl.setKeyStorePassword("clientpass");
+        dataSource.setSsl(ssl);
+
+        DataSourceResponse response = DataSourceWebConverter.INSTANCE.storage2response(dataSource);
+
+        assertEquals("VERIFY_IDENTITY", response.getSsl().getTlsMode());
+        assertEquals("ca", response.getSsl().getCaPem());
+        assertEquals("cert", response.getSsl().getClientCertPem());
+        assertEquals("JKS", response.getSsl().getTrustStoreType());
+        assertEquals("PKCS12", response.getSsl().getKeyStoreType());
+        assertNull(response.getSsl().getClientPrivateKeyPem());
+        assertNull(response.getSsl().getClientKeyPassword());
+        assertNull(response.getSsl().getTrustStoreBytes());
+        assertNull(response.getSsl().getTrustStorePassword());
+        assertNull(response.getSsl().getKeyStoreBytes());
+        assertNull(response.getSsl().getKeyStorePassword());
     }
 
     @Test

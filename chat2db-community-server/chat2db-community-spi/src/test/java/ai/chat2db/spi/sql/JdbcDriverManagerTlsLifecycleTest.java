@@ -47,7 +47,7 @@ class JdbcDriverManagerTlsLifecycleTest {
         Map<String, Object> properties = translatedTrustStore();
         Path store = temporaryStore(properties);
         AtomicInteger attempts = new AtomicInteger();
-        DriverConfig config = registerDriver((url, info) -> {
+        DriverConfig config = registerDriver(() -> {
             attempts.incrementAndGet();
             assertTrue(Files.isRegularFile(store));
             return connection();
@@ -66,7 +66,7 @@ class JdbcDriverManagerTlsLifecycleTest {
         Map<String, Object> properties = translatedTrustStore();
         Path store = temporaryStore(properties);
         AtomicInteger attempts = new AtomicInteger();
-        DriverConfig config = registerDriver((url, info) -> {
+        DriverConfig config = registerDriver(() -> {
             attempts.incrementAndGet();
             assertTrue(Files.isRegularFile(store));
             throw new SQLException("TLS handshake failed");
@@ -80,9 +80,27 @@ class JdbcDriverManagerTlsLifecycleTest {
     }
 
     @Test
+    void retryFailureMessagePassesThroughMysqlTlsDiagnostics() throws Exception {
+        Map<String, Object> properties = translatedTrustStore();
+        AtomicInteger attempts = new AtomicInteger();
+        DriverConfig config = registerDriver(() -> {
+            attempts.incrementAndGet();
+            throw new SQLException("PKIX path building failed: unable to find valid certification path");
+        });
+
+        SQLException exception = assertThrows(SQLException.class, () -> JdbcDriverManager.getConnection(
+                "jdbc:mysql://localhost/test", "root", "password", config, properties));
+
+        assertEquals(2, attempts.get());
+        assertTrue(exception.getMessage().contains("TLS certificate authority is not trusted"),
+                exception.getMessage());
+        assertTrue(exception.getMessage().contains("Upload the issuing CA PEM"), exception.getMessage());
+    }
+
+    @Test
     void rejectsNonJdbcAndControlCharacterUrlsBeforeConnecting() throws Exception {
         AtomicInteger attempts = new AtomicInteger();
-        DriverConfig config = registerDriver((url, info) -> {
+        DriverConfig config = registerDriver(() -> {
             attempts.incrementAndGet();
             return connection();
         });
@@ -141,7 +159,7 @@ class JdbcDriverManagerTlsLifecycleTest {
         return new Driver() {
             @Override
             public Connection connect(String url, Properties info) throws SQLException {
-                return connector.connect(url, info);
+                return connector.connect();
             }
 
             @Override
@@ -191,6 +209,6 @@ class JdbcDriverManagerTlsLifecycleTest {
 
     @FunctionalInterface
     private interface Connector {
-        Connection connect(String url, Properties info) throws SQLException;
+        Connection connect() throws SQLException;
     }
 }

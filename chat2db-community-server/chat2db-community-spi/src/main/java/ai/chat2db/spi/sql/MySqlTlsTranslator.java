@@ -221,10 +221,12 @@ public final class MySqlTlsTranslator {
     }
 
     private static void applyV5(SSLInfo ssl, MySqlTlsMode mode, Map<String, Object> p) {
+        if (mode == MySqlTlsMode.VERIFY_IDENTITY) {
+            throw new BusinessException("datasource.tls.verifyIdentityUnsupportedConnectorJ5");
+        }
         p.put("useSSL", "true");
         p.put("requireSSL", "true");
-        p.put("verifyServerCertificate",
-                (mode == MySqlTlsMode.VERIFY_CA || mode == MySqlTlsMode.VERIFY_IDENTITY) ? "true" : "false");
+        p.put("verifyServerCertificate", mode == MySqlTlsMode.VERIFY_CA ? "true" : "false");
         applyTrustStore(ssl, p);
         applyClientStore(ssl, p);
     }

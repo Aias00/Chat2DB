@@ -3,6 +3,7 @@ package ai.chat2db.spi.sql;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.enums.datasource.MySqlTlsMode;
 import ai.chat2db.community.domain.api.model.datasource.SSLInfo;
+import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -73,11 +75,41 @@ class MySqlTlsHandshakeIntegrationTest {
         MySqlTlsTranslator.apply(ssl(), driverConfig, propertyMap);
         Properties properties = jdbcProperties(propertyMap);
 
-        try (URLClassLoader loader = new URLClassLoader(new URL[]{connectorJar.toUri().toURL()}, null);
+        try (URLClassLoader loader = new URLClassLoader(new URL[]{connectorJar.toUri().toURL()},
+                ClassLoader.getPlatformClassLoader());
              Connection connection = driver(loader, driverConfig.getJdbcDriverClass()).connect(jdbcUrl, properties)) {
             assertNotNull(connection, "Connector/J should accept the structured TLS properties");
             assertTrue(connection.isValid(5), "TLS MySQL connection should validate");
             assertFalse(mysqlSslCipher(connection).isBlank(), "MySQL session must report an active TLS cipher");
+        }
+    }
+
+    @Test
+    void configuredConnectorJarVersionSelectsExpectedTlsDialectWithoutSecrets() throws Exception {
+        Path connectorJar = connectorJar();
+        assumeTrue(Files.isRegularFile(connectorJar), CONNECTOR_JAR_ENV + " does not point to a driver jar");
+
+        DriverConfig driverConfig = new DriverConfig();
+        driverConfig.setJdbcDriverClass(envOrDefault(DRIVER_CLASS_ENV, "com.mysql.cj.jdbc.Driver"));
+        driverConfig.setJdbcDriver(connectorJar.getFileName().toString());
+
+        try (URLClassLoader loader = new URLClassLoader(new URL[]{connectorJar.toUri().toURL()},
+                ClassLoader.getPlatformClassLoader())) {
+            Driver driver = driver(loader, driverConfig.getJdbcDriverClass());
+            Map<String, Object> properties = new LinkedHashMap<>();
+
+            if (driver.getMajorVersion() < 8) {
+                BusinessException exception = assertThrows(BusinessException.class,
+                        () -> MySqlTlsTranslator.apply(ssl(MySqlTlsMode.VERIFY_IDENTITY), driverConfig, properties));
+                assertTrue(exception.getCode().contains("verifyIdentityUnsupportedConnectorJ5"));
+                assertTrue(properties.isEmpty());
+                return;
+            }
+
+            MySqlTlsTranslator.apply(ssl(MySqlTlsMode.VERIFY_IDENTITY), driverConfig, properties);
+            assertTrue(driver.getMajorVersion() >= 8, "Connector/J 8+ should use sslMode");
+            assertTrue(properties.containsKey("sslMode"));
+            assertFalse(properties.containsKey("useSSL"));
         }
     }
 
@@ -90,6 +122,12 @@ class MySqlTlsHandshakeIntegrationTest {
             caPem = Files.readString(Path.of(caPemFile));
         }
         ssl.setCaPem(caPem);
+        return ssl;
+    }
+
+    private static SSLInfo ssl(MySqlTlsMode mode) {
+        SSLInfo ssl = new SSLInfo();
+        ssl.setTlsMode(mode.name());
         return ssl;
     }
 
@@ -170,7 +208,11 @@ class MySqlTlsHandshakeIntegrationTest {
         int colon = authority.lastIndexOf(':');
         if (colon > 0 && colon < authority.length() - 1) {
             host = authority.substring(0, colon);
-            port = Integer.parseInt(authority.substring(colon + 1));
+            try {
+                port = Integer.parseInt(authority.substring(colon + 1));
+            } catch (NumberFormatException e) {
+                return null;
+            }
         }
         return new HostPort(host, port);
     }

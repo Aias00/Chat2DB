@@ -89,7 +89,14 @@ public class JdbcDriverManager {
                 }
                 return connection;
             } catch (SQLException sqlException) {
-                Connection con = tryConnectionAgain(driverEntry, connectionUrl, info);
+                Connection con;
+                try {
+                    con = tryConnectionAgain(driverEntry, connectionUrl, info);
+                } catch (SQLException retryException) {
+                    throw new SQLException(String.format("Cannot create connection (%s)",
+                                    MySqlTlsTranslator.diagnosticMessage(retryException, info)), SQL_STATE_CODE,
+                            retryException);
+                }
 
                 if (Objects.isNull(con)) {
                     throw new SQLException(String.format("Cannot create connection (%s)",
