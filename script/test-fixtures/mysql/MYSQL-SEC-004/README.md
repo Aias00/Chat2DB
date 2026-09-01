@@ -28,3 +28,8 @@
 12. Verify CURRENT_ROLE() shows active roles.
 13. On MySQL 5.7, verify role management entry points are not shown.
 14. Verify role deletion requires entering the role name for confirmation.
+
+`SET ROLE` is intentionally not exposed as an account-management command in
+this fixture. Role activation is session-local in MySQL and remains blocked
+until Chat2DB has fixed-session execution infrastructure that can guarantee the
+same backend connection is reused for the affected console/session.

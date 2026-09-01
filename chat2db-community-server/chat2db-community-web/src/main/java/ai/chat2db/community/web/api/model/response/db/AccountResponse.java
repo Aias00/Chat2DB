@@ -13,5 +13,9 @@ public class AccountResponse {
     private String authenticationPlugin;
     private Boolean locked;
     private Boolean role;
+    private Boolean adminOption;
+    private List<AccountInfo> directRoles;
+    private List<AccountInfo> inheritedRoles;
+    private List<AccountInfo> effectiveRoles;
     private List<AccountInfo> defaultRoles;
 }

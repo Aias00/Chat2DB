@@ -52,6 +52,10 @@ export interface Account {
   authenticationPlugin?: string;
   locked?: boolean;
   role?: boolean;
+  adminOption?: boolean;
+  directRoles?: Account[];
+  inheritedRoles?: Account[];
+  effectiveRoles?: Account[];
   defaultRoles?: Account[];
 }
 

@@ -1,7 +1,10 @@
 package ai.chat2db.plugin.mysql.account;
 
+import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
+import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import ai.chat2db.community.domain.api.model.account.AccountManagerCapability;
+import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationHandler;
@@ -19,12 +22,15 @@ import java.util.Objects;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_CURRENT_ROLE;
 import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_CURRENT_USER;
+import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_DEFAULT_ROLE_ACCOUNTS;
 import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_DEFAULT_ROLES;
 import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_MYSQL_USERS_WITH_LOCK;
 import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_ROLE_ACCOUNTS;
+import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.SQL_SELECT_ROLE_EDGES;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SELECT_ACCOUNT_LOCKED_MYSQL_USER;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SELECT_USER_HOST_MYSQL_USER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MysqlAccountManagerTest {
 
@@ -44,6 +50,21 @@ class MysqlAccountManagerTest {
     }
 
     @Test
+    void previewRejectsRoleLifecycleCommandsBeforeMysql8() {
+        MysqlAccountManager manager = new MysqlAccountManager();
+        AccountOperationRequest command = new AccountOperationRequest();
+        command.setActionType(AccountActionTypeEnum.CREATE_ROLE.name());
+        command.setUser("reader");
+        command.setHost("%");
+
+        BusinessException error = assertThrows(
+                BusinessException.class,
+                () -> manager.preview(connection("MySQL", 5, "5.7.44", this::emptyRows), command));
+
+        assertEquals("mysql.account.roleUnsupported", error.getCode());
+    }
+
+    @Test
     void listAccountsMarksRolesAndReturnsStructuredDefaultRoles() {
         MysqlAccountManager manager = new MysqlAccountManager();
 
@@ -54,6 +75,9 @@ class MysqlAccountManagerTest {
         assertEquals("%", accounts.get(0).getHost());
         assertEquals(Boolean.FALSE, accounts.get(0).getRole());
         assertEquals(List.of(role("reader", "%")), accounts.get(0).getDefaultRoles());
+        assertEquals(List.of(role("reader", "%", true)), accounts.get(0).getDirectRoles());
+        assertEquals(List.of(), accounts.get(0).getInheritedRoles());
+        assertEquals(List.of(role("reader", "%", true)), accounts.get(0).getEffectiveRoles());
         assertEquals("reader", accounts.get(1).getUser());
         assertEquals("%", accounts.get(1).getHost());
         assertEquals(Boolean.TRUE, accounts.get(1).getRole());
@@ -70,17 +94,53 @@ class MysqlAccountManagerTest {
         assertEquals("alice", accounts.get(0).getUser());
         assertEquals(Boolean.FALSE, accounts.get(0).getRole());
         assertEquals(List.of(role("analyst_role", "%")), accounts.get(0).getDefaultRoles());
+        assertEquals(List.of(role("analyst_role", "%", true)), accounts.get(0).getDirectRoles());
+        assertEquals(List.of(role("reader_role", "%", false)), accounts.get(0).getInheritedRoles());
+        assertEquals(List.of(role("analyst_role", "%", true), role("reader_role", "%", false)), accounts.get(0).getEffectiveRoles());
         assertEquals("analyst_role", accounts.get(1).getUser());
         assertEquals(Boolean.TRUE, accounts.get(1).getRole());
+        assertEquals(List.of(role("reader_role", "%", false)), accounts.get(1).getDirectRoles());
         assertEquals(List.of(), accounts.get(1).getDefaultRoles());
         assertEquals("cycle_role", accounts.get(2).getUser());
         assertEquals(Boolean.TRUE, accounts.get(2).getRole());
+        assertEquals(List.of(role("cycle_role", "%", false)), accounts.get(2).getDirectRoles());
+        assertEquals(List.of(), accounts.get(2).getInheritedRoles());
         assertEquals(List.of(role("cycle_role", "%")), accounts.get(2).getDefaultRoles());
         assertEquals("reader_role", accounts.get(3).getUser());
         assertEquals(Boolean.TRUE, accounts.get(3).getRole());
         assertEquals("worker", accounts.get(4).getUser());
         assertEquals(Boolean.FALSE, accounts.get(4).getRole());
         assertEquals(List.of(), accounts.get(4).getDefaultRoles());
+    }
+
+    @Test
+    void listAccountsRefreshesRoleEdgesAfterRevocation() {
+        MysqlAccountManager manager = new MysqlAccountManager();
+
+        List<AccountInfo> accounts = manager.listAccounts(connection("MySQL", 8, "8.0.35", this::revokedRoleRows));
+
+        assertEquals(2, accounts.size());
+        assertEquals("alice", accounts.get(0).getUser());
+        assertEquals(List.of(), accounts.get(0).getDirectRoles());
+        assertEquals(List.of(), accounts.get(0).getInheritedRoles());
+        assertEquals(List.of(), accounts.get(0).getEffectiveRoles());
+        assertEquals(List.of(), accounts.get(0).getDefaultRoles());
+        assertEquals("reader", accounts.get(1).getUser());
+        assertEquals(Boolean.TRUE, accounts.get(1).getRole());
+    }
+
+    @Test
+    void listAccountsMarksRolesDiscoveredFromDefaultRoles() {
+        MysqlAccountManager manager = new MysqlAccountManager();
+
+        List<AccountInfo> accounts = manager.listAccounts(connection("MySQL", 8, "8.0.35", this::defaultOnlyRoleRows));
+
+        assertEquals(2, accounts.size());
+        assertEquals("alice", accounts.get(0).getUser());
+        assertEquals(Boolean.FALSE, accounts.get(0).getRole());
+        assertEquals(List.of(role("default_only", "%")), accounts.get(0).getDefaultRoles());
+        assertEquals("default_only", accounts.get(1).getUser());
+        assertEquals(Boolean.TRUE, accounts.get(1).getRole());
     }
 
     private List<Row> capabilityRows(String sql, List<String> params) {
@@ -104,6 +164,17 @@ class MysqlAccountManagerTest {
         }
         if (Objects.equals(sql, SQL_SELECT_ROLE_ACCOUNTS)) {
             return List.of(row(Map.of("role_user", "reader", "role_host", "%")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLE_ACCOUNTS)) {
+            return List.of();
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_EDGES)) {
+            return List.of(row(Map.of(
+                    "role_user", "reader",
+                    "role_host", "%",
+                    "grantee_user", "alice",
+                    "grantee_host", "%",
+                    "admin_option", "Y")));
         }
         if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("alice", "%"))) {
             return List.of(row("reader", "%"));
@@ -129,11 +200,74 @@ class MysqlAccountManagerTest {
                     row(Map.of("role_user", "analyst_role", "role_host", "%")),
                     row(Map.of("role_user", "cycle_role", "role_host", "%")));
         }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLE_ACCOUNTS)) {
+            return List.of();
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_EDGES)) {
+            return List.of(
+                    row(Map.of(
+                            "role_user", "analyst_role",
+                            "role_host", "%",
+                            "grantee_user", "alice",
+                            "grantee_host", "%",
+                            "admin_option", "Y")),
+                    row(Map.of(
+                            "role_user", "reader_role",
+                            "role_host", "%",
+                            "grantee_user", "analyst_role",
+                            "grantee_host", "%",
+                            "admin_option", "N")),
+                    row(Map.of(
+                            "role_user", "cycle_role",
+                            "role_host", "%",
+                            "grantee_user", "cycle_role",
+                            "grantee_host", "%",
+                            "admin_option", "N")));
+        }
         if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("alice", "%"))) {
             return List.of(row("analyst_role", "%"));
         }
         if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("cycle_role", "%"))) {
             return List.of(row("cycle_role", "%"));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES)) {
+            return List.of();
+        }
+        return capabilityRows(sql, params);
+    }
+
+    private List<Row> revokedRoleRows(String sql, List<String> params) {
+        if (Objects.equals(sql, SQL_SELECT_MYSQL_USERS_WITH_LOCK)) {
+            return List.of(
+                    row(Map.of("User", "alice", "Host", "%", "plugin", "caching_sha2_password", "account_locked", "N")),
+                    row(Map.of("User", "reader", "Host", "%", "plugin", "", "account_locked", "Y")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_ACCOUNTS)) {
+            return List.of(row(Map.of("role_user", "reader", "role_host", "%")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLE_ACCOUNTS)) {
+            return List.of();
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_EDGES) || Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES)) {
+            return List.of();
+        }
+        return capabilityRows(sql, params);
+    }
+
+    private List<Row> defaultOnlyRoleRows(String sql, List<String> params) {
+        if (Objects.equals(sql, SQL_SELECT_MYSQL_USERS_WITH_LOCK)) {
+            return List.of(
+                    row(Map.of("User", "alice", "Host", "%", "plugin", "caching_sha2_password", "account_locked", "N")),
+                    row(Map.of("User", "default_only", "Host", "%", "plugin", "", "account_locked", "Y")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_ACCOUNTS) || Objects.equals(sql, SQL_SELECT_ROLE_EDGES)) {
+            return List.of();
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLE_ACCOUNTS)) {
+            return List.of(row(Map.of("role_user", "default_only", "role_host", "%")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("alice", "%"))) {
+            return List.of(row("default_only", "%"));
         }
         if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES)) {
             return List.of();
@@ -191,11 +325,19 @@ class MysqlAccountManagerTest {
     }
 
     private AccountInfo role(String user, String host) {
+        return role(user, host, null);
+    }
+
+    private AccountInfo role(String user, String host, Boolean adminOption) {
         AccountInfo role = new AccountInfo();
         role.setUser(user);
         role.setHost(host);
         role.setRole(Boolean.TRUE);
+        role.setAdminOption(adminOption);
         role.setDisplayName(user + "@" + host);
+        role.setDirectRoles(List.of());
+        role.setInheritedRoles(List.of());
+        role.setEffectiveRoles(List.of());
         role.setDefaultRoles(List.of());
         return role;
     }

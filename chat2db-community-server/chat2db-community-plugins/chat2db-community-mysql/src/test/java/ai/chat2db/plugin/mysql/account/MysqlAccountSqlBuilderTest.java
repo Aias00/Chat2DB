@@ -168,6 +168,11 @@ class MysqlAccountSqlBuilderTest {
                 MysqlAccountSqlBuilder.buildDisplaySql(command));
     }
 
+    @Test
+    void setRoleIsNotExposedUntilFixedSessionExecutionExists() {
+        assertThrows(BusinessException.class, () -> AccountActionTypeEnum.from("SET_ROLE"));
+    }
+
     private AccountOperationRequest base(AccountActionTypeEnum actionType) {
         AccountOperationRequest command = new AccountOperationRequest();
         command.setActionType(actionType.name());

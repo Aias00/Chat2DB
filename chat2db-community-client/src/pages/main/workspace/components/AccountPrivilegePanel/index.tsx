@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, ConfigProvider, Empty, Form, Input, Modal, Select, Space, Spin, Tooltip, theme } from 'antd';
+import { Alert, Button, Checkbox, ConfigProvider, Empty, Form, Input, Modal, Select, Space, Spin, Tag, Tooltip, theme } from 'antd';
 import { DeleteOutlined, KeyOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { staticMessage } from '@chat2db/ui';
 import i18n from '@/i18n';
@@ -55,6 +55,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const [databaseOptions, setDatabaseOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [tableOptions, setTableOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [accountOptions, setAccountOptions] = useState<Account[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [form] = Form.useForm();
@@ -84,16 +85,73 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const watchedGrantOption = Form.useWatch('grantOption', form);
   const watchedActionType = Form.useWatch('actionType', form);
 
-  const selectedAccount =
-    uniqueData?.user && uniqueData?.host
-      ? {
-          user: uniqueData.user,
-          host: uniqueData.host,
-          role: uniqueData.role,
-          defaultRoles: uniqueData.defaultRoles,
-        }
-      : null;
+  const selectedAccountFromTree = useMemo(
+    () =>
+      uniqueData?.user && uniqueData?.host
+        ? {
+            user: uniqueData.user,
+            host: uniqueData.host,
+            displayName: uniqueData.popoverContent || `${uniqueData.user}@${uniqueData.host}`,
+            role: uniqueData.role,
+            directRoles: uniqueData.directRoles,
+            inheritedRoles: uniqueData.inheritedRoles,
+            effectiveRoles: uniqueData.effectiveRoles,
+            defaultRoles: uniqueData.defaultRoles,
+          }
+        : null,
+    [
+      uniqueData?.user,
+      uniqueData?.host,
+      uniqueData?.popoverContent,
+      uniqueData?.role,
+      uniqueData?.directRoles,
+      uniqueData?.inheritedRoles,
+      uniqueData?.effectiveRoles,
+      uniqueData?.defaultRoles,
+    ],
+  );
+  const selectedAccount = useMemo(() => {
+    if (!selectedAccountFromTree) {
+      return null;
+    }
+    if (!accountsLoaded) {
+      return selectedAccountFromTree;
+    }
+    const isSelectedAccount = (account: Account) =>
+      account.user === selectedAccountFromTree.user && account.host === selectedAccountFromTree.host;
+    return accountOptions.find(isSelectedAccount) || null;
+  }, [accountOptions, accountsLoaded, selectedAccountFromTree]);
   const roleManagementSupported = capability?.roleManagementSupported === true;
+  const roleReadbackGroups = useMemo(
+    () => [
+      {
+        key: 'direct',
+        label: i18n('workspace.databaseAccount.directRoles'),
+        roles: selectedAccount?.directRoles || [],
+      },
+      {
+        key: 'inherited',
+        label: i18n('workspace.databaseAccount.inheritedRoles'),
+        roles: selectedAccount?.inheritedRoles || [],
+      },
+      {
+        key: 'effective',
+        label: i18n('workspace.databaseAccount.effectiveRoles'),
+        roles: selectedAccount?.effectiveRoles || [],
+      },
+      {
+        key: 'default',
+        label: i18n('workspace.databaseAccount.defaultRoles'),
+        roles: selectedAccount?.defaultRoles || [],
+      },
+    ],
+    [
+      selectedAccount?.directRoles,
+      selectedAccount?.inheritedRoles,
+      selectedAccount?.effectiveRoles,
+      selectedAccount?.defaultRoles,
+    ],
+  );
   const roleOptions = useMemo(
     () =>
       accountOptions
@@ -192,16 +250,20 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const loadAccounts = () => {
     if (!dataSourceId) {
       setAccountOptions([]);
+      setAccountsLoaded(false);
       return Promise.resolve([]);
     }
+    setAccountsLoaded(false);
     return accountAdminService
       .list({ dataSourceId })
       .then((accounts) => {
         setAccountOptions(accounts || []);
+        setAccountsLoaded(true);
         return accounts || [];
       })
       .catch(() => {
         setAccountOptions([]);
+        setAccountsLoaded(false);
         return [];
       });
   };
@@ -581,7 +643,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
               >
                 <Button
                   danger
-                  disabled={!selectedAccount}
+                  disabled={!selectedAccount || (selectedAccount.role && !roleManagementSupported)}
                   icon={<DeleteOutlined />}
                   onClick={() =>
                     handleSelectedAccountCommand(
@@ -591,6 +653,28 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                 />
               </Tooltip>
             </Space>
+            {roleManagementSupported && (
+              <section className={styles.roleReadback}>
+                {roleReadbackGroups.map((group) => (
+                  <div key={group.key} className={styles.roleReadbackRow}>
+                    <span className={styles.roleReadbackLabel}>{group.label}</span>
+                    <div className={styles.roleReadbackValues}>
+                      {group.roles.length ? (
+                        group.roles.map((role) => (
+                          <Tag key={`${group.key}-${roleValue(role)}`} className={styles.roleReadbackTag}>
+                            {formatRoleLabel(role)}
+                          </Tag>
+                        ))
+                      ) : (
+                        <span className={styles.roleReadbackEmpty}>
+                          {i18n('workspace.databaseAccount.noRoleReadback')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
             <Form form={form} layout="vertical" className={styles.privilegeForm}>
               <Form.Item name="actionType" label={i18n('workspace.databaseAccount.operation')} rules={[{ required: true }]}>
                 <Select
@@ -854,6 +938,11 @@ function isExecuteConfirmReady(command: AccountCommand | undefined | null, confi
 
 function roleValue(account: Account) {
   return JSON.stringify({ user: account.user, host: account.host, displayName: account.displayName, role: true });
+}
+
+function formatRoleLabel(account: Account) {
+  const label = account.displayName || `${account.user}@${account.host}`;
+  return account.adminOption ? `${label} (${i18n('workspace.databaseAccount.adminOption')})` : label;
 }
 
 function parseRoleValue(value?: string): Account | null {

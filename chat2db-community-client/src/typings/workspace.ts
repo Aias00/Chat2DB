@@ -106,6 +106,10 @@ export interface IBoundInfo {
   user?: string;
   host?: string;
   role?: boolean;
+  roleManagementSupported?: boolean;
+  directRoles?: Account[];
+  inheritedRoles?: Account[];
+  effectiveRoles?: Account[];
   defaultRoles?: Account[];
   popoverContent?: string;
   ddl?: string;

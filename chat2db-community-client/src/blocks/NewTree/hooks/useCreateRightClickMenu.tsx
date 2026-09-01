@@ -448,6 +448,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.CreateRole]: {
         text: i18n('workspace.databaseAccount.createRole'),
         icon: 'icon-users',
+        discard: extraParams.roleManagementSupported !== true,
         handle: () => {
           createAccountForm.resetFields();
           staticModal.confirm({

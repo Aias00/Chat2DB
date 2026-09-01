@@ -15,9 +15,12 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.PreparedStatement;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlAccountManageConstants.*;
@@ -127,6 +130,8 @@ public class MysqlAccountManager implements IAccountManager {
     private List<AccountInfo> queryAccounts(Connection connection, boolean includeLocked) throws SQLException {
         List<AccountInfo> accounts = new ArrayList<>();
         Set<String> roleAccountKeys = queryRoleAccountKeys(connection);
+        List<RoleEdge> roleEdges = queryRoleEdges(connection);
+        Map<String, List<RoleEdge>> roleEdgesByGrantee = groupRoleEdgesByGrantee(roleEdges);
         String sql = includeLocked ? SQL_SELECT_MYSQL_USERS_WITH_LOCK : SQL_SELECT_MYSQL_USERS;
         try (PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet resultSet = statement.executeQuery()) {
@@ -141,6 +146,11 @@ public class MysqlAccountManager implements IAccountManager {
                 }
                 account.setDisplayName(account.getUser() + ACCOUNT_DISPLAY_NAME_SEPARATOR + account.getHost());
                 account.setRole(roleAccountKeys.contains(accountKey(account.getUser(), account.getHost())));
+                List<AccountInfo> directRoles = directRoles(roleEdgesByGrantee, account.getUser(), account.getHost());
+                account.setDirectRoles(directRoles);
+                List<AccountInfo> inheritedRoles = inheritedRoles(roleEdgesByGrantee, directRoles);
+                account.setInheritedRoles(inheritedRoles);
+                account.setEffectiveRoles(effectiveRoles(directRoles, inheritedRoles));
                 account.setDefaultRoles(queryDefaultRoles(connection, account.getUser(), account.getHost()));
                 accounts.add(account);
             }
@@ -207,15 +217,106 @@ public class MysqlAccountManager implements IAccountManager {
 
     private Set<String> queryRoleAccountKeys(Connection connection) {
         Set<String> roles = new HashSet<>();
-        try (PreparedStatement statement = connection.prepareStatement(SQL_SELECT_ROLE_ACCOUNTS);
+        queryRoleAccountKeys(connection, SQL_SELECT_ROLE_ACCOUNTS, roles);
+        queryRoleAccountKeys(connection, SQL_SELECT_DEFAULT_ROLE_ACCOUNTS, roles);
+        return roles;
+    }
+
+    private void queryRoleAccountKeys(Connection connection, String sql, Set<String> roles) {
+        try (PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
                 roles.add(accountKey(safeGetString(resultSet, FIELD_ROLE_USER), safeGetString(resultSet, FIELD_ROLE_HOST)));
             }
         } catch (SQLException e) {
-            return Set.of();
+            return;
+        }
+    }
+
+    private List<RoleEdge> queryRoleEdges(Connection connection) {
+        List<RoleEdge> edges = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(SQL_SELECT_ROLE_EDGES);
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                edges.add(new RoleEdge(
+                        safeGetString(resultSet, FIELD_ROLE_USER),
+                        safeGetString(resultSet, FIELD_ROLE_HOST),
+                        safeGetString(resultSet, FIELD_GRANTEE_USER),
+                        safeGetString(resultSet, FIELD_GRANTEE_HOST),
+                        parseBoolean(safeGetString(resultSet, FIELD_ADMIN_OPTION))));
+            }
+        } catch (SQLException e) {
+            return List.of();
+        }
+        return edges;
+    }
+
+    private Map<String, List<RoleEdge>> groupRoleEdgesByGrantee(List<RoleEdge> roleEdges) {
+        Map<String, List<RoleEdge>> result = new LinkedHashMap<>();
+        for (RoleEdge edge : roleEdges) {
+            result.computeIfAbsent(edge.granteeKey(), ignored -> new ArrayList<>()).add(edge);
+        }
+        return result;
+    }
+
+    private List<AccountInfo> directRoles(Map<String, List<RoleEdge>> roleEdgesByGrantee, String user, String host) {
+        List<RoleEdge> edges = roleEdgesByGrantee.get(accountKey(user, host));
+        if (edges == null || edges.isEmpty()) {
+            return List.of();
+        }
+        List<AccountInfo> roles = new ArrayList<>();
+        for (RoleEdge edge : edges) {
+            roles.add(roleAccount(edge.roleUser(), edge.roleHost(), edge.adminOption()));
         }
         return roles;
+    }
+
+    private List<AccountInfo> inheritedRoles(Map<String, List<RoleEdge>> roleEdgesByGrantee, List<AccountInfo> directRoles) {
+        if (directRoles == null || directRoles.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> directRoleKeys = new HashSet<>();
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        for (AccountInfo directRole : directRoles) {
+            String key = accountKey(directRole.getUser(), directRole.getHost());
+            if (directRoleKeys.add(key)) {
+                pending.add(key);
+            }
+        }
+
+        Set<String> visited = new HashSet<>(directRoleKeys);
+        Map<String, AccountInfo> inherited = new LinkedHashMap<>();
+        while (!pending.isEmpty()) {
+            String granteeKey = pending.removeFirst();
+            List<RoleEdge> edges = roleEdgesByGrantee.get(granteeKey);
+            if (edges == null) {
+                continue;
+            }
+            for (RoleEdge edge : edges) {
+                String roleKey = edge.roleKey();
+                if (directRoleKeys.contains(roleKey)) {
+                    visited.add(roleKey);
+                    continue;
+                }
+                if (visited.add(roleKey)) {
+                    inherited.put(roleKey, roleAccount(edge.roleUser(), edge.roleHost(), edge.adminOption()));
+                    pending.add(roleKey);
+                }
+            }
+        }
+        return List.copyOf(inherited.values());
+    }
+
+    private List<AccountInfo> effectiveRoles(List<AccountInfo> directRoles, List<AccountInfo> inheritedRoles) {
+        Map<String, AccountInfo> roles = new LinkedHashMap<>();
+        for (AccountInfo role : directRoles) {
+            roles.put(accountKey(role.getUser(), role.getHost()), role);
+        }
+        for (AccountInfo role : inheritedRoles) {
+            roles.putIfAbsent(accountKey(role.getUser(), role.getHost()), role);
+        }
+        return List.copyOf(roles.values());
     }
 
     private List<AccountInfo> parseRoleAccounts(String value) {
@@ -257,11 +358,19 @@ public class MysqlAccountManager implements IAccountManager {
     }
 
     private AccountInfo roleAccount(String user, String host) {
+        return roleAccount(user, host, null);
+    }
+
+    private AccountInfo roleAccount(String user, String host, Boolean adminOption) {
         AccountInfo role = new AccountInfo();
         role.setUser(user);
         role.setHost(host);
         role.setDisplayName(user + ACCOUNT_DISPLAY_NAME_SEPARATOR + host);
         role.setRole(Boolean.TRUE);
+        role.setAdminOption(adminOption);
+        role.setDirectRoles(List.of());
+        role.setInheritedRoles(List.of());
+        role.setEffectiveRoles(List.of());
         role.setDefaultRoles(List.of());
         return role;
     }
@@ -275,6 +384,22 @@ public class MysqlAccountManager implements IAccountManager {
             return resultSet.getString(column);
         } catch (SQLException e) {
             return null;
+        }
+    }
+
+    private boolean parseBoolean(String value) {
+        return StringUtils.equalsAnyIgnoreCase(StringUtils.trimToEmpty(value), "Y", "YES", "1", "TRUE");
+    }
+
+    private record RoleEdge(String roleUser, String roleHost, String granteeUser, String granteeHost,
+                            Boolean adminOption) {
+
+        private String roleKey() {
+            return StringUtils.defaultString(roleUser) + "\0" + StringUtils.defaultString(roleHost);
+        }
+
+        private String granteeKey() {
+            return StringUtils.defaultString(granteeUser) + "\0" + StringUtils.defaultString(granteeHost);
         }
     }
 }

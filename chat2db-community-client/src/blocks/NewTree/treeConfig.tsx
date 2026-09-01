@@ -255,16 +255,22 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
       return new Promise((r, j) => {
         const { dataSourceId, databaseType } = extraParams;
         const { supportDatabase, supportSchema } = getDatabaseSupport(databaseType);
-        const accountNode: TreeNodeData | null = canUseAccountManage(databaseType)
-          ? {
-              key: treeConfig[TreeNodeType.DATABASE_ACCOUNTS].createTreeNodeKey!({ dataSourceId }),
-              originalTitle: i18n('workspace.databaseAccount.title'),
-              title: null,
-              treeNodeType: TreeNodeType.DATABASE_ACCOUNTS,
-              isLeaf: false,
-              extraParams,
-            }
-          : null;
+        const accountNodePromise: Promise<TreeNodeData | null> = canUseAccountManage(databaseType)
+          ? accountAdminService
+              .capability({ dataSourceId })
+              .catch(() => null)
+              .then((capability) => ({
+                key: treeConfig[TreeNodeType.DATABASE_ACCOUNTS].createTreeNodeKey!({ dataSourceId }),
+                originalTitle: i18n('workspace.databaseAccount.title'),
+                title: null,
+                treeNodeType: TreeNodeType.DATABASE_ACCOUNTS,
+                isLeaf: false,
+                extraParams: {
+                  ...extraParams,
+                  roleManagementSupported: capability?.roleManagementSupported === true,
+                },
+              }))
+          : Promise.resolve(null);
         if (supportDatabase === false && supportSchema === false) {
           // No database or schema level at all (Firebird, IoTDB, ...): the
           // connection itself is the namespace, so show the object folders
@@ -314,17 +320,26 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
             },
             createSaveConsolesNode(nodeExtraParams),
           ];
-          if (accountNode) {
-            data.push(accountNode);
-          }
-          r(data);
+          accountNodePromise
+            .then((accountNode) => {
+              if (accountNode) {
+                data.push(accountNode);
+              }
+              r(data);
+            })
+            .catch(() => {
+              r(data);
+            });
           return;
         }
         if (supportDatabase === false) {
-          connectionService
-            .getSchemaList(extraParams)
+          Promise.all([
+            connectionService.getSchemaList(extraParams).then((res) => res || []),
+            accountNodePromise,
+          ])
             .then((res) => {
-              const data: TreeNodeData[] = res.map((t: any) => {
+              const [schemaList, accountNode] = res;
+              const data: TreeNodeData[] = schemaList.map((t: any) => {
                 const key = treeConfig[TreeNodeType.SCHEMA].createTreeNodeKey!({
                   dataSourceId,
                   schemaName: t.name,
@@ -351,10 +366,15 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
               j();
             });
         } else {
-          connectionService
-            .getDatabaseList({ dataSourceId: extraParams.dataSourceId, refresh: extraParams.refresh })
+          Promise.all([
+            connectionService
+              .getDatabaseList({ dataSourceId: extraParams.dataSourceId, refresh: extraParams.refresh })
+              .then((res) => res || []),
+            accountNodePromise,
+          ])
             .then((res) => {
-              const data: TreeNodeData[] = res?.map((t: any) => {
+              const [databaseList, accountNode] = res;
+              const data: TreeNodeData[] = databaseList.map((t: any) => {
                 const key = treeConfig[TreeNodeType.DATABASE].createTreeNodeKey!({
                   dataSourceId,
                   databaseName: t.name,
@@ -407,6 +427,10 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
             user: account.user,
             host: account.host,
             role: account.role,
+            roleManagementSupported: extraParams.roleManagementSupported === true,
+            directRoles: account.directRoles,
+            inheritedRoles: account.inheritedRoles,
+            effectiveRoles: account.effectiveRoles,
             defaultRoles: account.defaultRoles,
             popoverContent: account.displayName,
           },
