@@ -1,5 +1,7 @@
 package ai.chat2db.community.domain.api.service.db;
 
+import ai.chat2db.community.domain.api.model.metadata.Event;
+
 import java.util.List;
 import java.util.Map;
 
@@ -17,6 +19,16 @@ public interface IDbEventService {
      * @return event maps (EVENT_NAME, STATUS, EVENT_TYPE, schedule fields, etc.).
      */
     List<Map<String, Object>> list(String databaseName);
+
+    /**
+     * Returns metadata and editable DDL for a single event.
+     *
+     * @param databaseName the database name.
+     * @param schemaName   optional schema name for dialects that use schemas.
+     * @param eventName    the event name.
+     * @return event metadata, or null when no matching event exists.
+     */
+    Event detail(String databaseName, String schemaName, String eventName);
 
     /**
      * Returns the scheduler state and whether events are missing.

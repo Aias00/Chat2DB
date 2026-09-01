@@ -1,5 +1,6 @@
 package ai.chat2db.community.web.api.controller;
 
+import ai.chat2db.community.domain.api.model.metadata.Event;
 import ai.chat2db.community.domain.api.service.db.IDbEventService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
@@ -47,6 +48,17 @@ public class DbEventController {
     @GetMapping("/scheduler_status")
     public DataResult<Map<String, Object>> schedulerStatus(@Valid DataSourceBaseRequest request) {
         return DataResult.of(eventService.schedulerStatus(request.getDatabaseName()));
+    }
+
+    /**
+     * Gets a database event and its editable DDL.
+     * <p>
+     * Endpoint: {@code GET /api/rdb/event/detail?dataSourceId=1&databaseName=xxx&eventName=yyy}.
+     */
+    @GetMapping("/detail")
+    public DataResult<Event> detail(@Valid EventNameRequest request) {
+        return DataResult.of(eventService.detail(
+                request.getDatabaseName(), request.getSchemaName(), request.getEventName()));
     }
 
     /**

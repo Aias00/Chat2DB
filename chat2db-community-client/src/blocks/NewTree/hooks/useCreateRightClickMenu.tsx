@@ -27,7 +27,7 @@ import { staticMessage, staticModal } from '@chat2db/ui';
 import { deleteTable } from '../functions/deleteTable';
 import { generateJavaClass } from '../functions/generateJavaClass';
 import { neatenMoveToGroup } from '../functions/moveToGroup';
-import { editView, openFunction, openProcedure, openTrigger, openView } from '../functions/openAsyncSql';
+import { editView, openCreateEvent, openEvent, openFunction, openProcedure, openTrigger, openView } from '../functions/openAsyncSql';
 import { handelPinTable } from '../functions/pinTable';
 import { openSchemaSyncModal } from '../functions/schemaSync';
 import { viewDDL } from '../functions/viewDDL';
@@ -270,45 +270,6 @@ export const useCreateRightClickMenu = () => {
       });
     };
 
-    const openEventTemplate = ({
-      dataSourceId: dsId,
-      databaseName: dbName,
-      eventName,
-    }: {
-      dataSourceId: number;
-      databaseName: string;
-      eventName?: string;
-    }) => {
-      const isNew = !eventName;
-      const template = isNew
-        ? `CREATE EVENT \`new_event\`
-ON SCHEDULE EVERY 1 DAY
-STARTS CURRENT_TIMESTAMP
-DO
-BEGIN
-  -- event body
-END;`
-        : `SHOW CREATE EVENT \`${dbName}\`.\`${eventName}\`;`;
-      addWorkspaceTab({
-        id: ['mysql-event', dsId, dbName, eventName || 'new'].join('-'),
-        type: WorkspaceTabType.CONSOLE,
-        title: isNew ? i18n('workspace.menu.createEvent') : eventName,
-        uniqueData: {
-          ...extraParams,
-          databaseName: dbName,
-        },
-      });
-      const tabId = ['mysql-event', dsId, dbName, eventName || 'new'].join('-');
-      // The editor instance registers asynchronously after addWorkspaceTab; appendConsole
-      // silently drops content when the editor is not mounted yet, so defer the fill.
-      window.setTimeout(() => {
-        appendConsole({
-          id: tabId,
-          content: template,
-        });
-      }, 300);
-    };
-
     const setEventEnabled = ({
       dataSourceId: dsId,
       databaseName: dbName,
@@ -480,7 +441,7 @@ END;`
         text: i18n('workspace.menu.createEvent'),
         icon: 'icon-file-add',
         handle: () => {
-          openEventTemplate({ treeNodeData, addWorkspaceTab, dataSourceId, databaseName: originalTitle });
+          openCreateEvent({ treeNodeData, addWorkspaceTab });
         },
       },
 
@@ -488,13 +449,7 @@ END;`
         text: i18n('workspace.menu.openEvent'),
         icon: 'icon-file-text',
         handle: () => {
-          openEventTemplate({
-            treeNodeData,
-            addWorkspaceTab,
-            dataSourceId,
-            databaseName: extraParams.databaseName,
-            eventName: originalTitle,
-          });
+          openEvent({ treeNodeData, addWorkspaceTab });
         },
       },
 
@@ -502,10 +457,11 @@ END;`
         text: i18n('workspace.menu.enableEvent'),
         icon: 'icon-check',
         handle: () => {
+          const eventName = extraParams.eventName || treeNodeData.originalTitle;
           setEventEnabled({
-            dataSourceId,
+            dataSourceId: dataSourceId!,
             databaseName: extraParams.databaseName,
-            eventName: originalTitle,
+            eventName,
             enabled: true,
             refresh: refreshAfterDelete,
           });
@@ -516,10 +472,11 @@ END;`
         text: i18n('workspace.menu.disableEvent'),
         icon: 'icon-pause',
         handle: () => {
+          const eventName = extraParams.eventName || treeNodeData.originalTitle;
           setEventEnabled({
-            dataSourceId,
+            dataSourceId: dataSourceId!,
             databaseName: extraParams.databaseName,
-            eventName: originalTitle,
+            eventName,
             enabled: false,
             refresh: refreshAfterDelete,
           });
@@ -531,14 +488,15 @@ END;`
         icon: 'icon-delete',
         danger: true,
         handle: () => {
+          const eventName = extraParams.eventName || treeNodeData.originalTitle;
           openUnifiedConfirmationModal({
             title: i18n('workspace.menu.dropEvent'),
-            needInputConfirmText: originalTitle,
+            needInputConfirmText: eventName,
             onOk: () => {
               return sqlService
-                .getEventDropSql({ dataSourceId, databaseName: extraParams.databaseName, eventName: originalTitle })
+                .getEventDropSql({ dataSourceId: dataSourceId!, databaseName: extraParams.databaseName, eventName })
                 .then((sql) => {
-                return sqlService.executeDDL({ dataSourceId, sql }).then(() => {
+                return sqlService.executeDDL({ dataSourceId: dataSourceId!, sql }).then(() => {
                   refreshAfterDelete();
                 });
               });

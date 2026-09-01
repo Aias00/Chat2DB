@@ -10,6 +10,7 @@ import { getDatabaseSupport } from '@/utils/database';
 import { canUseAccountManage, isMongodbTreeDataSource, isRedisTreeDataSource } from '@/utils/databaseJudgments';
 import { v4 as uuid } from 'uuid';
 import { createSavedConsoleTreeNodeKey } from '@/store/tree/backgroundRefresh';
+import { createEventTreeNodeKey } from './eventTreeIdentity';
 
 const fileIcon = 'icon-colourful-folder-close';
 const unfoldFileIcon = 'icon-colourful-folder-open';
@@ -95,18 +96,6 @@ export const switchIcon: Partial<{
   [TreeNodeType.PROCEDURE]: {
     icon: 'icon-procedure',
   },
-  [TreeNodeType.EVENT]: {
-    createTreeNodeKey: (params) => {
-      const { dataSourceId, databaseName, eventName } = formatObject(params);
-      return [
-        `dataSource_${dataSourceId}`,
-        `database_${databaseName}`,
-        'events_chat2dbCatalogue',
-        `event_${eventName}`,
-      ].join('-');
-    },
-  },
-
   [TreeNodeType.TRIGGER]: {
     icon: 'icon-trigger',
   },
@@ -1160,6 +1149,13 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
         `database_${databaseName}`,
         'events_chat2dbCatalogue',
       ].join('-');
+    },
+  },
+
+  [TreeNodeType.EVENT]: {
+    createTreeNodeKey: (params) => {
+      const { dataSourceId, databaseName, eventName } = formatObject(params);
+      return createEventTreeNodeKey({ dataSourceId, databaseName, eventName });
     },
   },
 

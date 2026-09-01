@@ -462,6 +462,10 @@ const getEventEnabledSql = createRequest<EventDatasourceParams & { eventName: st
   '/api/rdb/event/enabled_sql',
   { method: 'post' },
 );
+const getEventDetail = createRequest<EventDatasourceParams & { eventName: string }, { eventBody: string }>(
+  '/api/rdb/event/detail',
+  { method: 'get' },
+);
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
 
 const getDataSourceList = createRequest<IPageParams, IPageResponse<IConnectionDetails>>(
@@ -524,5 +528,6 @@ export default {
   getEventSchedulerStatus,
   getEventDropSql,
   getEventEnabledSql,
+  getEventDetail,
   getDataSourceList,
 };

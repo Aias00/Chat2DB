@@ -1,8 +1,10 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.model.metadata.Event;
 import ai.chat2db.community.domain.api.service.db.IDbEventService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.DefaultSQLExecutor;
+import ai.chat2db.spi.model.request.EventMetadataRequest;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -21,11 +23,6 @@ import java.util.Map;
 @Service
 public class DbEventServiceImpl implements IDbEventService {
 
-    private static final String SQL_EVENTS =
-            "SELECT EVENT_NAME, DEFINER, TIME_ZONE, EVENT_TYPE, EXECUTE_AT, INTERVAL_VALUE, "
-                    + "INTERVAL_FIELD, STARTS, ENDS, STATUS, ON_COMPLETION, EVENT_COMMENT, "
-                    + "EVENT_DEFINITION "
-                    + "FROM information_schema.EVENTS WHERE EVENT_SCHEMA = '%s' ORDER BY EVENT_NAME";
     private static final String SQL_SCHEDULER_STATE = "SHOW VARIABLES LIKE 'event_scheduler'";
     private static final String SQL_EVENT_COUNT =
             "SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA = '%s'";
@@ -35,29 +32,35 @@ public class DbEventServiceImpl implements IDbEventService {
         if (StringUtils.isBlank(databaseName)) {
             throw new BusinessException("database.name.required");
         }
-        String escaped = Chat2DBContext.getDbMetaData().getSQLIdentifierProcessor().escapeString(databaseName);
-        Connection connection = Chat2DBContext.getConnection();
-        return DefaultSQLExecutor.getInstance().execute(connection, String.format(SQL_EVENTS, escaped), resultSet -> {
-            List<Map<String, Object>> events = new ArrayList<>();
-            while (resultSet.next()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("eventName", resultSet.getString("EVENT_NAME"));
-                row.put("definer", resultSet.getString("DEFINER"));
-                row.put("timeZone", resultSet.getString("TIME_ZONE"));
-                row.put("eventType", resultSet.getString("EVENT_TYPE"));
-                row.put("executeAt", resultSet.getTimestamp("EXECUTE_AT"));
-                row.put("intervalValue", resultSet.getString("INTERVAL_VALUE"));
-                row.put("intervalField", resultSet.getString("INTERVAL_FIELD"));
-                row.put("starts", resultSet.getTimestamp("STARTS"));
-                row.put("ends", resultSet.getTimestamp("ENDS"));
-                row.put("status", resultSet.getString("STATUS"));
-                row.put("onCompletion", resultSet.getString("ON_COMPLETION"));
-                row.put("comment", resultSet.getString("EVENT_COMMENT"));
-                row.put("definition", resultSet.getString("EVENT_DEFINITION"));
-                events.add(row);
-            }
-            return events;
-        });
+        List<Event> events = Chat2DBContext.getDbMetaData().events(Chat2DBContext.getConnection(), databaseName, null);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Event event : events) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("eventName", event.getEventName());
+            row.put("definer", event.getDefiner());
+            row.put("timeZone", event.getTimeZone());
+            row.put("eventType", event.getEventType());
+            row.put("executeAt", event.getExecuteAt());
+            row.put("intervalValue", event.getIntervalValue());
+            row.put("intervalField", event.getIntervalField());
+            row.put("starts", event.getStarts());
+            row.put("ends", event.getEnds());
+            row.put("status", event.getStatus());
+            row.put("onCompletion", event.getOnCompletion());
+            row.put("comment", event.getComment());
+            row.put("definition", event.getDefinition());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    @Override
+    public Event detail(String databaseName, String schemaName, String eventName) {
+        if (StringUtils.isBlank(databaseName) || StringUtils.isBlank(eventName)) {
+            throw new BusinessException("event.name.required");
+        }
+        return Chat2DBContext.getDbMetaData().event(Chat2DBContext.getConnection(),
+                new EventMetadataRequest(databaseName, schemaName, eventName));
     }
 
     @Override

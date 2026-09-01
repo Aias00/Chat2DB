@@ -23,6 +23,7 @@ import static cn.hutool.core.date.DatePattern.NORM_DATETIME_PATTERN;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_COPY_TABLE_DATA_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_COPY_TABLE_STRUCTURE_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_PROCEDURE_TEMPLATE;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_CREATE_EVENT_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_TABLE_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_VIEW_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SELECT_DATABASE_TEMPLATE;
@@ -40,6 +41,9 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_TRIGGE
 import static ai.chat2db.plugin.mysql.constant.MysqlDBManagerConstants.*;
 @Slf4j
 public class MysqlDBManager extends DefaultDBManager implements IDbManager {
+
+    private static final String EVENT_TITLE = DIVIDING_LINE + SQLConstants.LINE_SEPARATOR
+            + "-- Event structure for event %s" + SQLConstants.LINE_SEPARATOR + DIVIDING_LINE;
 
     @Override
     public void exportDatabase(Connection connection, String databaseName, String schemaName, boolean containData,
@@ -60,6 +64,10 @@ public class MysqlDBManager extends DefaultDBManager implements IDbManager {
         logDatabaseObjectExportStarted(context, "triggers");
         exportTriggers(connection, context);
         logDatabaseObjectExportCompleted(context, "triggers");
+        reportExportProgress(context, 82);
+        logDatabaseObjectExportStarted(context, "events");
+        exportEvents(connection, databaseName, context);
+        logDatabaseObjectExportCompleted(context, "events");
         reportExportProgress(context, 90);
         logDatabaseObjectExportStarted(context, "functions");
         exportFunctions(connection, databaseName, context);
@@ -179,6 +187,36 @@ public class MysqlDBManager extends DefaultDBManager implements IDbManager {
             while (resultSet.next()) {
                 String triggerName = resultSet.getString(TRIGGER_NAME_COLUMN);
                 exportTrigger(connection, triggerName, context);
+            }
+        }
+    }
+
+    private void exportEvents(Connection connection, String databaseName, TaskExecutionContext context)
+            throws SQLException {
+        for (var event : new MysqlMetaData().events(connection, databaseName, null)) {
+            exportEvent(connection, databaseName, event.getEventName(), context);
+        }
+    }
+
+    private void exportEvent(Connection connection, String databaseName, String eventName, TaskExecutionContext context)
+            throws SQLException {
+        String qualifiedName = StringUtils.isEmpty(databaseName)
+                ? format(eventName)
+                : format(databaseName) + SQLConstants.DOT + format(eventName);
+        String sql = String.format(SQL_SHOW_CREATE_EVENT_TEMPLATE, qualifiedName);
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql);
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+            if (resultSet.next()) {
+                context.write(String.format(EVENT_TITLE, formatExportTitleValue(eventName)));
+                StringBuilder sqlBuilder = new StringBuilder();
+                sqlBuilder.append("DROP EVENT IF EXISTS ").append(qualifiedName)
+                        .append(SQLConstants.SEMICOLON).append(SQLConstants.LINE_SEPARATOR)
+                        .append(DELIMITER_BLOCK_START).append(SQLConstants.LINE_SEPARATOR)
+                        .append(resultSet.getString(CREATE_EVENT_COLUMN))
+                        .append(ROUTINE_DELIMITER)
+                        .append(SQLConstants.LINE_SEPARATOR).append(DELIMITER_BLOCK_END)
+                        .append(SQLConstants.DOUBLE_LINE_SEPARATOR);
+                context.write(sqlBuilder.toString());
             }
         }
     }

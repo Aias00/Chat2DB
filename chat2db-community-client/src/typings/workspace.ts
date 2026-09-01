@@ -101,6 +101,7 @@ export interface IBoundInfo {
   functionName?: string;
   procedureName?: string;
   triggerName?: string;
+  eventName?: string;
   tableName?: string;
   user?: string;
   host?: string;
