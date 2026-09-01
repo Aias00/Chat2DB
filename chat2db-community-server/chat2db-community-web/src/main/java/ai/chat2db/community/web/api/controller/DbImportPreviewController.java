@@ -9,6 +9,7 @@ import ai.chat2db.community.domain.api.model.task.TaskTargetSnapshot;
 import ai.chat2db.community.domain.api.model.task.TaskType;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
+import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
 import ai.chat2db.community.web.api.model.response.task.TaskSubmitResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -64,12 +65,9 @@ public class DbImportPreviewController {
     }
 
     @PostMapping("/preview")
-    public DataResult<Map<String, Object>> preview(@RequestParam("dataSourceId") Long dataSourceId,
-                                                   @RequestParam("databaseName") String databaseName,
-                                                   @RequestParam("tableName") String tableName,
-                                                   @RequestParam("fileId") String fileId) {
-        return DataResult.of(importPreviewService.preview(dataSourceId, databaseName, tableName,
-                importFileRegistry.resolve(fileId)));
+    public DataResult<Map<String, Object>> preview(@Valid ImportPreviewRequest request) {
+        return DataResult.of(importPreviewService.preview(request.getDataSourceId(), request.getDatabaseName(),
+                request.getTableName(), importFileRegistry.resolve(request.getFileId())));
     }
 
     @PostMapping("/execute")
@@ -105,6 +103,16 @@ public class DbImportPreviewController {
     private static String extension(String filePath) {
         int dot = filePath.lastIndexOf('.');
         return dot < 0 ? "CSV" : filePath.substring(dot + 1).toUpperCase();
+    }
+
+    @Data
+    public static class ImportPreviewRequest extends DataSourceBaseRequest {
+
+        @NotBlank
+        private String tableName;
+
+        @NotBlank
+        private String fileId;
     }
 
     @Data

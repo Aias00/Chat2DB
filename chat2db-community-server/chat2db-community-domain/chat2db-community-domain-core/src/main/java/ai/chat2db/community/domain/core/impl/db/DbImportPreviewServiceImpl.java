@@ -54,7 +54,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             sourceColumns.add(column);
         }
 
-        List<Map<String, Object>> targetColumns = targetColumns(databaseName, tableName);
+        List<Map<String, Object>> targetColumns = targetColumns(dataSourceId, databaseName, tableName);
         List<Map<String, String>> suggested = new ArrayList<>();
         for (String source : sourceNames) {
             targetColumns.stream()
@@ -77,10 +77,12 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         return result;
     }
 
-    private static List<Map<String, Object>> targetColumns(String databaseName, String tableName) {
+    private static List<Map<String, Object>> targetColumns(Long dataSourceId, String databaseName, String tableName) {
+        TableMetadataRequest trustedRequest = TrustedMetadataRequestResolver.table(dataSourceId, databaseName,
+                null, tableName);
         Connection connection = Chat2DBContext.getConnection();
         return Chat2DBContext.getDbMetaData().columns(connection,
-                        new TableMetadataRequest(databaseName, null, tableName)).stream()
+                        trustedRequest).stream()
                 .<Map<String, Object>>map(column -> {
                     Map<String, Object> map = new LinkedHashMap<>();
                     map.put("name", column.getName());
