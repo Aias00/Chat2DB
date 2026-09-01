@@ -13,8 +13,11 @@ import ai.chat2db.community.domain.api.model.request.db.TableSelector;
 import ai.chat2db.community.domain.api.model.request.db.DbTypeQueryRequest;
 import ai.chat2db.community.domain.api.model.request.pin.DbTablePinRequest;
 import ai.chat2db.community.domain.api.model.metadata.extension.MetadataAccessContext;
+import ai.chat2db.community.domain.api.model.result.ExecuteResponse;
+import ai.chat2db.community.domain.api.model.sql.RefreshTarget;
 import ai.chat2db.community.domain.api.service.db.IDbTablePinService;
 import ai.chat2db.community.domain.api.service.db.IDbTableService;
+import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
 import ai.chat2db.community.domain.core.cache.CacheManage;
 import ai.chat2db.community.domain.core.cache.MemoryCacheManage;
 import ai.chat2db.community.domain.core.impl.db.extension.MetadataAccessPolicyManager;
@@ -30,6 +33,7 @@ import ai.chat2db.community.domain.api.model.metadata.*;
 import ai.chat2db.community.domain.api.model.sql.Sql;
 import ai.chat2db.community.domain.api.config.TableBuilderConfig;
 import ai.chat2db.spi.model.request.*;
+import ai.chat2db.spi.model.request.SqlStatementExecuteRequest;
 import ai.chat2db.spi.model.response.TablesPageResponse;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.spi.DefaultSQLExecutor;
@@ -365,6 +369,37 @@ public class DbTableServiceImpl implements IDbTableService {
         } catch (SQLException e) {
             throw new BusinessException("maintenance sql error", new Object[]{e.getMessage()}, e);
         }
+    }
+
+    @Override
+    public List<ExecuteResponse> executeMaintenance(DbTableQueryRequest param, String operationType,
+            TaskExecutionContext taskContext) {
+        String sql = maintenanceSql(param, operationType);
+        try {
+            ExecuteResponse result = DefaultSQLExecutor.getInstance().execute(SqlStatementExecuteRequest.builder()
+                    .sql(sql)
+                    .connection(Chat2DBContext.getConnection())
+                    .limitRowSize(false)
+                    .statementListener(taskContext)
+                    .cancellationChecker(taskContext == null ? null : taskContext::checkCancelled)
+                    .build());
+            result.setSql(sql);
+            result.setOriginalSql(sql);
+            result.setTableName(param.getTableName());
+            result.setRefreshTargets(List.of(refreshTarget(param)));
+            return List.of(result);
+        } catch (SQLException e) {
+            throw new BusinessException("maintenance sql error", new Object[]{e.getMessage()}, e);
+        }
+    }
+
+    private RefreshTarget refreshTarget(DbTableQueryRequest param) {
+        RefreshTarget refreshTarget = new RefreshTarget();
+        refreshTarget.setDataSourceId(param.getDataSourceId());
+        refreshTarget.setDatabaseName(param.getDatabaseName());
+        refreshTarget.setSchemaName(param.getSchemaName());
+        refreshTarget.setTableName(param.getTableName());
+        return refreshTarget;
     }
 
     private void requireMaintenanceEngineSupport(IDbMetaData metaData, Connection connection, DbTableQueryRequest param,

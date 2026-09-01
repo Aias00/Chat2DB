@@ -1,10 +1,14 @@
 package ai.chat2db.community.web.api.controller;
 
 import ai.chat2db.community.domain.api.model.request.db.DbTableQueryRequest;
+import ai.chat2db.community.domain.api.model.task.TableMaintenanceTaskSpec;
+import ai.chat2db.community.domain.api.model.task.TaskType;
 import ai.chat2db.community.domain.api.service.db.IDbTableService;
+import ai.chat2db.community.domain.api.service.task.TaskService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.converter.db.DbWebConverter;
 import ai.chat2db.community.web.api.model.request.db.TableDetailQueryRequest;
+import ai.chat2db.community.web.api.model.response.task.TaskSubmitResponse;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
@@ -47,6 +51,42 @@ class DbTableControllerMaintenanceTest {
         assertEquals("REPAIR TABLE `shop`.`orders`", result.getData());
         assertEquals("REPAIR", capturedOperation.get());
         assertEquals("orders", capturedRequest.get().getTableName());
+    }
+
+    @Test
+    void executeMaintenanceSubmitsTaskWithOperationAndTableTarget() throws Exception {
+        AtomicReference<TableMaintenanceTaskSpec> capturedSpec = new AtomicReference<>();
+        TaskService taskService = (TaskService) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[] {TaskService.class},
+                (proxy, method, args) -> {
+                    if ("submitTableMaintenance".equals(method.getName())) {
+                        capturedSpec.set((TableMaintenanceTaskSpec) args[0]);
+                        return 91L;
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+
+        DbTableController controller = new DbTableController(null);
+        setField(controller, "taskService", taskService);
+
+        TableDetailQueryRequest request = new TableDetailQueryRequest();
+        request.setDataSourceId(7L);
+        request.setDatabaseName("shop");
+        request.setSchemaName("public");
+        request.setTableName("orders");
+        request.setOperationType("ANALYZE");
+
+        DataResult<TaskSubmitResponse> result = controller.executeMaintenance(request);
+
+        assertEquals(91L, result.getData().getTaskId());
+        assertEquals(TaskType.TABLE_MAINTENANCE.name(), capturedSpec.get().getTaskType());
+        assertEquals("ANALYZE", capturedSpec.get().getOperationType());
+        assertEquals("ANALYZE TABLE - shop.orders", capturedSpec.get().getTaskName());
+        assertEquals(7L, capturedSpec.get().getTarget().getDataSourceId());
+        assertEquals("shop", capturedSpec.get().getTarget().getDatabaseName());
+        assertEquals("public", capturedSpec.get().getTarget().getSchemaName());
+        assertEquals("orders", capturedSpec.get().getTarget().getTableName());
     }
 
     private static void setField(Object target, String name, Object value) throws Exception {

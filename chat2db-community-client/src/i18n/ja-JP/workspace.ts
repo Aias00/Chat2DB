@@ -116,6 +116,8 @@ export default {
   'workspace.menu.optimizeTable': 'テーブルを最適化',
   'workspace.menu.checkTable': 'テーブルをチェック',
   'workspace.menu.repairTable': 'テーブルを修復',
+  'workspace.tableMaintenance.optimizeInnoDBWarning':
+    'InnoDB で OPTIMIZE TABLE を実行すると、テーブルが再構築され、実行中に書き込みがブロックされる場合があります。',
   'workspace.menu.openConsole': 'コンソールを開く',
   'workspace.menu.removeConsole': '削除',
   'workspace.menu.runSqlFile': 'SQLファイルを実行',

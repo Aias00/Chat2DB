@@ -46,6 +46,7 @@ import {
 import { dropMenuConfig } from '../menuConfig';
 
 import { handleExportSqlFile } from '@/blocks/ImportAndExport/functions/exportSqlFile';
+import importExportServices from '@/service/importExport';
 import { useOrgStore } from '@/store/workspaceContext';
 import { ILoadDataOptions, treeConfig } from '../treeConfig';
 
@@ -61,7 +62,7 @@ import clientExtension from '@client-extension';
 import { DataSourceIdentityColorRequestRegistry } from '../dataSourceIdentityColorRequest';
 import DataSourceColorMenuItem from '../components/DataSourceColorMenuItem';
 import { withDataSourceColorMenuOption } from '../dataSourceColorMenu';
-import { canShowTableMaintenanceOperation } from '../tableMaintenance';
+import { canShowTableMaintenanceOperation, refreshAfterTableMaintenanceTaskCompletes } from '../tableMaintenance';
 import { isDangerousTreeOperation } from '../treeMenuDanger';
 
 export interface MenuLabelRenderContext {
@@ -100,6 +101,8 @@ interface IRightClickMenu {
   };
   children?: IRightClickMenu[];
 }
+
+type TableMaintenanceOperationType = 'ANALYZE' | 'OPTIMIZE' | 'CHECK' | 'REPAIR';
 
 type CreateRightClickMenu = (
   treeNodeData: TreeNodeData,
@@ -280,6 +283,46 @@ export const useCreateRightClickMenu = () => {
           {i18n('workspace.deleteDatabaseSchema.inputConfirmSuffix')}
         </>
       );
+    };
+
+    const tableMaintenanceRequest = (operationType: TableMaintenanceOperationType) => ({
+      dataSourceId: dataSourceId!,
+      databaseName: databaseName!,
+      schemaName,
+      tableName: tableName!,
+      operationType,
+    });
+
+    const tableMaintenanceConfirmContent = (sql: string, operationType: TableMaintenanceOperationType) => (
+      <div>
+        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{sql}</pre>
+        {operationType === 'OPTIMIZE' && tableEngine?.trim().toUpperCase() === 'INNODB' && (
+          <div style={{ marginTop: 12 }}>{i18n('workspace.tableMaintenance.optimizeInnoDBWarning')}</div>
+        )}
+      </div>
+    );
+
+    const openTableMaintenanceModal = (operationType: TableMaintenanceOperationType, titleKey: string) => {
+      sqlService.maintenanceSql(tableMaintenanceRequest(operationType)).then((sql: string) => {
+        staticModal.confirm({
+          title: i18n(titleKey as any),
+          content: tableMaintenanceConfirmContent(sql, operationType),
+          okText: i18n('common.button.confirm'),
+          cancelText: i18n('common.button.cancel'),
+          onOk: () => {
+            return sqlService.submitTableMaintenance(tableMaintenanceRequest(operationType)).then((result) => {
+              getTaskList();
+              openLogModal(result.taskId);
+              void refreshAfterTableMaintenanceTaskCompletes(
+                result.taskId,
+                importExportServices.getTaskDetails,
+                () => handleLoadData(treeNodeData, { refresh: true }),
+              );
+              return result;
+            });
+          },
+        });
+      });
     };
 
     const openDeleteDatabaseModal = () => {
@@ -1173,28 +1216,7 @@ export const useCreateRightClickMenu = () => {
         icon: 'icon-table',
         discard: !canShowTableMaintenanceOperation(OperationColumn.AnalyzeTable, databaseType, tableEngine),
         handle: () => {
-          sqlService.maintenanceSql({
-            dataSourceId: dataSourceId!,
-            databaseName: databaseName!,
-            schemaName,
-            tableName: tableName!,
-            operationType: 'ANALYZE',
-          }).then((sql: string) => {
-            staticModal.confirm({
-              title: i18n('workspace.menu.analyzeTable'),
-              content: sql,
-              okText: i18n('common.button.confirm'),
-              cancelText: i18n('common.button.cancel'),
-              onOk: () => {
-                return sqlService.executeDDL({
-                  dataSourceId: dataSourceId!,
-                  databaseName: databaseName!,
-                  schemaName,
-                  sql,
-                });
-              },
-            });
-          });
+          openTableMaintenanceModal('ANALYZE', 'workspace.menu.analyzeTable');
         },
       },
 
@@ -1203,28 +1225,7 @@ export const useCreateRightClickMenu = () => {
         icon: 'icon-table',
         discard: !canShowTableMaintenanceOperation(OperationColumn.OptimizeTable, databaseType, tableEngine),
         handle: () => {
-          sqlService.maintenanceSql({
-            dataSourceId: dataSourceId!,
-            databaseName: databaseName!,
-            schemaName,
-            tableName: tableName!,
-            operationType: 'OPTIMIZE',
-          }).then((sql: string) => {
-            staticModal.confirm({
-              title: i18n('workspace.menu.optimizeTable'),
-              content: sql,
-              okText: i18n('common.button.confirm'),
-              cancelText: i18n('common.button.cancel'),
-              onOk: () => {
-                return sqlService.executeDDL({
-                  dataSourceId: dataSourceId!,
-                  databaseName: databaseName!,
-                  schemaName,
-                  sql,
-                });
-              },
-            });
-          });
+          openTableMaintenanceModal('OPTIMIZE', 'workspace.menu.optimizeTable');
         },
       },
 
@@ -1233,28 +1234,7 @@ export const useCreateRightClickMenu = () => {
         icon: 'icon-table',
         discard: !canShowTableMaintenanceOperation(OperationColumn.CheckTable, databaseType, tableEngine),
         handle: () => {
-          sqlService.maintenanceSql({
-            dataSourceId: dataSourceId!,
-            databaseName: databaseName!,
-            schemaName,
-            tableName: tableName!,
-            operationType: 'CHECK',
-          }).then((sql: string) => {
-            staticModal.confirm({
-              title: i18n('workspace.menu.checkTable'),
-              content: sql,
-              okText: i18n('common.button.confirm'),
-              cancelText: i18n('common.button.cancel'),
-              onOk: () => {
-                return sqlService.executeDDL({
-                  dataSourceId: dataSourceId!,
-                  databaseName: databaseName!,
-                  schemaName,
-                  sql,
-                });
-              },
-            });
-          });
+          openTableMaintenanceModal('CHECK', 'workspace.menu.checkTable');
         },
       },
 
@@ -1263,28 +1243,7 @@ export const useCreateRightClickMenu = () => {
         icon: 'icon-table',
         discard: !canShowTableMaintenanceOperation(OperationColumn.RepairTable, databaseType, tableEngine),
         handle: () => {
-          sqlService.maintenanceSql({
-            dataSourceId: dataSourceId!,
-            databaseName: databaseName!,
-            schemaName,
-            tableName: tableName!,
-            operationType: 'REPAIR',
-          }).then((sql: string) => {
-            staticModal.confirm({
-              title: i18n('workspace.menu.repairTable'),
-              content: sql,
-              okText: i18n('common.button.confirm'),
-              cancelText: i18n('common.button.cancel'),
-              onOk: () => {
-                return sqlService.executeDDL({
-                  dataSourceId: dataSourceId!,
-                  databaseName: databaseName!,
-                  schemaName,
-                  sql,
-                });
-              },
-            });
-          });
+          openTableMaintenanceModal('REPAIR', 'workspace.menu.repairTable');
         },
       },
 
