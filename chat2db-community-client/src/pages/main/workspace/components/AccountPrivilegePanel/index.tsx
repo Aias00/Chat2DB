@@ -562,7 +562,9 @@ const AccountPrivilegePanel = memo((props: IProps) => {
               </Tooltip>
               <Tooltip
                 title={
-                  selectedAccount.role ? i18n('workspace.databaseAccount.deleteRole') : i18n('workspace.databaseAccount.deleteUser')
+                  selectedAccount.role
+                    ? i18n('workspace.databaseAccount.deleteRole')
+                    : i18n('workspace.databaseAccount.deleteUser')
                 }
               >
                 <Button
@@ -570,7 +572,9 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                   disabled={!selectedAccount}
                   icon={<DeleteOutlined />}
                   onClick={() =>
-                    handleSelectedAccountCommand(selectedAccount.role ? AccountActionType.DROP_ROLE : AccountActionType.DROP_USER)
+                    handleSelectedAccountCommand(
+                      selectedAccount.role ? AccountActionType.DROP_ROLE : AccountActionType.DROP_USER,
+                    )
                   }
                 />
               </Tooltip>
@@ -656,10 +660,16 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                   <Checkbox>{i18n('workspace.databaseAccount.withAdminOption')}</Checkbox>
                 </Form.Item>
                 <Space wrap>
-                  <Button disabled={!roleOptions.length} onClick={() => submitRoleCommand(AccountActionType.GRANT_ROLE)}>
+                  <Button
+                    disabled={!roleOptions.length}
+                    onClick={() => submitRoleCommand(AccountActionType.GRANT_ROLE)}
+                  >
                     {i18n('workspace.databaseAccount.grantRole')}
                   </Button>
-                  <Button disabled={!roleOptions.length} onClick={() => submitRoleCommand(AccountActionType.REVOKE_ROLE)}>
+                  <Button
+                    disabled={!roleOptions.length}
+                    onClick={() => submitRoleCommand(AccountActionType.REVOKE_ROLE)}
+                  >
                     {i18n('workspace.databaseAccount.revokeRole')}
                   </Button>
                 </Space>

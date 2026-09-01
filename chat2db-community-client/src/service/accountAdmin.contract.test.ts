@@ -1,9 +1,10 @@
-const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const { resolve } = require('node:path');
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = resolve(__dirname, '..');
-const source = (path) => readFileSync(resolve(root, path), 'utf8');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const source = (path: string) => readFileSync(resolve(root, path), 'utf8');
 
 const accountAdmin = source('service/accountAdmin.ts');
 assert.match(accountAdmin, /defaultRoles\?:\s*Account\[\]/, 'default roles must preserve role user and host');
