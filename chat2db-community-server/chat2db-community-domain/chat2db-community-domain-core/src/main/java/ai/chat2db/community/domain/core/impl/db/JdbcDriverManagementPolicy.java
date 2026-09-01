@@ -6,7 +6,6 @@ import org.apache.commons.lang3.StringUtils;
 import java.nio.file.Files;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystemException;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,8 +42,8 @@ final class JdbcDriverManagementPolicy {
             throw uploadFailure("no driver file was uploaded");
         }
 
-        Path normalizedStagingDirectory = trustedPath(stagingDirectory);
-        Path normalizedDirectory = trustedPath(driverDirectory);
+        Path normalizedStagingDirectory = stagingDirectory.toAbsolutePath().normalize();
+        Path normalizedDirectory = driverDirectory.toAbsolutePath().normalize();
         List<UploadTarget> targets = new ArrayList<>();
         try {
             for (String uploadToken : uploadTokens) {
@@ -52,13 +51,12 @@ final class JdbcDriverManagementPolicy {
                 if (!matcher.matches()) {
                     throw uploadFailure("invalid driver upload token");
                 }
-                String uploadId = trustedComponent(matcher.group(1));
-                String driverName = trustedComponent(matcher.group(2));
+                String uploadId = matcher.group(1);
+                String driverName = matcher.group(2);
                 Path stagedFile = normalizedStagingDirectory.resolve(uploadId + ".upload").normalize();
                 Path driverFile = normalizedDirectory.resolve(driverName).normalize();
                 targets.add(new UploadTarget(driverName, stagedFile, driverFile));
-                if (!normalizedStagingDirectory.equals(stagedFile.getParent())
-                        || !Files.isRegularFile(stagedFile, LinkOption.NOFOLLOW_LINKS)
+                if (!normalizedStagingDirectory.equals(stagedFile.getParent()) || !Files.isRegularFile(stagedFile)
                         || !normalizedDirectory.equals(driverFile.getParent())) {
                     throw uploadFailure("uploaded driver file is unavailable");
                 }
@@ -98,8 +96,6 @@ final class JdbcDriverManagementPolicy {
     }
 
     static void moveWithoutReplacement(Path source, Path target, LinkCreator linkCreator) throws Exception {
-        source = trustedPath(source);
-        target = trustedPath(target);
         try {
             linkCreator.create(target, source);
         } catch (FileAlreadyExistsException exception) {
@@ -127,15 +123,6 @@ final class JdbcDriverManagementPolicy {
                 // Preserve the validation failure.
             }
         }
-    }
-
-    private static Path trustedPath(Path path) {
-        Path normalized = path.toAbsolutePath().normalize();
-        return Path.of(new String(normalized.toString().toCharArray()));
-    }
-
-    private static String trustedComponent(String value) {
-        return new String(value.toCharArray());
     }
 
     private record UploadTarget(String driverName, Path stagedFile, Path driverFile) {
