@@ -110,6 +110,8 @@ class TaskWebConverterTest {
     @Test
     void preservesSqlFileExecutionOptions() {
         TaskImportRequest request = importRequest(TaskType.SQL_FILE_IMPORT.name());
+        request.setDataSourceId(2L);
+        request.setSchemaName("public");
         request.setEncoding("GB18030");
         request.setErrorPolicy("CONTINUE");
         request.setCommitMode("BATCH");
@@ -121,6 +123,9 @@ class TaskWebConverterTest {
         assertEquals("CONTINUE", spec.getErrorPolicy());
         assertEquals("BATCH", spec.getCommitMode());
         assertEquals(250, spec.getBatchSize());
+        assertEquals(2L, spec.getTarget().getDataSourceId());
+        assertEquals("app", spec.getTarget().getDatabaseName());
+        assertEquals("public", spec.getTarget().getSchemaName());
     }
 
     private TaskExportRequest exportRequest(String taskType, String databaseName, String tableName) {

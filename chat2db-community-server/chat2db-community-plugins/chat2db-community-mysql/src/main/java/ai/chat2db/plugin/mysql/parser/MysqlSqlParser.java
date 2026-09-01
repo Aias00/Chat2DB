@@ -6,6 +6,8 @@ import ai.chat2db.community.domain.api.enums.parser.FileSizeUnitEnum;
 import ai.chat2db.community.domain.api.enums.parser.SqlTypeEnum;
 import ai.chat2db.community.domain.api.model.parser.statement.Statement;
 import ai.chat2db.community.domain.api.model.parser.statement.StatementContext;
+import ai.chat2db.community.domain.api.model.task.TaskCancelledException;
+import ai.chat2db.community.domain.api.model.task.TaskExecutionException;
 import ai.chat2db.mysql.parser.base.MySqlLexer;
 import ai.chat2db.mysql.parser.base.MySqlParser;
 import ai.chat2db.mysql.parser.base.MySqlParserBaseVisitor;
@@ -367,6 +369,8 @@ public class MysqlSqlParser extends AbstractSqlParser<MySqlParser, MysqlDialect>
             }
             sqlBatchHandler.flush();
             return statementCount;
+        } catch (TaskCancelledException | TaskExecutionException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Error parsing SQL statement: " + e.getMessage(), e);
         }

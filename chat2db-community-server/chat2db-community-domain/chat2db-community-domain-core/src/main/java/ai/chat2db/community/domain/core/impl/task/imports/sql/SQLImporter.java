@@ -26,6 +26,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.nio.charset.Charset;
 import java.io.File;
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -46,21 +47,28 @@ public class SQLImporter implements IImportStrategy {
             ImportSqlExecutor sqlExecutor = new ImportSqlExecutor(context);
             ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
             String databaseType = connectInfo.getDbType();
-            context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Reading SQL import file");
             if (StringUtils.equalsAnyIgnoreCase(databaseType, DatabaseTypeEnum.MYSQL.name(),
                     DatabaseTypeEnum.ORACLE.name(), DatabaseTypeEnum.OSCAR.name(),
                     DatabaseTypeEnum.SQLSERVER.name(), DatabaseTypeEnum.POSTGRESQL.name())) {
                 ConsoleTaskProgressListener consoleProgressListener =
                         new ConsoleTaskProgressListener(context, sourceFile);
-                ISqlBatchHandler sqlBatchHandler = SqlFileOptionsHandler.supportsOptions(spec)
-                        ? new SqlFileOptionsHandler(spec, context)
+                boolean useSqlFileOptions = shouldUseSqlFileOptions(databaseType, spec);
+                Connection connection = useSqlFileOptions ? Chat2DBContext.getConnection() : null;
+                int totalStatements = useSqlFileOptions
+                        ? preflightSqlFile(spec, context, sourceFile, databaseType, charset, connection) : 0;
+                ISqlBatchHandler sqlBatchHandler = useSqlFileOptions
+                        ? new SqlFileOptionsHandler(spec, context, totalStatements)
                         : new SyncSqlBatchHandler(context, sqlExecutor);
+                if (!useSqlFileOptions) {
+                    context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Reading SQL import file");
+                }
                 int statementCount = DefaultSqlSyntaxHandler.parserSqlScript(
                         sourceFile, databaseType, consoleProgressListener, sqlBatchHandler, charset);
                 context.checkCancelled();
                 context.logInfo(TaskEventCode.FILE_READ_COMPLETED.name(), "SQL file parsed",
                         Map.of("statementCount", statementCount));
             } else {
+                context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Reading SQL import file");
                 StringBuilder sb = new StringBuilder();
                 List<String> sqls = new ArrayList<>();
                 DbType dbType = JdbcUtils.parse2DruidDbType(databaseType);
@@ -138,5 +146,22 @@ public class SQLImporter implements IImportStrategy {
             throw new TaskExecutionException(TaskErrorCode.IMPORT_FAILED.name(),
                     "Unsupported SQL file encoding: " + encoding, e);
         }
+    }
+
+    static boolean shouldUseSqlFileOptions(String databaseType, ImportTaskSpec spec) {
+        return StringUtils.equalsIgnoreCase(databaseType, DatabaseTypeEnum.MYSQL.name())
+                && SqlFileOptionsHandler.supportsOptions(spec);
+    }
+
+    private int preflightSqlFile(ImportTaskSpec spec, TaskExecutionContext context, File sourceFile,
+                                 String databaseType, Charset charset, Connection connection) {
+        context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Preflighting SQL import file");
+        int statementCount = DefaultSqlSyntaxHandler.parserSqlScript(sourceFile, databaseType,
+                (bytesRead, statementsParsed) -> context.checkCancelled(),
+                SqlFileOptionsHandler.mysqlPreflightHandler(spec, context, connection), charset);
+        context.logInfo(TaskEventCode.FILE_READ_COMPLETED.name(), "SQL import preflight completed",
+                Map.of("statementCount", statementCount));
+        context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Reading SQL import file");
+        return statementCount;
     }
 }

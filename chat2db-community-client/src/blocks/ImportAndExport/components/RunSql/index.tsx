@@ -7,6 +7,7 @@ import { useImportExportStore } from '@/store/importExport';
 import { isDevelopment } from '@/utils/env';
 import { ImportExportFileType, ImportExportTaskType } from '@/constants/importExport';
 import { ImportTaskParams } from '@/service/importExport';
+import { normalizeRunSqlFormValues, RunSqlFormValues } from './options';
 
 interface IProps {
   className?: string;
@@ -33,7 +34,7 @@ const RunSql = forwardRef((props: IProps, ref: ForwardedRef<RunSqlRef>) => {
   const { styles } = useStyles();
   const [form] = Form.useForm();
   const [fileUrlList, setFileUrlList] = useState<string[]>([]);
-  const [formValues, setFormValues] = useState<any>({
+  const [formValues, setFormValues] = useState<RunSqlFormValues>({
     encoding: 'UTF-8',
     errorPolicy: 'STOP',
     commitMode: 'SCRIPT',
@@ -41,7 +42,7 @@ const RunSql = forwardRef((props: IProps, ref: ForwardedRef<RunSqlRef>) => {
   });
 
   useEffect(() => {
-    setIsReady && setIsReady(!!fileUrlList.length || formValues.fileUrl);
+    setIsReady && setIsReady(!!(fileUrlList.length || formValues.fileUrl));
   }, [fileUrlList, formValues]);
 
   const { runSqlBoundInfo } = useImportExportStore((state) => {
@@ -68,14 +69,16 @@ const RunSql = forwardRef((props: IProps, ref: ForwardedRef<RunSqlRef>) => {
 
   useImperativeHandle(ref, () => ({
     getValues: () => {
-      if (!runSqlBoundInfo) return null;
+      if (!runSqlBoundInfo?.dataSourceId) return null;
       const { dataSourceId, databaseName, schemaName } = runSqlBoundInfo;
+      const sourceFile = fileUrlList[0] || formValues.fileUrl;
+      if (!sourceFile) return null;
       return {
         dataSourceId,
         databaseName,
         schemaName,
         taskType: ImportExportTaskType.SQL_FILE_IMPORT,
-        sourceFile: fileUrlList[0] || formValues.fileUrl,
+        sourceFile,
         format: ImportExportFileType.SQL,
         encoding: formValues.encoding,
         errorPolicy: formValues.errorPolicy,
@@ -96,8 +99,12 @@ const RunSql = forwardRef((props: IProps, ref: ForwardedRef<RunSqlRef>) => {
       form={form}
       initialValues={formValues}
       autoComplete="off"
-      onFieldsChange={() => {
-        setFormValues(form.getFieldsValue());
+      onValuesChange={(changedValues, values) => {
+        const nextValues = normalizeRunSqlFormValues(values);
+        if (changedValues.commitMode === 'SINGLE_TRANSACTION' && values.errorPolicy !== 'STOP') {
+          form.setFieldsValue({ errorPolicy: 'STOP' });
+        }
+        setFormValues(nextValues);
       }}
     >
       <Form.Item label={`${i18n('workspace.importExport.executionEnvironment')}:`} name="executionEnvironment">
@@ -117,6 +124,7 @@ const RunSql = forwardRef((props: IProps, ref: ForwardedRef<RunSqlRef>) => {
       </Form.Item>
       <Form.Item label={`${i18n('workspace.importExport.errorPolicy')}:`} name="errorPolicy">
         <Select
+          disabled={formValues.commitMode === 'SINGLE_TRANSACTION'}
           options={[
             { value: 'STOP', label: i18n('workspace.importExport.errorPolicyStop') },
             { value: 'CONTINUE', label: i18n('workspace.importExport.errorPolicyContinue') },

@@ -229,6 +229,13 @@ public class DefaultSqlSyntaxHandler {
         } catch (NoSuchMethodException ignored) {
             return sqlParser.parserSqlScript(file, progressListener, sqlBatchHandler);
         } catch (ReflectiveOperationException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
             throw new IllegalStateException("Could not parse SQL file with the requested charset", e);
         }
     }
