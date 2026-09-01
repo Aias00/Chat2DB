@@ -1,6 +1,12 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.config.DriverConfig;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.util.ConfigUtils;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.sql.Chat2DBContext;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,6 +28,11 @@ class DbImportPreviewServiceImplTest {
 
     @TempDir
     Path tempDir;
+
+    @AfterEach
+    void clearContext() {
+        Chat2DBContext.removeContext();
+    }
 
     @Test
     void resolvesFilesInsideManagedImportDirectory() throws Exception {
@@ -70,6 +81,60 @@ class DbImportPreviewServiceImplTest {
         bindRow(statement, row, targetColumns, sourceToTarget, "DEFAULT");
 
         assertEquals(List.of("setString:1:Ada"), calls);
+    }
+
+    @Test
+    void importTargetUsesTrustedContextMetadata() {
+        Chat2DBContext.putContext(connectInfo(7L, "trusted_db", "trusted_schema"));
+
+        DbImportPreviewServiceImpl.ImportTarget target = DbImportPreviewServiceImpl
+                .resolveImportTarget(7L, " trusted_db ", " trusted_schema ", "orders");
+
+        assertEquals("trusted_db", target.databaseName());
+        assertEquals("trusted_schema", target.schemaName());
+        assertEquals("orders", target.tableName());
+    }
+
+    @Test
+    void importTargetRejectsRequestDatabaseMismatch() {
+        Chat2DBContext.putContext(connectInfo(7L, "trusted_db", "trusted_schema"));
+
+        assertThrows(BusinessException.class,
+                () -> DbImportPreviewServiceImpl.resolveImportTarget(7L, "other_db", "trusted_schema", "orders"));
+    }
+
+    @Test
+    void importTargetRejectsRequestSchemaMismatch() {
+        Chat2DBContext.putContext(connectInfo(7L, "trusted_db", "trusted_schema"));
+
+        assertThrows(BusinessException.class,
+                () -> DbImportPreviewServiceImpl.resolveImportTarget(7L, "trusted_db", "other_schema", "orders"));
+    }
+
+    @Test
+    void importTargetRejectsDataSourceMismatch() {
+        Chat2DBContext.putContext(connectInfo(7L, "trusted_db", "trusted_schema"));
+
+        assertThrows(BusinessException.class,
+                () -> DbImportPreviewServiceImpl.resolveImportTarget(8L, "trusted_db", "trusted_schema", "orders"));
+    }
+
+    @Test
+    void importTargetRejectsMetadataWildcards() {
+        Chat2DBContext.putContext(connectInfo(7L, "trusted_db", "trusted_schema"));
+
+        assertThrows(BusinessException.class,
+                () -> DbImportPreviewServiceImpl.resolveImportTarget(7L, "trusted%", "trusted_schema", "orders"));
+        assertThrows(BusinessException.class,
+                () -> DbImportPreviewServiceImpl.resolveImportTarget(7L, "trusted_db", "trusted_schema", "orders*"));
+    }
+
+    @Test
+    void importTargetRejectsWildcardFromTrustedContext() {
+        Chat2DBContext.putContext(connectInfo(7L, "trusted%", "trusted_schema"));
+
+        assertThrows(BusinessException.class,
+                () -> DbImportPreviewServiceImpl.resolveImportTarget(7L, "trusted%", "trusted_schema", "orders"));
     }
 
     private Path importFile(String name) throws Exception {
@@ -122,6 +187,15 @@ class DbImportPreviewServiceImplTest {
         column.put("autoIncrement", autoIncrement);
         column.put("defaultValue", defaultValue);
         return column;
+    }
+
+    private static ConnectInfo connectInfo(Long dataSourceId, String databaseName, String schemaName) {
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setDataSourceId(dataSourceId);
+        connectInfo.setDatabaseName(databaseName);
+        connectInfo.setSchemaName(schemaName);
+        connectInfo.setDriverConfig(new DriverConfig());
+        return connectInfo;
     }
 
     private static PreparedStatement recordingStatement(List<String> calls) {

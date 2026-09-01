@@ -1,8 +1,12 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.util.ConfigUtils;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.model.request.TableMetadataRequest;
+import ai.chat2db.spi.model.request.TablesRequest;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -40,8 +44,9 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private static final String IMPORT_FILE_DIRECTORY = "import-files";
 
     @Override
-    public Map<String, Object> preview(Long dataSourceId, String databaseName, String tableName,
+    public Map<String, Object> preview(Long dataSourceId, String databaseName, String schemaName, String tableName,
                                        String filePath, Map<String, Object> csvOptions) {
+        ImportTarget target = resolveImportTarget(dataSourceId, databaseName, schemaName, tableName);
         ParseOutcome outcome = parseRows(filePath, PREVIEW_ROW_LIMIT, csvOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
@@ -70,7 +75,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             sourceColumns.add(column);
         }
 
-        List<Map<String, Object>> targetColumns = targetColumns(databaseName, tableName);
+        TargetMetadata targetMetadata = targetMetadata(target);
+        List<Map<String, Object>> targetColumns = targetMetadata.columns();
         List<Map<String, String>> suggested = new ArrayList<>();
         for (String source : sourceNames) {
             targetColumns.stream()
@@ -96,16 +102,18 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     }
 
     @Override
-    public Map<String, Object> execute(Long dataSourceId, String databaseName, String tableName,
+    public Map<String, Object> execute(Long dataSourceId, String databaseName, String schemaName, String tableName,
                                        String filePath, Map<String, Object> csvOptions,
                                        List<Map<String, String>> mappings, String unmappedTarget) {
+        ImportTarget target = resolveImportTarget(dataSourceId, databaseName, schemaName, tableName);
         ParseOutcome outcome = parseRows(filePath, Integer.MAX_VALUE, csvOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
             throw new BusinessException("import.preview.emptyFile");
         }
         Map<Integer, ExcelParser.CellValue> header = outcome.header;
-        List<Map<String, Object>> targetColumns = targetColumns(databaseName, tableName);
+        TargetMetadata targetMetadata = targetMetadata(target);
+        List<Map<String, Object>> targetColumns = targetMetadata.columns();
         String strategy = StringUtils.defaultIfBlank(unmappedTarget, DEFAULT_STRATEGY).toUpperCase(Locale.ROOT);
         if (!DEFAULT_STRATEGY.equals(strategy) && !NULL_STRATEGY.equals(strategy)) {
             throw new BusinessException("import.preview.unsupportedStrategy");
@@ -115,8 +123,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         Map<Integer, String> sourceToTarget = new LinkedHashMap<>();
         for (Map<String, String> mapping : mappings == null ? List.<Map<String, String>>of() : mappings) {
             String source = mapping.get("sourceColumn");
-            String target = mapping.get("targetColumn");
-            if (StringUtils.isBlank(target)) {
+            String mappingTarget = mapping.get("targetColumn");
+            if (StringUtils.isBlank(mappingTarget)) {
                 continue;
             }
             int sourceIndex = indexOfName(header, source);
@@ -124,7 +132,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                 // Skipped source field (no matching header) — ignore.
                 continue;
             }
-            sourceToTarget.put(sourceIndex, target);
+            sourceToTarget.put(sourceIndex, mappingTarget);
         }
 
         List<Map<String, Object>> errors = new ArrayList<>();
@@ -132,7 +140,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         int failed = 0;
         int skipped = 0;
 
-        String insertSql = buildInsertSql(tableName, targetColumns, sourceToTarget, strategy);
+        String insertSql = buildInsertSql(targetMetadata.tableName(), targetColumns, sourceToTarget, strategy);
         Connection connection = Chat2DBContext.getConnection();
         boolean originalAutoCommit;
         try {
@@ -354,10 +362,67 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         }
     }
 
-    private static List<Map<String, Object>> targetColumns(String databaseName, String tableName) {
+    static ImportTarget resolveImportTarget(Long dataSourceId, String requestedDatabaseName,
+                                            String requestedSchemaName, String requestedTableName) {
+        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
+        if (connectInfo == null) {
+            throw new BusinessException("import.preview.connectionRequired");
+        }
+        if (dataSourceId == null || !dataSourceId.equals(connectInfo.getDataSourceId())) {
+            throw new BusinessException("import.preview.connectionMismatch");
+        }
+        String databaseName = trustedMetadataName("database", connectInfo.getDatabaseName());
+        String schemaName = trustedOptionalMetadataName("schema", connectInfo.getSchemaName());
+        String tableName = requestedMetadataName("table", requestedTableName);
+        rejectMismatch("database", requestedDatabaseName, databaseName);
+        rejectMismatch("schema", requestedSchemaName, schemaName);
+        return new ImportTarget(databaseName, schemaName, tableName);
+    }
+
+    private static void rejectMismatch(String field, String requested, String trusted) {
+        if (StringUtils.isBlank(requested)) {
+            return;
+        }
+        String requestedName = requestedMetadataName(field, requested);
+        if (!StringUtils.equals(requestedName, trusted)) {
+            throw new BusinessException("import.preview.connectionMismatch");
+        }
+    }
+
+    private static String trustedMetadataName(String field, String value) {
+        if (StringUtils.isBlank(value)) {
+            throw new BusinessException("import.preview.connectionRequired");
+        }
+        return requestedMetadataName(field, value);
+    }
+
+    private static String trustedOptionalMetadataName(String field, String value) {
+        if (StringUtils.isBlank(value)) {
+            return null;
+        }
+        return requestedMetadataName(field, value);
+    }
+
+    private static String requestedMetadataName(String field, String value) {
+        String trimmed = StringUtils.trimToNull(value);
+        if (trimmed == null) {
+            throw new BusinessException("import.preview.invalidMetadata");
+        }
+        if (containsMetadataWildcard(trimmed)) {
+            throw new BusinessException("import.preview.invalidMetadata");
+        }
+        return trimmed;
+    }
+
+    private static boolean containsMetadataWildcard(String value) {
+        return StringUtils.containsAny(value, "%*?");
+    }
+
+    private static TargetMetadata targetMetadata(ImportTarget target) {
         Connection connection = Chat2DBContext.getConnection();
-        return Chat2DBContext.getDbMetaData().columns(connection,
-                        new ai.chat2db.spi.model.request.TableMetadataRequest(databaseName, null, tableName)).stream()
+        String tableName = trustedTableName(connection, target);
+        List<Map<String, Object>> columns = Chat2DBContext.getDbMetaData().columns(connection,
+                        new TableMetadataRequest(target.databaseName(), target.schemaName(), tableName)).stream()
                 .map(column -> {
                     Map<String, Object> map = new LinkedHashMap<>();
                     map.put("name", column.getName());
@@ -368,6 +433,17 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                     return map;
                 })
                 .collect(java.util.stream.Collectors.toList());
+        return new TargetMetadata(tableName, columns);
+    }
+
+    private static String trustedTableName(Connection connection, ImportTarget target) {
+        List<Table> tables = Chat2DBContext.getDbMetaData()
+                .tables(connection, new TablesRequest(target.databaseName(), target.schemaName(), null));
+        return tables.stream()
+                .filter(table -> table != null && StringUtils.equals(table.getName(), target.tableName()))
+                .findFirst()
+                .map(Table::getName)
+                .orElseThrow(() -> new BusinessException("import.preview.tableNotFound"));
     }
 
     /**
@@ -390,6 +466,12 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private record ParseOutcome(List<Map<Integer, ExcelParser.CellValue>> rows,
                                 Map<Integer, ExcelParser.CellValue> header,
                                 int firstDataRow, List<Map<String, Object>> sheets) {
+    }
+
+    record ImportTarget(String databaseName, String schemaName, String tableName) {
+    }
+
+    private record TargetMetadata(String tableName, List<Map<String, Object>> columns) {
     }
 
     private static Path importFile(String filePath) {

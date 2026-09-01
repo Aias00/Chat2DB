@@ -22,7 +22,7 @@ public interface IDbImportPreviewService {
      *                     emptyAsNull (ignored for XLS/XLSX).
      * @return preview model.
      */
-    Map<String, Object> preview(Long dataSourceId, String databaseName, String tableName,
+    Map<String, Object> preview(Long dataSourceId, String databaseName, String schemaName, String tableName,
                                 String filePath, Map<String, Object> csvOptions);
 
     /**
@@ -39,7 +39,7 @@ public interface IDbImportPreviewService {
      * @param unmappedTarget  DEFAULT or NULL for unmapped target columns.
      * @return import result with totals and row-level errors.
      */
-    Map<String, Object> execute(Long dataSourceId, String databaseName, String tableName,
+    Map<String, Object> execute(Long dataSourceId, String databaseName, String schemaName, String tableName,
                                 String filePath, Map<String, Object> csvOptions,
                                 List<Map<String, String>> mappings, String unmappedTarget);
 }
