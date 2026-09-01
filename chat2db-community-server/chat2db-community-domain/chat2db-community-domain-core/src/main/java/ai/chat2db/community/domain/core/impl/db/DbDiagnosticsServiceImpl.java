@@ -1,7 +1,8 @@
 package ai.chat2db.community.domain.core.impl.db;
 
-import ai.chat2db.community.domain.api.service.db.IDbDiagnosticsService;
 import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
+import ai.chat2db.community.domain.api.model.db.diagnostics.InnodbStatusResponse;
+import ai.chat2db.community.domain.api.service.db.IDbDiagnosticsService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.DefaultSQLExecutor;
 import ai.chat2db.spi.sql.Chat2DBContext;
@@ -20,16 +21,17 @@ public class DbDiagnosticsServiceImpl implements IDbDiagnosticsService {
     private static final int MYSQL_ERROR_ACCESS_DENIED = 1227;
 
     @Override
-    public String innodbStatus() {
+    public InnodbStatusResponse innodbStatus() {
         requireSupportedMysql();
         Connection connection = Chat2DBContext.getConnection();
         try {
-            return DefaultSQLExecutor.getInstance().execute(connection, SQL_SHOW_INNODB_STATUS, resultSet -> {
+            String rawText = DefaultSQLExecutor.getInstance().execute(connection, SQL_SHOW_INNODB_STATUS, resultSet -> {
                 if (resultSet.next()) {
                     return resultSet.getString(FIELD_STATUS);
                 }
                 return null;
             });
+            return parseInnodbStatus(rawText);
         } catch (RuntimeException e) {
             // SHOW ENGINE INNODB STATUS needs the PROCESS privilege; surface a clear message
             // instead of the raw driver exception.
@@ -38,6 +40,10 @@ public class DbDiagnosticsServiceImpl implements IDbDiagnosticsService {
             }
             throw e;
         }
+    }
+
+    static InnodbStatusResponse parseInnodbStatus(String rawText) {
+        return InnodbStatusParser.parse(rawText);
     }
 
     static boolean hasProcessPrivilegeError(Throwable exception) {

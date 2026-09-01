@@ -1,10 +1,17 @@
 import i18n from '@/i18n';
 import { Form } from 'antd';
-import { SquarePen } from 'lucide-react';
+import { Activity, SquarePen } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 
-import { ConsoleOpenedStatus, OperationColumn, TreeNodeType, WorkspaceTabType, databaseTypeList } from '@/constants';
+import {
+  ConsoleOpenedStatus,
+  DatabaseTypeCode,
+  OperationColumn,
+  TreeNodeType,
+  WorkspaceTabType,
+  databaseTypeList,
+} from '@/constants';
 import { ImportExportType } from '@/constants/importExport';
 import { ShortcutAction } from '@/constants/shortcut';
 import { TreeNodeData } from '@/typings';
@@ -62,6 +69,7 @@ import { DataSourceIdentityColorRequestRegistry } from '../dataSourceIdentityCol
 import DataSourceColorMenuItem from '../components/DataSourceColorMenuItem';
 import { withDataSourceColorMenuOption } from '../dataSourceColorMenu';
 import { isDangerousTreeOperation } from '../treeMenuDanger';
+import { GlobalComponents } from '@/pages/main/workspace/components/WorkspaceExtend/config';
 
 export interface MenuLabelRenderContext {
   closeMenu: () => void;
@@ -112,7 +120,33 @@ type CreateRightClickMenu = (
 function handleMenuOptions(treeNodeType, databaseType) {
   const databaseDropMenuConfig = dropMenuConfig[databaseType] || dropMenuConfig['DEFAULT'];
   const menuOptions = databaseDropMenuConfig[treeNodeType] || dropMenuConfig['DEFAULT'][treeNodeType] || [];
-  return withDataSourceColorMenuOption(menuOptions, treeNodeType);
+  return withInnodbStatusMenuOption(
+    withDataSourceColorMenuOption(menuOptions, treeNodeType),
+    treeNodeType,
+    databaseType,
+  );
+}
+
+function withInnodbStatusMenuOption(
+  menuOptions: readonly OperationColumn[],
+  treeNodeType: TreeNodeType,
+  databaseType?: DatabaseTypeCode,
+) {
+  if (
+    treeNodeType !== TreeNodeType.DATA_SOURCE ||
+    databaseType !== DatabaseTypeCode.MYSQL ||
+    menuOptions.includes(OperationColumn.InnodbStatus)
+  ) {
+    return menuOptions as OperationColumn[];
+  }
+  const runSqlFileIndex = menuOptions.indexOf(OperationColumn.RunSqlFile);
+  const insertIndex =
+    runSqlFileIndex >= 0 ? runSqlFileIndex + 1 : menuOptions.indexOf(OperationColumn.CreateConsole) + 1;
+  return [
+    ...menuOptions.slice(0, insertIndex),
+    OperationColumn.InnodbStatus,
+    ...menuOptions.slice(insertIndex),
+  ];
 }
 
 // Node that can be double-clicked
@@ -156,12 +190,21 @@ export const useCreateRightClickMenu = () => {
     };
   });
 
-  const { openCreateDatabaseModal, addWorkspaceTab, createConsole, removeSavedConsole } = useWorkspaceStore((state) => {
+  const {
+    openCreateDatabaseModal,
+    addWorkspaceTab,
+    createConsole,
+    removeSavedConsole,
+    setCurrentWorkspaceExtend,
+    setCurrentWorkspaceGlobalExtend,
+  } = useWorkspaceStore((state) => {
     return {
       openCreateDatabaseModal: state.openCreateDatabaseModal,
       addWorkspaceTab: state.addWorkspaceTab,
       createConsole: state.createConsole,
       removeSavedConsole: state.removeSavedConsole,
+      setCurrentWorkspaceExtend: state.setCurrentWorkspaceExtend,
+      setCurrentWorkspaceGlobalExtend: state.setCurrentWorkspaceGlobalExtend,
     };
   });
 
@@ -639,6 +682,22 @@ export const useCreateRightClickMenu = () => {
           });
         },
         discard: !hasPermission,
+      },
+
+      [OperationColumn.InnodbStatus]: {
+        text: i18n('workspace.innodbStatus.title'),
+        icon: <Activity size={20} />,
+        handle: () => {
+          setCurrentWorkspaceGlobalExtend({
+            code: GlobalComponents.innodb_status,
+            uniqueData: {
+              ...extraParams,
+              objectName: dataSourceName,
+            },
+          });
+          setCurrentWorkspaceExtend('info');
+        },
+        discard: !hasPermission || databaseType !== DatabaseTypeCode.MYSQL,
       },
 
       // View all tables.

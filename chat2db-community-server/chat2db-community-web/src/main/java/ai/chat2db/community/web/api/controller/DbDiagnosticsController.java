@@ -1,5 +1,6 @@
 package ai.chat2db.community.web.api.controller;
 
+import ai.chat2db.community.domain.api.model.db.diagnostics.InnodbStatusResponse;
 import ai.chat2db.community.domain.api.service.db.IDbDiagnosticsService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
@@ -24,14 +25,14 @@ public class DbDiagnosticsController {
     private IDbDiagnosticsService diagnosticsService;
 
     /**
-     * Returns the raw InnoDB status output.
+     * Returns structured InnoDB status output and the complete raw text.
      * <p>
      * Endpoint: {@code POST /api/rdb/diagnostics/innodb_status}.
      *
-     * @return data result containing the raw status text.
+     * @return data result containing structured status diagnostics.
      */
     @PostMapping("/innodb_status")
-    public DataResult<String> innodbStatus(@Valid @RequestBody DiagnosticsRequest request) {
+    public DataResult<InnodbStatusResponse> innodbStatus(@Valid @RequestBody DiagnosticsRequest request) {
         return DataResult.of(diagnosticsService.innodbStatus());
     }
 

@@ -1,14 +1,16 @@
 package ai.chat2db.community.domain.api.service.db;
 
+import ai.chat2db.community.domain.api.model.db.diagnostics.InnodbStatusResponse;
+
 /**
  * Exposes database diagnostic inspection contracts.
  */
 public interface IDbDiagnosticsService {
 
     /**
-     * Returns the raw InnoDB status output from SHOW ENGINE INNODB STATUS.
+     * Returns parsed InnoDB status output from SHOW ENGINE INNODB STATUS.
      *
-     * @return raw status text, or null when not available.
+     * @return status response containing complete raw text and best-effort structured diagnostics.
      */
-    String innodbStatus();
+    InnodbStatusResponse innodbStatus();
 }
