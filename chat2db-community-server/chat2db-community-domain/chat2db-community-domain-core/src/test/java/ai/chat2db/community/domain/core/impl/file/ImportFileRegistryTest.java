@@ -50,4 +50,19 @@ class ImportFileRegistryTest {
 
         assertThrows(BusinessException.class, () -> new ImportFileRegistry().resolve("../outside"));
     }
+
+    @Test
+    void rejectsFilesOverTheStagedUploadLimit() throws Exception {
+        System.setProperty("user.home", tempDirectory.toString());
+        Path source = tempDirectory.resolve("large.xlsx");
+        Files.writeString(source, "xlsx");
+        assertTrue(source.toFile().setLastModified(System.currentTimeMillis()));
+        try (var channel = Files.newByteChannel(source, java.nio.file.StandardOpenOption.WRITE)) {
+            channel.position(ai.chat2db.community.domain.api.service.file.IImportFileRegistry
+                    .MAX_IMPORT_FILE_SIZE_BYTES);
+            channel.write(java.nio.ByteBuffer.wrap(new byte[] {1}));
+        }
+
+        assertThrows(BusinessException.class, () -> new ImportFileRegistry().register(source.toFile(), "large.xlsx"));
+    }
 }

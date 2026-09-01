@@ -24,8 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Bounded import preview and column mapping (MYSQL-IMPORT-001). Preview and execution
@@ -50,6 +53,9 @@ public class DbImportPreviewController {
 
     @PostMapping("/upload")
     public DataResult<String> upload(@RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty() || file.getSize() > IImportFileRegistry.MAX_IMPORT_FILE_SIZE_BYTES) {
+            throw new IllegalArgumentException("The import file exceeds the staged upload limit");
+        }
         File temporary = null;
         try {
             temporary = uploadFileService.transferToTempFile(file);
@@ -66,7 +72,7 @@ public class DbImportPreviewController {
     @PostMapping("/preview")
     public DataResult<Map<String, Object>> preview(@Valid @RequestBody ImportPreviewRequest request) {
         return DataResult.of(importPreviewService.preview(request.getDataSourceId(), request.getDatabaseName(),
-                request.getTableName(), importFileRegistry.resolve(request.getFileId()),
+                request.getSchemaName(), request.getTableName(), importFileRegistry.resolve(request.getFileId()),
                 request.getImportOptions() == null ? Map.of() : request.getImportOptions()));
     }
 
@@ -81,13 +87,16 @@ public class DbImportPreviewController {
         }
         File file = importFileRegistry.resolve(request.getFileId());
         // Validate parser options, including visibility of the selected sheet, before queuing work.
-        importPreviewService.preview(request.getDataSourceId(), request.getDatabaseName(), request.getTableName(),
-                file, request.getImportOptions() == null ? Map.of() : request.getImportOptions());
+        Map<String, Object> preview = importPreviewService.preview(request.getDataSourceId(), request.getDatabaseName(),
+                request.getSchemaName(), request.getTableName(), file,
+                request.getImportOptions() == null ? Map.of() : request.getImportOptions());
+        validateMappings(preview, request.getMappings());
         importFileRegistry.claim(request.getFileId());
         ImportTaskSpec spec = ImportTaskSpec.builder()
                 .taskType(TaskType.DATA_FILE_IMPORT.name()).taskName("Import " + request.getTableName())
                 .target(TaskTargetSnapshot.builder().dataSourceId(request.getDataSourceId())
-                        .databaseName(request.getDatabaseName()).tableName(request.getTableName()).build())
+                        .databaseName(request.getDatabaseName()).schemaName(request.getSchemaName())
+                        .tableName(request.getTableName()).build())
                 .sourceFile(file.getAbsolutePath()).importFileId(request.getFileId())
                 .displayFileName(file.getName()).format(extension(file.getName()))
                 .columnMappings(request.getMappings()).unmappedTarget(strategy)
@@ -105,6 +114,53 @@ public class DbImportPreviewController {
         return dot < 0 ? "CSV" : fileName.substring(dot + 1).toUpperCase(java.util.Locale.ROOT);
     }
 
+    @SuppressWarnings("unchecked")
+    private static void validateMappings(Map<String, Object> preview, List<Map<String, String>> mappings) {
+        List<String> duplicateHeaders = (List<String>) preview.getOrDefault("duplicateHeaders", List.of());
+        if (!duplicateHeaders.isEmpty()) {
+            throw new IllegalArgumentException("Duplicate source headers are not supported: "
+                    + String.join(", ", duplicateHeaders));
+        }
+        Set<String> sourceColumns = normalizedNames((List<Map<String, Object>>) preview.get("sourceColumns"));
+        Set<String> targetColumns = normalizedNames((List<Map<String, Object>>) preview.get("targetColumns"));
+        Set<String> mappedTargets = new HashSet<>();
+        for (Map<String, String> mapping : mappings) {
+            String source = normalize(mapping.get("sourceColumn"));
+            String target = normalize(mapping.get("targetColumn"));
+            if (source == null || target == null) {
+                throw new IllegalArgumentException("Source and target columns are required");
+            }
+            if (!sourceColumns.contains(source)) {
+                throw new IllegalArgumentException("Unknown source column: " + mapping.get("sourceColumn"));
+            }
+            if (!targetColumns.contains(target)) {
+                throw new IllegalArgumentException("Unknown target column: " + mapping.get("targetColumn"));
+            }
+            if (!mappedTargets.add(target)) {
+                throw new IllegalArgumentException("Duplicate target mapping: " + mapping.get("targetColumn"));
+            }
+        }
+    }
+
+    private static Set<String> normalizedNames(List<Map<String, Object>> columns) {
+        Set<String> names = new HashSet<>();
+        if (columns == null) {
+            return names;
+        }
+        for (Map<String, Object> column : columns) {
+            Object rawName = column.get("name");
+            String name = rawName == null ? null : normalize(String.valueOf(rawName));
+            if (name != null) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private static String normalize(String value) {
+        return value == null || value.isBlank() ? null : value.trim().toUpperCase(Locale.ROOT);
+    }
+
     @Data
     public static class ImportPreviewRequest implements IDataSourceBaseRequestInfo {
         @NotNull
@@ -112,6 +168,8 @@ public class DbImportPreviewController {
 
         @NotBlank
         private String databaseName;
+
+        private String schemaName;
 
         @NotBlank
         private String tableName;
@@ -129,6 +187,8 @@ public class DbImportPreviewController {
 
         @NotBlank
         private String databaseName;
+
+        private String schemaName;
 
         @NotBlank
         private String tableName;

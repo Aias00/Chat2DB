@@ -1,18 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, InputNumber, Modal, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
-import sqlService, { IImportPreview, IImportExecuteResult, ICsvOptions } from '@/service/sql';
+import sqlService, { IImportPreview, IImportParserOptions } from '@/service/sql';
+import {
+  DEFAULT_IMPORT_OPTIONS,
+  getImportValidationIssues,
+  importOptionsKey,
+  ImportValidationIssue,
+  isPreviewCurrent,
+} from '@/blocks/ImportAndExport/functions/importParserOptions';
 
 interface IProps {
   dataSourceId: number;
   databaseName: string;
+  schemaName?: string;
   tableName: string;
   file: File;
-  onDone: () => void;
+  onSubmitted: (taskId: number) => void;
 }
 
 const SKIP = '__skip__';
+
+interface ImportSourceColumn {
+  name: string;
+  sampleValues: { value: string; type: string }[];
+}
 
 /**
  * Import preview and column mapping (MYSQL-IMPORT-001). Loads a bounded preview of the
@@ -20,7 +33,24 @@ const SKIP = '__skip__';
  * unmapped target columns are filled (DEFAULT or NULL), executes the import, and reports
  * row-level errors. Preview and execution share the backend parser.
  */
-const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onDone }: IProps) => {
+const validationMessage = (issue: ImportValidationIssue) => {
+  const values = (issue.values || []).join(', ');
+  switch (issue.code) {
+    case 'duplicateHeaders':
+      return i18n('workspace.importExport.duplicateHeaders', values);
+    case 'duplicateTargetMapping':
+      return i18n('workspace.importExport.duplicateTargetMapping', values);
+    case 'invalidRange':
+      return i18n('workspace.importExport.invalidRange');
+    case 'noMappedColumns':
+      return i18n('workspace.importExport.noMappedColumns');
+    case 'requiredUnmapped':
+    default:
+      return i18n('workspace.importExport.requiredUnmapped');
+  }
+};
+
+const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableName, file, onSubmitted }: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
   const [fileId, setFileId] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -28,32 +58,33 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [unmappedTarget, setUnmappedTarget] = useState<'DEFAULT' | 'NULL'>('DEFAULT');
   const [executing, setExecuting] = useState(false);
-  const [result] = useState<IImportExecuteResult | null>(null);
-  const [csvOptions, setCsvOptions] = useState<ICsvOptions>({
-    encoding: 'UTF-8',
-    delimiter: ',',
-    quote: '"',
-    escape: '"',
-    hasHeader: true,
-    emptyAsNull: true,
-    headerRow: 1,
-  });
+  const [importOptions, setImportOptions] = useState<IImportParserOptions>(DEFAULT_IMPORT_OPTIONS);
+  const [previewOptionsKey, setPreviewOptionsKey] = useState<string>();
+  const previewRequestIdRef = useRef(0);
   const isCsv = file.name.toLowerCase().endsWith('.csv');
   const isExcel = /\.xlsx?$/i.test(file.name);
 
-  const load = useCallback((stagedFileId: string) => {
+  const load = useCallback((stagedFileId: string, options: IImportParserOptions) => {
+    const requestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = requestId;
+    const requestedOptionsKey = importOptionsKey(options);
     setLoading(true);
     setError(null);
     sqlService
       .getImportPreview({
         dataSourceId,
         databaseName,
+        schemaName,
         tableName,
         fileId: stagedFileId,
-        importOptions: isExcel ? csvOptions : undefined,
+        importOptions: options,
       })
       .then((data) => {
+        if (requestId !== previewRequestIdRef.current) {
+          return;
+        }
         setPreview(data);
+        setPreviewOptionsKey(requestedOptionsKey);
         const auto: Record<string, string> = {};
         data.suggestedMapping.forEach((m) => {
           auto[m.sourceColumn] = m.targetColumn;
@@ -61,19 +92,33 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
         setMapping(auto);
       })
       .catch((e) => {
+        if (requestId !== previewRequestIdRef.current) {
+          return;
+        }
+        setPreviewOptionsKey(undefined);
         setError(e?.message || i18n('common.text.failure'));
       })
-      .finally(() => setLoading(false));
-  }, [dataSourceId, databaseName, tableName, isExcel, csvOptions]);
+      .finally(() => {
+        if (requestId === previewRequestIdRef.current) {
+          setLoading(false);
+        }
+      });
+  }, [dataSourceId, databaseName, schemaName, tableName]);
 
   useEffect(() => {
+    previewRequestIdRef.current += 1;
+    setFileId(undefined);
+    setPreview(null);
+    setPreviewOptionsKey(undefined);
+    setMapping({});
+    setImportOptions(DEFAULT_IMPORT_OPTIONS);
     setLoading(true);
     setError(null);
     sqlService
       .uploadImportFile({ file })
       .then((id) => {
         setFileId(id);
-        load(id);
+        load(id, DEFAULT_IMPORT_OPTIONS);
       })
       .catch((e) => {
         setError(e?.message || i18n('common.text.failure'));
@@ -107,7 +152,19 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
     );
   }, [preview, mapping, unmappedTarget]);
 
-  const columns: ColumnsType<{ name: string; sampleValues: string[] }> = [
+  const validationMessages = useMemo(() => {
+    return getImportValidationIssues({
+      duplicateHeaders: preview?.duplicateHeaders,
+      mapping,
+      blockedColumns: blockedColumns.map((column) => column.name),
+      options: importOptions,
+      skipValue: SKIP,
+    }).map(validationMessage);
+  }, [blockedColumns, importOptions, mapping, preview]);
+  const previewCurrent = isPreviewCurrent(previewOptionsKey, importOptions);
+  const canExecute = !!fileId && !!preview && previewCurrent && !loading && validationMessages.length === 0;
+
+  const columns: ColumnsType<ImportSourceColumn> = [
     { title: i18n('workspace.importExport.sourceField'), dataIndex: 'name', width: 180 },
     {
       title: i18n('workspace.importExport.sampleValues'),
@@ -141,10 +198,10 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
   ];
 
   const execute = () => {
-    if (blockedColumns.length > 0 || !fileId) {
+    if (!canExecute) {
       Modal.error({
-        title: i18n('workspace.importExport.requiredUnmapped'),
-        content: blockedColumns.map((c) => `${c.name} (${c.dataType})`).join(', '),
+        title: i18n('workspace.importExport.validationFailed'),
+        content: (previewCurrent ? validationMessages : [i18n('workspace.importExport.previewStale')]).join('\n'),
       });
       return;
     }
@@ -154,15 +211,16 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
       .executeImportWithMapping({
         dataSourceId,
         databaseName,
+        schemaName,
         tableName,
         fileId,
         mappings: Object.entries(mapping)
           .filter(([, target]) => target && target !== SKIP)
           .map(([source, target]) => ({ sourceColumn: source, targetColumn: target })),
         unmappedTarget,
-        importOptions: isExcel ? csvOptions : undefined,
+        importOptions,
       })
-      .then(onDone)
+      .then((response) => onSubmitted(response.taskId))
       .catch((e) => setError(e?.message || i18n('common.text.failure')))
       .finally(() => setExecuting(false));
   };
@@ -170,75 +228,81 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
   return (
     <div>
       {error && <div style={{ color: 'var(--text-color-danger)', marginBottom: 8 }}>{error}</div>}
-      {result && (
-        <div style={{ marginBottom: 8 }}>
-          <span>
-            {i18n('workspace.importExport.importSummary', result.totalRows, result.successCount, result.failedCount)}
-          </span>
-          {result.failedCount > 0 && (
-            <Table
-              size="small"
-              style={{ marginTop: 8 }}
-              rowKey={(r) => `${r.row}-${r.column ?? ''}`}
-              pagination={{ pageSize: 5 }}
-              columns={[
-                { title: i18n('workspace.importExport.errorRow'), dataIndex: 'row', width: 80 },
-                { title: i18n('workspace.importExport.errorColumn'), dataIndex: 'column', width: 160 },
-                { title: i18n('workspace.importExport.errorMessage'), dataIndex: 'message' },
-              ]}
-              dataSource={result.errors}
-            />
-          )}
-          <div style={{ marginTop: 8 }}>
-            <Button type="primary" onClick={onDone}>
-              {i18n('common.button.close')}
-            </Button>
-          </div>
-        </div>
-      )}
       {preview && isExcel && (
         <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
             style={{ width: 160 }}
-            value={csvOptions.sheetName}
+            value={importOptions.sheetName || preview.selectedSheet}
             placeholder={i18n('workspace.importExport.selectSheet')}
-            onChange={(v) => setCsvOptions((prev) => ({ ...prev, sheetName: v }))}
+            onChange={(v) => setImportOptions((prev) => ({ ...prev, sheetName: v }))}
             options={(preview.sheets || []).filter((s) => s.visible).map((s) => ({ value: s.name, label: s.name }))}
           />
+          <Checkbox
+            checked={importOptions.hasHeader}
+            onChange={(e) =>
+              setImportOptions((prev) => ({
+                ...prev,
+                hasHeader: e.target.checked,
+                headerRow: e.target.checked ? prev.headerRow || 1 : 0,
+              }))
+            }
+          >
+            {i18n('workspace.importExport.hasHeader')}
+          </Checkbox>
           <span>{i18n('workspace.importExport.startRow')}</span>
           <InputNumber
             min={0}
-            value={csvOptions.startRow ?? 0}
-            onChange={(v) => setCsvOptions((prev) => ({ ...prev, startRow: v ?? 0 }))}
+            value={importOptions.startRow ?? 0}
+            onChange={(v) => setImportOptions((prev) => ({ ...prev, startRow: v ?? 0 }))}
             style={{ width: 70 }}
           />
-          <span>{i18n('workspace.importExport.headerRow')}</span>
+          {importOptions.hasHeader && (
+            <>
+              <span>{i18n('workspace.importExport.headerRow')}</span>
+              <InputNumber
+                min={1}
+                value={importOptions.headerRow ?? 1}
+                onChange={(v) => setImportOptions((prev) => ({ ...prev, headerRow: v ?? 1 }))}
+                style={{ width: 70 }}
+              />
+            </>
+          )}
+          <span>{i18n('workspace.importExport.endRow')}</span>
           <InputNumber
-            min={1}
-            value={csvOptions.headerRow ?? 0}
-            onChange={(v) => setCsvOptions((prev) => ({ ...prev, headerRow: v ?? 0 }))}
-            style={{ width: 70 }}
+            min={0}
+            value={importOptions.endRow ?? 0}
+            onChange={(v) => setImportOptions((prev) => ({ ...prev, endRow: v ?? 0 }))}
+            style={{ width: 80 }}
           />
           <Checkbox
-            checked={csvOptions.emptyAsNull}
-            onChange={(e) => setCsvOptions((prev) => ({ ...prev, emptyAsNull: e.target.checked }))}
+            checked={importOptions.emptyAsNull}
+            onChange={(e) => setImportOptions((prev) => ({ ...prev, emptyAsNull: e.target.checked }))}
           >
             {i18n('workspace.importExport.emptyAsNull')}
           </Checkbox>
+          <Select
+            style={{ width: 180 }}
+            value={importOptions.formulaMode}
+            onChange={(v) => setImportOptions((prev) => ({ ...prev, formulaMode: v }))}
+            options={[
+              { value: 'CACHED_VALUE', label: i18n('workspace.importExport.formulaCached') },
+              { value: 'REJECT', label: i18n('workspace.importExport.formulaReject') },
+            ]}
+          />
         </div>
       )}
       {preview && isCsv && (
         <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
             style={{ width: 120 }}
-            value={csvOptions.encoding}
-            onChange={(v) => setCsvOptions((prev) => ({ ...prev, encoding: v }))}
+            value={importOptions.encoding}
+            onChange={(v) => setImportOptions((prev) => ({ ...prev, encoding: v }))}
             options={['UTF-8', 'GB18030', 'ISO-8859-1'].map((e) => ({ value: e, label: e }))}
           />
           <Select
             style={{ width: 90 }}
-            value={csvOptions.delimiter}
-            onChange={(v) => setCsvOptions((prev) => ({ ...prev, delimiter: v }))}
+            value={importOptions.delimiter}
+            onChange={(v) => setImportOptions((prev) => ({ ...prev, delimiter: v }))}
             options={[
               { value: ',', label: i18n('workspace.importExport.delimiterComma') },
               { value: ';', label: i18n('workspace.importExport.delimiterSemicolon') },
@@ -247,14 +311,14 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
             ]}
           />
           <Checkbox
-            checked={csvOptions.hasHeader}
-            onChange={(e) => setCsvOptions((prev) => ({ ...prev, hasHeader: e.target.checked }))}
+            checked={importOptions.hasHeader}
+            onChange={(e) => setImportOptions((prev) => ({ ...prev, hasHeader: e.target.checked }))}
           >
             {i18n('workspace.importExport.hasHeader')}
           </Checkbox>
           <Checkbox
-            checked={csvOptions.emptyAsNull}
-            onChange={(e) => setCsvOptions((prev) => ({ ...prev, emptyAsNull: e.target.checked }))}
+            checked={importOptions.emptyAsNull}
+            onChange={(e) => setImportOptions((prev) => ({ ...prev, emptyAsNull: e.target.checked }))}
           >
             {i18n('workspace.importExport.emptyAsNull')}
           </Checkbox>
@@ -265,6 +329,12 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
         <>
           <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span>{i18n('workspace.importExport.previewHint', preview.previewRows)}</span>
+            {preview.hasMoreRows && <span>{i18n('workspace.importExport.largeFilePreviewLimited')}</span>}
+            {!!preview.invalidHeaders?.length && (
+              <span style={{ color: 'var(--text-color-warning)' }}>
+                {i18n('workspace.importExport.invalidHeaders', preview.invalidHeaders.join(', '))}
+              </span>
+            )}
             <Select
               style={{ width: 200 }}
               value={unmappedTarget}
@@ -279,7 +349,15 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
                 {i18n('workspace.importExport.requiredUnmapped')}: {blockedColumns.map((c) => c.name).join(', ')}
               </span>
             )}
-            <Button size="small" onClick={() => fileId && load(fileId)} loading={loading}>
+            {validationMessages.length > 0 && (
+              <span style={{ color: 'var(--text-color-danger)' }}>{validationMessages[0]}</span>
+            )}
+            {!previewCurrent && (
+              <span style={{ color: 'var(--text-color-warning)' }}>
+                {i18n('workspace.importExport.previewStale')}
+              </span>
+            )}
+            <Button size="small" onClick={() => fileId && load(fileId, importOptions)} loading={loading}>
               {i18n('common.button.refresh')}
             </Button>
           </div>
@@ -293,7 +371,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
             scroll={{ x: 700, y: 260 }}
           />
           <div style={{ marginTop: 12, textAlign: 'right' }}>
-            <Button type="primary" loading={executing} onClick={execute}>
+            <Button type="primary" loading={executing} disabled={!canExecute} onClick={execute}>
               {i18n('common.button.execute')}
             </Button>
           </div>

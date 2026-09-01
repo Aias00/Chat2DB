@@ -72,7 +72,7 @@ class DbImportPreviewServiceImplTest {
     void previewUsesContextDatabaseSchemaAndResolvedTableForColumnLookup(@TempDir Path directory) throws Exception {
         Path input = writeWorkbook(directory);
 
-        Map<String, Object> preview = new DbImportPreviewServiceImpl().preview(10L, "trusted_db", "orders", input.toFile(),
+        Map<String, Object> preview = new DbImportPreviewServiceImpl().preview(10L, "trusted_db", null, "orders", input.toFile(),
                 Map.of("sheetName", "visible", "headerRow", 1));
 
         assertEquals("trusted_db", metaData.lastTablesRequest.getDatabaseName());
@@ -85,9 +85,35 @@ class DbImportPreviewServiceImplTest {
     }
 
     @Test
+    void previewReportsDuplicateBlankHeadersAndLargeFileLimit(@TempDir Path directory) throws Exception {
+        Path input = directory.resolve("orders.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("visible");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("id");
+            header.createCell(1).setCellValue("id");
+            header.createCell(2).setBlank();
+            for (int i = 1; i <= 51; i++) {
+                Row row = sheet.createRow(i);
+                row.createCell(0).setCellValue(String.valueOf(i));
+            }
+            workbook.write(output);
+            Files.write(input, output.toByteArray());
+        }
+
+        Map<String, Object> preview = new DbImportPreviewServiceImpl().preview(10L, "trusted_db", null, "orders",
+                input.toFile(), Map.of("sheetName", "visible", "headerRow", 1));
+
+        assertEquals(List.of("id"), preview.get("duplicateHeaders"));
+        assertEquals(List.of("column_3"), preview.get("invalidHeaders"));
+        assertEquals(true, preview.get("hasMoreRows"));
+        assertEquals(50, preview.get("previewRows"));
+    }
+
+    @Test
     void previewRejectsRequestDatabaseMismatchBeforeMetadataLookup(@TempDir Path directory) {
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> new DbImportPreviewServiceImpl().preview(10L, "other_db", "orders",
+                () -> new DbImportPreviewServiceImpl().preview(10L, "other_db", null, "orders",
                         directory.resolve("missing.xlsx").toFile(), Map.of()));
 
         assertEquals("import.target.contextMismatch", exception.getMessage());
@@ -98,7 +124,7 @@ class DbImportPreviewServiceImplTest {
     @Test
     void previewRejectsRequestDatasourceMismatchBeforeMetadataLookup(@TempDir Path directory) {
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> new DbImportPreviewServiceImpl().preview(11L, "trusted_db", "orders",
+                () -> new DbImportPreviewServiceImpl().preview(11L, "trusted_db", null, "orders",
                         directory.resolve("missing.xlsx").toFile(), Map.of()));
 
         assertEquals("import.target.contextMismatch", exception.getMessage());
@@ -109,7 +135,7 @@ class DbImportPreviewServiceImplTest {
     @Test
     void previewRejectsWildcardTableNameBeforeMetadataLookup(@TempDir Path directory) {
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> new DbImportPreviewServiceImpl().preview(10L, "trusted_db", "orders%",
+                () -> new DbImportPreviewServiceImpl().preview(10L, "trusted_db", null, "orders%",
                         directory.resolve("missing.xlsx").toFile(), Map.of()));
 
         assertEquals("import.target.unsafeTableName", exception.getMessage());

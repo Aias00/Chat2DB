@@ -24,7 +24,6 @@ public class ImportFileRegistry implements IImportFileRegistry {
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "xls", "xlsx");
     private static final Duration MAX_AGE = Duration.ofHours(24);
     private static final Duration CLAIMED_MAX_AGE = Duration.ofDays(7);
-    private static final long MAX_SIZE_BYTES = 50L * 1024 * 1024;
 
     private final Map<String, Instant> claimedFiles = new ConcurrentHashMap<>();
 
@@ -91,7 +90,7 @@ public class ImportFileRegistry implements IImportFileRegistry {
     }
 
     private static void validateSource(File file, String originalFileName) {
-        if (file == null || !file.isFile() || !file.canRead() || file.length() > MAX_SIZE_BYTES
+        if (file == null || !file.isFile() || !file.canRead() || file.length() > MAX_IMPORT_FILE_SIZE_BYTES
                 || !ALLOWED_EXTENSIONS.contains(extension(originalFileName))) {
             throw new BusinessException("import.preview.fileUnreadable");
         }

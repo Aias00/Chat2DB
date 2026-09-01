@@ -9,6 +9,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -20,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 /**
  * Configurable XLS/XLSX parser for import preview and execution (MYSQL-IMPORT-003).
@@ -31,6 +33,18 @@ import java.util.Map;
 public final class ExcelParser {
 
     private static final DataFormatter DATA_FORMATTER = new DataFormatter();
+    private static final int MAX_SHEETS = 128;
+    private static final int MAX_ROWS = 100_000;
+    private static final int MAX_COLUMNS = 1_024;
+    private static final long MAX_DIMENSION_CELLS = 1_000_000L;
+    private static final long MAX_ZIP_ENTRY_SIZE_BYTES = 100L * 1024L * 1024L;
+    private static final long MAX_ZIP_TEXT_SIZE_BYTES = 20L * 1024L * 1024L;
+
+    static {
+        ZipSecureFile.setMinInflateRatio(0.01D);
+        ZipSecureFile.setMaxEntrySize(MAX_ZIP_ENTRY_SIZE_BYTES);
+        ZipSecureFile.setMaxTextSize(MAX_ZIP_TEXT_SIZE_BYTES);
+    }
 
     private ExcelParser() {
     }
@@ -54,6 +68,8 @@ public final class ExcelParser {
                 }
             }
             return result;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw workbookError(fileName, e);
         }
@@ -71,6 +87,8 @@ public final class ExcelParser {
                 }
             }
             return result;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw workbookError(fileName, e);
         }
@@ -83,35 +101,18 @@ public final class ExcelParser {
      */
     public static ExcelResult parse(byte[] bytes, String fileName, String sheetName,
                                     int startRow, int headerRow, boolean emptyAsNull, int limit) {
-        try (Workbook workbook = open(bytes, fileName)) {
-            Sheet sheet = selectSheet(workbook, sheetName);
-            int effectiveStart = Math.max(0, startRow);
-            int effectiveHeader = headerRow > 0 ? headerRow - 1 : effectiveStart;
+        return parse(bytes, fileName,
+                new ExcelImportConfig(sheetName, Math.max(0, startRow), Math.max(0, headerRow),
+                        0, emptyAsNull, ExcelImportConfig.FormulaMode.CACHED_VALUE),
+                limit);
+    }
 
-            Map<Integer, CellValue> header = headerRow > 0
-                    ? readRow(sheet, effectiveHeader, emptyAsNull) : Map.of();
-            int maxColumn = header.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
-            List<Map<Integer, CellValue>> rows = new ArrayList<>();
-            int physicalRow = headerRow > 0 ? effectiveHeader + 1 : effectiveStart;
-            int count = 0;
-            while (physicalRow <= sheet.getLastRowNum() && count < limit) {
-                Map<Integer, CellValue> row = readRow(sheet, physicalRow, emptyAsNull);
-                if (!row.isEmpty()) {
-                    rows.add(row);
-                    maxColumn = Math.max(maxColumn, row.keySet().stream().mapToInt(Integer::intValue).max().orElse(0));
-                    count++;
-                }
-                physicalRow++;
-            }
-            // Normalize every row to the same column count so previews align.
-            List<Map<Integer, CellValue>> normalizedRows = new ArrayList<>();
-            if (headerRow > 0) {
-                normalizedRows.add(normalizeRow(header, maxColumn));
-            }
-            for (Map<Integer, CellValue> row : rows) {
-                normalizedRows.add(normalizeRow(row, maxColumn));
-            }
-            return new ExcelResult(normalizedRows, headerRow > 0 ? 1 : 0);
+    public static ExcelResult parse(byte[] bytes, String fileName, ExcelImportConfig config, int limit) {
+        try (Workbook workbook = open(bytes, fileName)) {
+            validateWorkbook(workbook);
+            return parseWorkbook(workbook, config, limit);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw workbookError(fileName, e);
         }
@@ -119,25 +120,57 @@ public final class ExcelParser {
 
     public static ExcelResult parse(File file, String fileName, String sheetName,
                                     int startRow, int headerRow, boolean emptyAsNull, int limit) {
+        return parse(file, fileName,
+                new ExcelImportConfig(sheetName, Math.max(0, startRow), Math.max(0, headerRow),
+                        0, emptyAsNull, ExcelImportConfig.FormulaMode.CACHED_VALUE),
+                limit);
+    }
+
+    public static ExcelResult parse(File file, String fileName, ExcelImportConfig config, int limit) {
         try (Workbook workbook = open(file, fileName)) {
-            return parseWorkbook(workbook, sheetName, startRow, headerRow, emptyAsNull, limit);
+            validateWorkbook(workbook);
+            return parseWorkbook(workbook, config, limit);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw workbookError(fileName, e);
         }
     }
 
-    private static ExcelResult parseWorkbook(Workbook workbook, String sheetName,
-                                             int startRow, int headerRow, boolean emptyAsNull, int limit) {
-        Sheet sheet = selectSheet(workbook, sheetName);
-        int effectiveStart = Math.max(0, startRow);
-        int effectiveHeader = headerRow > 0 ? headerRow - 1 : effectiveStart;
-        Map<Integer, CellValue> header = headerRow > 0 ? readRow(sheet, effectiveHeader, emptyAsNull) : Map.of();
+    public static void parseRows(File file, String fileName, ExcelImportConfig config,
+                                 BiConsumer<Integer, Map<Integer, CellValue>> rowConsumer) {
+        try (Workbook workbook = open(file, fileName)) {
+            validateWorkbook(workbook);
+            Sheet sheet = selectSheet(workbook, config.sheetName());
+            validateSheetDimensions(sheet);
+            int rowIndex = config.firstDataRowIndex();
+            int endRowIndex = Math.min(config.endRowIndex(), sheet.getLastRowNum());
+            while (rowIndex <= endRowIndex) {
+                Map<Integer, CellValue> row = readRow(sheet, rowIndex, config);
+                if (!row.isEmpty()) {
+                    rowConsumer.accept(rowIndex, row);
+                }
+                rowIndex++;
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw workbookError(fileName, e);
+        }
+    }
+
+    private static ExcelResult parseWorkbook(Workbook workbook, ExcelImportConfig config, int limit) {
+        Sheet sheet = selectSheet(workbook, config.sheetName());
+        validateSheetDimensions(sheet);
+        Map<Integer, CellValue> header = config.headerRow() > 0
+                ? readRow(sheet, config.headerRowIndex(), config) : Map.of();
         int maxColumn = header.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
         List<Map<Integer, CellValue>> rows = new ArrayList<>();
-        int physicalRow = headerRow > 0 ? effectiveHeader + 1 : effectiveStart;
+        int physicalRow = config.firstDataRowIndex();
+        int endRowIndex = Math.min(config.endRowIndex(), sheet.getLastRowNum());
         int count = 0;
-        while (physicalRow <= sheet.getLastRowNum() && count < limit) {
-            Map<Integer, CellValue> row = readRow(sheet, physicalRow++, emptyAsNull);
+        while (physicalRow <= endRowIndex && count < limit) {
+            Map<Integer, CellValue> row = readRow(sheet, physicalRow++, config);
             if (!row.isEmpty()) {
                 rows.add(row);
                 maxColumn = Math.max(maxColumn, row.keySet().stream().mapToInt(Integer::intValue).max().orElse(0));
@@ -145,13 +178,54 @@ public final class ExcelParser {
             }
         }
         List<Map<Integer, CellValue>> normalizedRows = new ArrayList<>();
-        if (headerRow > 0) {
+        if (config.headerRow() > 0) {
             normalizedRows.add(normalizeRow(header, maxColumn));
         }
         for (Map<Integer, CellValue> row : rows) {
             normalizedRows.add(normalizeRow(row, maxColumn));
         }
-        return new ExcelResult(normalizedRows, headerRow > 0 ? 1 : 0);
+        return new ExcelResult(normalizedRows, config.headerRow() > 0 ? 1 : 0);
+    }
+
+    private static void validateWorkbook(Workbook workbook) {
+        if (workbook.getNumberOfSheets() > MAX_SHEETS) {
+            throw new BusinessException("import.excel.sheetLimitExceeded");
+        }
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            validateSheetDimensions(workbook.getSheetAt(i));
+        }
+    }
+
+    private static void validateSheetDimensions(Sheet sheet) {
+        if (sheet == null) {
+            return;
+        }
+        int rowCount = sheet.getLastRowNum() + 1;
+        if (rowCount > MAX_ROWS) {
+            throw new BusinessException("import.excel.rowLimitExceeded");
+        }
+        int maxColumnIndex = maxColumnIndex(sheet);
+        int columnCount = maxColumnIndex + 1;
+        if (columnCount > MAX_COLUMNS) {
+            throw new BusinessException("import.excel.columnLimitExceeded");
+        }
+        if ((long) rowCount * Math.max(1, columnCount) > MAX_DIMENSION_CELLS) {
+            throw new BusinessException("import.excel.cellLimitExceeded");
+        }
+    }
+
+    private static int maxColumnIndex(Sheet sheet) {
+        int maxColumnIndex = -1;
+        for (Row row : sheet) {
+            if (row == null) {
+                continue;
+            }
+            short lastCellNum = row.getLastCellNum();
+            if (lastCellNum > 0) {
+                maxColumnIndex = Math.max(maxColumnIndex, lastCellNum - 1);
+            }
+        }
+        return maxColumnIndex;
     }
 
     private static Map<Integer, CellValue> normalizeRow(Map<Integer, CellValue> row, int maxColumn) {
@@ -204,18 +278,23 @@ public final class ExcelParser {
     }
 
     private static Map<Integer, CellValue> readRow(Sheet sheet, int rowIndex, boolean emptyAsNull) {
+        return readRow(sheet, rowIndex,
+                new ExcelImportConfig(null, 0, 1, 0, emptyAsNull, ExcelImportConfig.FormulaMode.CACHED_VALUE));
+    }
+
+    private static Map<Integer, CellValue> readRow(Sheet sheet, int rowIndex, ExcelImportConfig config) {
         Row row = sheet.getRow(rowIndex);
         Map<Integer, CellValue> values = new LinkedHashMap<>();
         if (row == null) {
             return values;
         }
         for (Cell cell : row) {
-            values.put(cell.getColumnIndex(), readCell(cell, emptyAsNull));
+            values.put(cell.getColumnIndex(), readCell(cell, config));
         }
         return values;
     }
 
-    private static CellValue readCell(Cell cell, boolean emptyAsNull) {
+    private static CellValue readCell(Cell cell, ExcelImportConfig config) {
         CellType type = cell.getCellType();
         switch (type) {
             case STRING:
@@ -230,12 +309,15 @@ public final class ExcelParser {
             case BOOLEAN:
                 return new CellValue(String.valueOf(cell.getBooleanCellValue()), "boolean");
             case FORMULA:
+                if (config.formulaMode() == ExcelImportConfig.FormulaMode.REJECT) {
+                    throw new BusinessException("import.excel.formulaUnsupported");
+                }
                 // Only the cached result is read; the formula is never evaluated.
                 return new CellValue(cachedFormulaValue(cell), "formula");
             case BLANK:
             case _NONE:
             default:
-                return new CellValue(emptyAsNull ? null : "", "empty");
+                return new CellValue(config.emptyAsNull() ? null : "", "empty");
         }
     }
 
@@ -245,6 +327,9 @@ public final class ExcelParser {
                 case STRING:
                     return cell.getStringCellValue();
                 case NUMERIC:
+                    if (DateUtil.isCellDateFormatted(cell)) {
+                        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(cell.getDateCellValue());
+                    }
                     return java.math.BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
                 case BOOLEAN:
                     return String.valueOf(cell.getBooleanCellValue());

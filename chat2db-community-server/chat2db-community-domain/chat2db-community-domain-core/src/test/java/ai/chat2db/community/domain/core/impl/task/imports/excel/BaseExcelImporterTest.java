@@ -31,6 +31,8 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
 
@@ -166,6 +168,80 @@ class BaseExcelImporterTest {
                 ResultSet resultSet = statement.executeQuery("SELECT name FROM orders WHERE id = 1")) {
             assertTrue(resultSet.next());
             assertEquals("alice", resultSet.getString(1));
+        }
+    }
+
+    @Test
+    void queuedXlsxImportUsesSharedParserForTypedValues(@TempDir Path directory) throws Exception {
+        createOrdersTable("CREATE TABLE orders (id VARCHAR(20), amount VARCHAR(40), created_at VARCHAR(40), "
+                + "active VARCHAR(10), formula_total VARCHAR(40))");
+        Path input = writeWorkbook(directory, workbook -> {
+            var sheet = workbook.createSheet("visible");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("id");
+            header.createCell(1).setCellValue("amount");
+            header.createCell(2).setCellValue("created_at");
+            header.createCell(3).setCellValue("active");
+            header.createCell(4).setCellValue("formula_total");
+            Row row = sheet.createRow(1);
+            row.createCell(0).setCellValue("1");
+            row.createCell(1).setCellValue(0.1D);
+            var dateCell = row.createCell(2);
+            dateCell.setCellValue(new GregorianCalendar(2026, Calendar.AUGUST, 31, 8, 30, 0));
+            var style = workbook.createCellStyle();
+            style.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat("yyyy-mm-dd hh:mm:ss"));
+            dateCell.setCellStyle(style);
+            row.createCell(3).setCellValue(true);
+            row.createCell(4).setCellFormula("B2*2");
+            workbook.getCreationHelper().createFormulaEvaluator().evaluateFormulaCell(row.getCell(4));
+        });
+
+        new XLSXImporter().doImportData(spec(input, Map.of("sheetName", "visible", "headerRow", 1),
+                        List.of(Map.of("sourceColumn", "id", "targetColumn", "id"),
+                                Map.of("sourceColumn", "amount", "targetColumn", "amount"),
+                                Map.of("sourceColumn", "created_at", "targetColumn", "created_at"),
+                                Map.of("sourceColumn", "active", "targetColumn", "active"),
+                                Map.of("sourceColumn", "formula_total", "targetColumn", "formula_total")),
+                        "DEFAULT"),
+                new RecordingTaskExecutionContext(), columns("id", "amount", "created_at", "active", "formula_total"));
+
+        try (Statement statement = connection.createStatement();
+                ResultSet resultSet = statement.executeQuery(
+                        "SELECT amount, created_at, active, formula_total FROM orders WHERE id = '1'")) {
+            assertTrue(resultSet.next());
+            assertEquals("0.1", resultSet.getString("amount"));
+            assertEquals("2026-08-31 08:30:00", resultSet.getString("created_at"));
+            assertEquals("true", resultSet.getString("active"));
+            assertEquals("0.2", resultSet.getString("formula_total"));
+        }
+    }
+
+    @Test
+    void noHeaderXlsxImportKeepsSparseBlankCellsWhenConfigured(@TempDir Path directory) throws Exception {
+        createOrdersTable("CREATE TABLE orders (id VARCHAR(20), note VARCHAR(20))");
+        Path input = writeWorkbook(directory, workbook -> {
+            var sheet = workbook.createSheet("visible");
+            Row firstRow = sheet.createRow(0);
+            firstRow.createCell(0).setCellValue("1");
+            Row secondRow = sheet.createRow(1);
+            secondRow.createCell(0).setCellValue("2");
+            secondRow.createCell(1).setCellValue("later");
+        });
+
+        new XLSXImporter().doImportData(spec(input,
+                        Map.of("sheetName", "visible", "hasHeader", false, "headerRow", 0, "emptyAsNull", false),
+                        List.of(Map.of("sourceColumn", "column_1", "targetColumn", "id"),
+                                Map.of("sourceColumn", "column_2", "targetColumn", "note")),
+                        "NULL"),
+                new RecordingTaskExecutionContext(), columns("id", "note"));
+
+        try (Statement statement = connection.createStatement();
+                ResultSet resultSet = statement.executeQuery("SELECT note FROM orders ORDER BY id")) {
+            assertTrue(resultSet.next());
+            assertEquals("", resultSet.getString(1));
+            assertTrue(resultSet.next());
+            assertEquals("later", resultSet.getString(1));
+            assertEquals(false, resultSet.next());
         }
     }
 

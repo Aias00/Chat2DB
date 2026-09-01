@@ -20,10 +20,12 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Bounded Excel import preview with column mapping. Preview and execution share the same
@@ -39,9 +41,9 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private static final String NULL_STRATEGY = "NULL";
 
     @Override
-    public Map<String, Object> preview(Long dataSourceId, String databaseName, String tableName,
+    public Map<String, Object> preview(Long dataSourceId, String databaseName, String schemaName, String tableName,
                                        File file, Map<String, Object> importOptions) {
-        TableMetadataRequest tableRequest = resolveTarget(dataSourceId, databaseName, null, tableName);
+        TableMetadataRequest tableRequest = resolveTarget(dataSourceId, databaseName, schemaName, tableName);
         ParseOutcome outcome = parseRows(file, PREVIEW_ROW_LIMIT, importOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
@@ -50,12 +52,22 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         Map<Integer, ExcelParser.CellValue> header = outcome.header;
         List<Map<String, Object>> sourceColumns = new ArrayList<>();
         List<String> sourceNames = new ArrayList<>();
+        List<String> invalidHeaders = new ArrayList<>();
+        Set<String> uniqueHeaders = new HashSet<>();
+        Set<String> duplicateHeaders = new HashSet<>();
         for (int i = 0; i < header.size(); i++) {
             ExcelParser.CellValue headerValue = header.get(i);
             String name = headerValue == null || StringUtils.isBlank(headerValue.value())
                     ? "column_" + (i + 1)
                     : headerValue.value();
             sourceNames.add(name);
+            if (headerValue == null || StringUtils.isBlank(headerValue.value())) {
+                invalidHeaders.add(name);
+            }
+            String normalizedHeader = name.toUpperCase(Locale.ROOT);
+            if (!uniqueHeaders.add(normalizedHeader)) {
+                duplicateHeaders.add(name);
+            }
             List<Map<String, Object>> samples = new ArrayList<>();
             for (int r = outcome.firstDataRow; r < rows.size(); r++) {
                 ExcelParser.CellValue value = rows.get(r).get(i);
@@ -92,6 +104,12 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         result.put("previewRows", Math.max(0, rows.size() - outcome.firstDataRow));
         result.put("headerRow", outcome.firstDataRow == 1);
         result.put("sheets", outcome.sheets);
+        result.put("selectedSheet", selectedSheet(outcome));
+        result.put("startRow", outcome.config.startRow());
+        result.put("endRow", outcome.config.endRow());
+        result.put("invalidHeaders", invalidHeaders);
+        result.put("duplicateHeaders", new ArrayList<>(duplicateHeaders));
+        result.put("hasMoreRows", outcome.hasMoreRows);
         return result;
     }
 
@@ -318,7 +336,18 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
 
     private record ParseOutcome(List<Map<Integer, ExcelParser.CellValue>> rows,
                                 Map<Integer, ExcelParser.CellValue> header,
-                                int firstDataRow, List<Map<String, Object>> sheets) {
+                                int firstDataRow, List<Map<String, Object>> sheets,
+                                ExcelImportConfig config, boolean hasMoreRows) {
+    }
+
+    private static String selectedSheet(ParseOutcome outcome) {
+        if (StringUtils.isNotBlank(outcome.config.sheetName())) {
+            return outcome.config.sheetName();
+        }
+        if (outcome.sheets.isEmpty()) {
+            return null;
+        }
+        return (String) outcome.sheets.get(0).get("name");
     }
 
     private static ParseOutcome parseRows(File file, int limit, Map<String, Object> importOptions) {
@@ -327,13 +356,15 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         }
         Map<String, Object> options = importOptions == null ? Map.of() : importOptions;
         if (ExcelParser.isExcel(file.getName())) {
-            String sheetName = (String) options.getOrDefault("sheetName", null);
-            int startRow = ((Number) options.getOrDefault("startRow", 0)).intValue();
-            int headerRow = ((Number) options.getOrDefault("headerRow", 0)).intValue();
-            boolean emptyAsNull = Boolean.TRUE.equals(options.getOrDefault("emptyAsNull", Boolean.TRUE));
-            ExcelParser.ExcelResult result = ExcelParser.parse(file, file.getName(), sheetName,
-                    startRow, headerRow, emptyAsNull, limit);
+            ExcelImportConfig config = ExcelImportConfig.from(options);
+            int readLimit = limit == Integer.MAX_VALUE ? Integer.MAX_VALUE : limit + 1;
+            ExcelParser.ExcelResult result = ExcelParser.parse(file, file.getName(), config, readLimit);
             List<Map<Integer, ExcelParser.CellValue>> rows = result.rows();
+            boolean hasMoreRows = limit != Integer.MAX_VALUE
+                    && Math.max(0, rows.size() - result.headerRowCount()) > limit;
+            if (hasMoreRows) {
+                rows = rows.subList(0, result.headerRowCount() + limit);
+            }
             Map<Integer, ExcelParser.CellValue> header;
             int firstDataRow;
             if (result.headerRowCount() > 0 && !rows.isEmpty()) {
@@ -347,7 +378,8 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                 }
                 firstDataRow = 0;
             }
-            return new ParseOutcome(rows, header, firstDataRow, ExcelParser.sheets(file, file.getName()));
+            return new ParseOutcome(rows, header, firstDataRow, ExcelParser.sheets(file, file.getName()),
+                    config, hasMoreRows);
         }
         throw new BusinessException("import.preview.unsupportedFile");
     }

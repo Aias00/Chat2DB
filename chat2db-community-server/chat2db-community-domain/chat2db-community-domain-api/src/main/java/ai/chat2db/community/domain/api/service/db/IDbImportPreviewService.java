@@ -20,6 +20,6 @@ public interface IDbImportPreviewService {
      * @param importOptions parser options, including Excel sheet/header configuration.
      * @return preview model.
      */
-    Map<String, Object> preview(Long dataSourceId, String databaseName, String tableName,
-                                File file, Map<String, Object> importOptions);
+    Map<String, Object> preview(Long dataSourceId, String databaseName, String schemaName, String tableName,
+            File file, Map<String, Object> importOptions);
 }

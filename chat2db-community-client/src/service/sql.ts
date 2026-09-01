@@ -21,6 +21,7 @@ import type {
   ITableBrowseRequest,
   ITableEditExecuteRequest,
 } from './dmlRequest';
+import type { ImportColumnMapping, ImportParserOptions } from '@/typings/importExport';
 
 export interface IGetTableListParams extends IPageParams {
   dataSourceId: number;
@@ -445,6 +446,12 @@ export interface IImportPreview {
   previewRows: number;
   headerRow: boolean;
   sheets?: { name: string; visible: boolean }[];
+  selectedSheet?: string;
+  startRow?: number;
+  endRow?: number;
+  invalidHeaders?: string[];
+  duplicateHeaders?: string[];
+  hasMoreRows?: boolean;
 }
 
 export interface IImportExecuteResult {
@@ -455,17 +462,7 @@ export interface IImportExecuteResult {
   errors: { row: number; column: string | null; message: string }[];
 }
 
-export interface ICsvOptions {
-  encoding: string;
-  delimiter: string;
-  quote: string;
-  escape: string;
-  hasHeader: boolean;
-  emptyAsNull: boolean;
-  sheetName?: string;
-  startRow?: number;
-  headerRow?: number;
-}
+export type IImportParserOptions = ImportParserOptions;
 
 export interface IImportTaskSubmitResult {
   taskId: number;
@@ -477,7 +474,14 @@ const uploadImportFile = createRequest<{ file: File }, string>('/api/rdb/import_
 });
 
 const getImportPreview = createRequest<
-  { dataSourceId: number; databaseName: string; tableName: string; fileId: string; importOptions?: ICsvOptions },
+  {
+    dataSourceId: number;
+    databaseName: string;
+    schemaName?: string;
+    tableName: string;
+    fileId: string;
+    importOptions?: ImportParserOptions;
+  },
   IImportPreview
 >('/api/rdb/import_preview/preview', { method: 'post' });
 
@@ -485,11 +489,12 @@ const executeImportWithMapping = createRequest<
   {
     dataSourceId: number;
     databaseName: string;
+    schemaName?: string;
     tableName: string;
     fileId: string;
-    mappings: { sourceColumn: string | null; targetColumn: string }[];
+    mappings: ImportColumnMapping[];
     unmappedTarget: 'DEFAULT' | 'NULL';
-    importOptions?: ICsvOptions;
+    importOptions?: ImportParserOptions;
   },
   IImportTaskSubmitResult
 >('/api/rdb/import_preview/execute', { method: 'post' });
