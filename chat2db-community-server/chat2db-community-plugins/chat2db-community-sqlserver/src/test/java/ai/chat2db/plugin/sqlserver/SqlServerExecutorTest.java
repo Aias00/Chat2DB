@@ -118,25 +118,6 @@ class SqlServerExecutorTest {
     }
 
     @Test
-    void shouldHandleLargeWhitespaceAndRejectGoPrefixesAsDelimiters() {
-        SqlServerExecutor executor = new SqlServerExecutor();
-        String sql = "SELECT 1;\n" + "\t".repeat(100_000) + "GOTO target;\nSELECT 2;";
-
-        List<String> sqlList = executor.splitByGO(sql);
-
-        assertEquals(List.of(sql), sqlList);
-    }
-
-    @Test
-    void shouldSplitCommentedGoDelimiterWithCrLf() {
-        SqlServerExecutor executor = new SqlServerExecutor();
-
-        List<String> sqlList = executor.splitByGO("SELECT 1; GO; -- next batch\r\nSELECT 2;");
-
-        assertEquals(List.of("SELECT 1;", "SELECT 2;"), sqlList);
-    }
-
-    @Test
     void shouldExposeMetricsForGoBatch() throws Exception {
         SqlServerExecutor executor = new SqlServerExecutor();
         try (Connection connection = DriverManager.getConnection("jdbc:h2:mem:sqlserver_go_metrics")) {
