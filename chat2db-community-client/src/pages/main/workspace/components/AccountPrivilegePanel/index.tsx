@@ -695,7 +695,10 @@ function isPreviewReady(command: AccountCommand | null): command is AccountComma
   if (command.scope !== AccountPrivilegeScope.GLOBAL && !command.databaseName) {
     return false;
   }
-  if ((command.scope === AccountPrivilegeScope.TABLE || command.scope === AccountPrivilegeScope.COLUMN) && !command.tableName) {
+  if (
+    (command.scope === AccountPrivilegeScope.TABLE || command.scope === AccountPrivilegeScope.COLUMN) &&
+    !command.tableName
+  ) {
     return false;
   }
   if (command.scope === AccountPrivilegeScope.COLUMN && !command.columnList?.length) {
