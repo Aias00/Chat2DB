@@ -198,7 +198,7 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
 
     @Override
     // Desktop users intentionally select local JARs; web uploads use managed opaque upload tokens instead.
-    @SuppressWarnings("codeql[java/path-injection]")
+    @SuppressWarnings("lgtm[java/path-injection]")
     public String copyDrivers(List<String> driverPaths) {
         boolean exists = true;
         StringBuilder driverNames = new StringBuilder();
@@ -269,7 +269,7 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
 
     @Override
     // The requested identifier must first match an existing managed driver config before deletion is attempted.
-    @SuppressWarnings("codeql[java/path-injection]")
+    @SuppressWarnings("lgtm[java/path-injection]")
     public void deleteUnreferencedDriverJars(String jdbcDriver) {
         if (StringUtils.isBlank(jdbcDriver)) {
             return;
@@ -351,7 +351,7 @@ public class DbJdbcDriverServiceImpl implements IDbJdbcDriverService {
     }
 
     // Persisted driver entries are managed JAR identifiers, not arbitrary filesystem paths.
-    @SuppressWarnings("codeql[java/path-injection]")
+    @SuppressWarnings("lgtm[java/path-injection]")
     private boolean driverExists(DriverConfig driverConfig) {
         if (driverConfig == null || StringUtils.isBlank(driverConfig.getJdbcDriver())) {
             return false;
