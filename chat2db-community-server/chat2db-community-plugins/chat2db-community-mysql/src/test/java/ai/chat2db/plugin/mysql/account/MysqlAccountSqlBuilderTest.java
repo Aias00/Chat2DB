@@ -83,6 +83,38 @@ class MysqlAccountSqlBuilderTest {
         );
     }
 
+    @Test
+    void grantColumnPrivilegesAppliesColumnsToEveryPrivilege() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.GRANT_PRIVILEGE);
+        command.setScope(PrivilegeScopeEnum.COLUMN.name());
+        command.setDatabaseName("app");
+        command.setTableName("orders");
+        command.setPrivileges(List.of("SELECT", "UPDATE"));
+        command.setColumnList(List.of("status", "updated_at"));
+
+        assertEquals(
+                "GRANT SELECT (`status`, `updated_at`), UPDATE (`status`, `updated_at`) "
+                        + "ON `app`.`orders` TO 'alice''s'@'10.0.%'",
+                MysqlAccountSqlBuilder.buildSql(command)
+        );
+    }
+
+    @Test
+    void revokeColumnPrivilegesAppliesColumnsToEveryPrivilege() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.REVOKE_PRIVILEGE);
+        command.setScope(PrivilegeScopeEnum.COLUMN.name());
+        command.setDatabaseName("app");
+        command.setTableName("orders");
+        command.setPrivileges(List.of("SELECT", "REFERENCES"));
+        command.setColumnList(List.of("customer_id"));
+
+        assertEquals(
+                "REVOKE SELECT (`customer_id`), REFERENCES (`customer_id`) "
+                        + "ON `app`.`orders` FROM 'alice''s'@'10.0.%'",
+                MysqlAccountSqlBuilder.buildSql(command)
+        );
+    }
+
     private AccountOperationRequest base(AccountActionTypeEnum actionType) {
         AccountOperationRequest command = new AccountOperationRequest();
         command.setActionType(actionType.name());

@@ -63,13 +63,13 @@ class MysqlAccountSqlBuilder {
             case GRANT_PRIVILEGE -> {
                 requirePrivileges(command);
                 requireColumnPrivileges(command);
-                yield SQL_GRANT + privilegeList(command.getPrivileges()) + columnListClause(command) + SQLConstants.SQL_ON + scope(command) + SQLConstants.SQL_TO
+                yield SQL_GRANT + privilegeClause(command) + SQLConstants.SQL_ON + scope(command) + SQLConstants.SQL_TO
                         + account(command) + (Boolean.TRUE.equals(command.getGrantOption()) ? SQL_WITH_GRANT_OPTION : SQLConstants.EMPTY);
             }
             case REVOKE_PRIVILEGE -> {
                 requirePrivileges(command);
                 requireColumnPrivileges(command);
-                yield SQL_REVOKE + privilegeList(command.getPrivileges()) + columnListClause(command) + SQLConstants.SQL_ON + scope(command) + SQL_FROM
+                yield SQL_REVOKE + privilegeClause(command) + SQLConstants.SQL_ON + scope(command) + SQL_FROM
                         + account(command);
             }
             default -> throw new BusinessException(ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED);
@@ -184,6 +184,23 @@ class MysqlAccountSqlBuilder {
                 .filter(StringUtils::isNotBlank)
                 .map(MysqlAccountSqlBuilder::identifier)
                 .collect(Collectors.joining(SQLConstants.COMMA_SPACE)) + ")";
+    }
+
+    private static String privilegeClause(AccountOperationRequest command) {
+        if (!PrivilegeScopeEnum.COLUMN.name().equalsIgnoreCase(command.getScope())) {
+            return privilegeList(command.getPrivileges());
+        }
+        String columns = columnListClause(command);
+        String sqlPrivileges = command.getPrivileges().stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(MysqlPrivilege::sqlName)
+                .map(privilege -> privilege + columns)
+                .collect(Collectors.joining(SQLConstants.COMMA_SPACE));
+        if (StringUtils.isBlank(sqlPrivileges)) {
+            throw new BusinessException(ERROR_KEY_ACCOUNT_PRIVILEGE_REQUIRED);
+        }
+        return sqlPrivileges;
     }
 
     private static String privilegeList(List<String> privileges) {
