@@ -124,8 +124,8 @@ export const databaseMap: {
     name: 'Hive',
     code: DatabaseTypeCode.HIVE,
     icon: 'icon-colourful-HIVE',
-    supportDatabase: false,
-    supportSchema: true,
+    supportDatabase: true,
+    supportSchema: false,
   },
   [DatabaseTypeCode.KINGBASE]: {
     name: 'Kingbase',
@@ -140,7 +140,6 @@ export const databaseMap: {
     icon: 'icon-colourful-MongoDB',
     supportDatabase: false,
     supportSchema: true,
-    needAiDataCollections: false,
   },
   [DatabaseTypeCode.REDIS]: {
     name: 'Redis',
@@ -148,7 +147,6 @@ export const databaseMap: {
     icon: 'icon-colourful-Redis',
     supportDatabase: true,
     supportSchema: false,
-    needAiDataCollections: false,
   },
   [DatabaseTypeCode.SNOWFLAKE]: {
     name: 'Snowflake',
