@@ -1,5 +1,10 @@
 import createRequest from './base';
 import i18n from '@/i18n';
+import {
+  formatAccountDefinerImpact,
+  type AccountDefinerImpact,
+  type AccountPreview,
+} from './accountAdminPreview';
 
 export enum AccountActionType {
   CREATE_USER = 'CREATE_USER',
@@ -74,12 +79,6 @@ export interface AccountCommand extends AccountBaseParams {
   newHost?: string;
 }
 
-export interface AccountPreview {
-  actionType: AccountActionType;
-  sql: string;
-  previewToken: string;
-}
-
 export interface AccountExecute extends AccountPreview {
   success: boolean;
   message?: string;
@@ -111,6 +110,8 @@ function localizeAccountMessage(rawMessage?: string) {
   }
   return rawMessage;
 }
+
+export { formatAccountDefinerImpact, type AccountDefinerImpact, type AccountPreview };
 
 const capability = createRequest<AccountBaseParams, AccountCapability>('/api/rdb/account/capability', {
   method: 'get',

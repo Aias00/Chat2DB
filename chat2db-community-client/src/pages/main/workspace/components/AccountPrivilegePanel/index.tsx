@@ -6,11 +6,13 @@ import i18n from '@/i18n';
 import SQLPreview from '@/components/SQLPreview';
 import accountAdminService, {
   AccountActionType,
+  formatAccountDefinerImpact,
   AccountPrivilege,
   AccountPrivilegeScope,
   formatAccountExecuteMessage,
   type AccountCapability,
   type AccountCommand,
+  type AccountDefinerImpact,
   type AccountExecute,
 } from '@/service/accountAdmin';
 import connectionService from '@/service/connection';
@@ -28,6 +30,11 @@ interface PreviewState {
   sql: string;
   command: AccountCommand;
   previewToken: string;
+  oldAccountSql?: string;
+  newAccountSql?: string;
+  definerEnumerationComplete?: boolean;
+  warningCodes?: string[];
+  definerImpacts?: AccountDefinerImpact[];
 }
 
 const defaultPrivileges = Object.values(AccountPrivilege);
@@ -288,6 +295,11 @@ const AccountPrivilegePanel = memo((props: IProps) => {
             sql: preview.sql,
             command: readyCommand,
             previewToken: preview.previewToken,
+            oldAccountSql: preview.oldAccountSql,
+            newAccountSql: preview.newAccountSql,
+            definerEnumerationComplete: preview.definerEnumerationComplete,
+            warningCodes: preview.warningCodes,
+            definerImpacts: preview.definerImpacts,
           });
         })
         .catch(() => {
@@ -323,6 +335,11 @@ const AccountPrivilegePanel = memo((props: IProps) => {
         sql: preview.sql,
         command,
         previewToken: preview.previewToken,
+        oldAccountSql: preview.oldAccountSql,
+        newAccountSql: preview.newAccountSql,
+        definerEnumerationComplete: preview.definerEnumerationComplete,
+        warningCodes: preview.warningCodes,
+        definerImpacts: preview.definerImpacts,
       });
       setExecuteModalOpen(true);
     });
@@ -637,7 +654,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
       >
         <SqlPreview sql={confirmPreviewState?.sql || ''} />
         {confirmPreviewState?.command.actionType === AccountActionType.RENAME_USER && (
-          <Alert className={styles.alert} type="warning" showIcon message={i18n('workspace.databaseAccount.renameDefinerWarning')} />
+          <RenameImpactPreview preview={confirmPreviewState} />
         )}
       </Modal>
     </div>
@@ -657,6 +674,52 @@ function showExecutionMessage(result: AccountExecute) {
     return;
   }
   staticMessage.success(content);
+}
+
+function RenameImpactPreview({ preview }: { preview: PreviewState | null }) {
+  const definerImpacts = preview?.definerImpacts || [];
+  const incomplete = preview?.definerEnumerationComplete === false;
+  return (
+    <div className={styles.renameImpact}>
+      <Alert
+        type="warning"
+        showIcon
+        message={i18n('workspace.databaseAccount.renameImpactWarning')}
+        description={
+          <div className={styles.renameImpactDescription}>
+            {preview?.oldAccountSql && preview?.newAccountSql && (
+              <div>
+                {i18n('workspace.databaseAccount.renameAccountChange')} {preview.oldAccountSql} {'->'} {preview.newAccountSql}
+              </div>
+            )}
+            <div>{i18n('workspace.databaseAccount.renameDefinerWarning')}</div>
+          </div>
+        }
+      />
+      {incomplete && (
+        <Alert
+          type="warning"
+          showIcon
+          message={i18n('mysql.account.definerEnumerationIncomplete')}
+        />
+      )}
+      <div className={styles.definerSectionTitle}>{i18n('workspace.databaseAccount.definerObjects')}</div>
+      {definerImpacts.length ? (
+        <ul className={styles.definerList}>
+          {definerImpacts.map((impact) => (
+            <li key={`${impact.objectType}:${impact.schemaName}.${impact.objectName}`}>
+              {formatAccountDefinerImpact(impact)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={i18n('workspace.databaseAccount.noDefinerObjects')}
+        />
+      )}
+    </div>
+  );
 }
 
 function isPreviewReady(command: AccountCommand | null): command is AccountCommand {
