@@ -1,5 +1,6 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.model.metadata.TablePartition;
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
@@ -57,6 +58,58 @@ class DbPartitionServiceImplTest {
 
         assertEquals("orders_db", parameters.get(1));
         assertEquals("orders", parameters.get(2));
+    }
+
+    @Test
+    void listReturnsCompletePartitionMetadataForTreeAndTableDesignerReadback() {
+        Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
+                connection(new HashMap<>(), List.of(fullMetadataRow()))));
+
+        TablePartition partition = new DbPartitionServiceImpl().list("orders_db", "orders").get(0);
+
+        assertEquals("p_mid", partition.getPartitionName());
+        assertEquals("sp0", partition.getSubpartitionName());
+        assertEquals(2L, partition.getOrdinalPosition());
+        assertEquals(1L, partition.getSubpartitionOrdinalPosition());
+        assertEquals("RANGE COLUMNS", partition.getMethod());
+        assertEquals("HASH", partition.getSubpartitionMethod());
+        assertEquals("store_id,sale_date", partition.getExpression());
+        assertEquals("id", partition.getSubpartitionExpression());
+        assertEquals("20,'2026-01-01'", partition.getDescription());
+        assertEquals(12L, partition.getTableRows());
+        assertEquals(128L, partition.getAvgRowLength());
+        assertEquals(1536L, partition.getDataLength());
+        assertEquals(4096L, partition.getMaxDataLength());
+        assertEquals(512L, partition.getIndexLength());
+        assertEquals(64L, partition.getDataFree());
+        assertEquals("2026-01-02 03:04:05", partition.getCreateTime());
+        assertEquals("2026-01-03 04:05:06", partition.getUpdateTime());
+        assertEquals("2026-01-04 05:06:07", partition.getCheckTime());
+        assertEquals(99L, partition.getChecksum());
+        assertEquals("warm partition", partition.getComment());
+        assertEquals("default", partition.getNodegroup());
+        assertEquals("ts_hot", partition.getTablespaceName());
+    }
+
+    @Test
+    void listPreservesAllSupportedMysqlPartitionMethods() {
+        List<String> methods = List.of("RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS",
+                "HASH", "LINEAR HASH", "KEY", "LINEAR KEY");
+        Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
+                connection(new HashMap<>(), methods.stream()
+                        .map(method -> {
+                            Map<String, Object> row = baseRow();
+                            row.put("PARTITION_NAME", "p_" + method.replace(' ', '_').toLowerCase());
+                            row.put("PARTITION_METHOD", method);
+                            return row;
+                        })
+                        .toList())));
+
+        List<String> actualMethods = new DbPartitionServiceImpl().list("orders_db", "orders").stream()
+                .map(TablePartition::getMethod)
+                .toList();
+
+        assertEquals(methods, actualMethods);
     }
 
     @Test
@@ -221,17 +274,21 @@ class DbPartitionServiceImplTest {
 
     private static ResultSet resultSet(List<Map<String, Object>> rows) {
         int[] rowIndex = {-1};
+        Object[] lastValue = {null};
         return (ResultSet) Proxy.newProxyInstance(ResultSet.class.getClassLoader(),
                 new Class<?>[]{ResultSet.class}, (proxy, method, arguments) -> switch (method.getName()) {
                     case "next" -> ++rowIndex[0] < rows.size();
                     case "getString" -> {
                         Object value = rows.get(rowIndex[0]).get((String) arguments[0]);
+                        lastValue[0] = value;
                         yield value == null ? null : value.toString();
                     }
                     case "getLong" -> {
                         Object value = rows.get(rowIndex[0]).get((String) arguments[0]);
+                        lastValue[0] = value;
                         yield value instanceof Number ? ((Number) value).longValue() : 0L;
                     }
+                    case "wasNull" -> lastValue[0] == null;
                     case "close" -> null;
                     case "toString" -> "PartitionServiceTestResultSet";
                     case "hashCode" -> System.identityHashCode(proxy);
@@ -260,15 +317,52 @@ class DbPartitionServiceImplTest {
         row.put("PARTITION_NAME", null);
         row.put("SUBPARTITION_NAME", null);
         row.put("PARTITION_ORDINAL_POSITION", 1L);
+        row.put("SUBPARTITION_ORDINAL_POSITION", null);
         row.put("PARTITION_METHOD", null);
         row.put("SUBPARTITION_METHOD", null);
         row.put("PARTITION_EXPRESSION", null);
         row.put("SUBPARTITION_EXPRESSION", null);
         row.put("PARTITION_DESCRIPTION", null);
         row.put("TABLE_ROWS", 0L);
+        row.put("AVG_ROW_LENGTH", 0L);
         row.put("DATA_LENGTH", 0L);
+        row.put("MAX_DATA_LENGTH", 0L);
         row.put("INDEX_LENGTH", 0L);
+        row.put("DATA_FREE", 0L);
+        row.put("CREATE_TIME", null);
+        row.put("UPDATE_TIME", null);
+        row.put("CHECK_TIME", null);
+        row.put("CHECKSUM", null);
         row.put("PARTITION_COMMENT", null);
+        row.put("NODEGROUP", null);
+        row.put("TABLESPACE_NAME", null);
+        return row;
+    }
+
+    private static Map<String, Object> fullMetadataRow() {
+        Map<String, Object> row = baseRow();
+        row.put("PARTITION_NAME", "p_mid");
+        row.put("SUBPARTITION_NAME", "sp0");
+        row.put("PARTITION_ORDINAL_POSITION", 2L);
+        row.put("SUBPARTITION_ORDINAL_POSITION", 1L);
+        row.put("PARTITION_METHOD", "RANGE COLUMNS");
+        row.put("SUBPARTITION_METHOD", "HASH");
+        row.put("PARTITION_EXPRESSION", "store_id,sale_date");
+        row.put("SUBPARTITION_EXPRESSION", "id");
+        row.put("PARTITION_DESCRIPTION", "20,'2026-01-01'");
+        row.put("TABLE_ROWS", 12L);
+        row.put("AVG_ROW_LENGTH", 128L);
+        row.put("DATA_LENGTH", 1536L);
+        row.put("MAX_DATA_LENGTH", 4096L);
+        row.put("INDEX_LENGTH", 512L);
+        row.put("DATA_FREE", 64L);
+        row.put("CREATE_TIME", "2026-01-02 03:04:05");
+        row.put("UPDATE_TIME", "2026-01-03 04:05:06");
+        row.put("CHECK_TIME", "2026-01-04 05:06:07");
+        row.put("CHECKSUM", 99L);
+        row.put("PARTITION_COMMENT", "warm partition");
+        row.put("NODEGROUP", "default");
+        row.put("TABLESPACE_NAME", "ts_hot");
         return row;
     }
 }

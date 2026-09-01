@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Input, InputNumber, Modal, Table } from 'antd';
+import { Button, Descriptions, Input, InputNumber, Modal, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
 import sqlService, { IPartitionItem } from '@/service/sql';
@@ -33,6 +33,14 @@ const PartitionsContent = ({
   const [error, setError] = useState<string | null>(null);
   const [coalesceCount, setCoalesceCount] = useState<number>(1);
   const [hashAddCount, setHashAddCount] = useState<number>(1);
+
+  const renderValue = (value?: string | number | null) => {
+    return value === undefined || value === null || value === '' ? '-' : value;
+  };
+
+  const renderBytes = (value?: number | null) => {
+    return value && value > 0 ? `${(value / 1024 / 1024).toFixed(2)} MB` : '-';
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -201,17 +209,20 @@ const PartitionsContent = ({
   };
 
   const columns: ColumnsType<IPartitionItem> = [
+    { title: i18n('workspace.ops.partitionOrder'), dataIndex: 'ordinalPosition', width: 90 },
     { title: i18n('workspace.ops.partitionName'), dataIndex: 'partitionName', width: 150 },
+    { title: i18n('workspace.ops.partitionSubpartitionName'), dataIndex: 'subpartitionName', width: 150 },
     { title: i18n('workspace.ops.partitionMethod'), dataIndex: 'method', width: 140 },
     { title: i18n('workspace.ops.partitionExpression'), dataIndex: 'expression', width: 180 },
     { title: i18n('workspace.ops.partitionBoundary'), dataIndex: 'description', width: 160 },
+    { title: i18n('workspace.ops.partitionTablespace'), dataIndex: 'tablespaceName', width: 140 },
     { title: i18n('workspace.ops.partitionRows'), dataIndex: 'tableRows', width: 90 },
     {
       title: i18n('workspace.ops.partitionSize'),
       width: 100,
       render: (_, r) => {
         const bytes = (r.dataLength ?? 0) + (r.indexLength ?? 0);
-        return bytes > 0 ? `${(bytes / 1024 / 1024).toFixed(2)} MB` : '-';
+        return renderBytes(bytes);
       },
     },
     {
@@ -308,6 +319,43 @@ const PartitionsContent = ({
     },
   ];
 
+  const detailItems = (r: IPartitionItem) => [
+    { key: 'partitionName', label: i18n('workspace.ops.partitionName'), children: renderValue(r.partitionName) },
+    { key: 'subpartitionName', label: i18n('workspace.ops.partitionSubpartitionName'), children: renderValue(r.subpartitionName) },
+    { key: 'ordinalPosition', label: i18n('workspace.ops.partitionOrder'), children: renderValue(r.ordinalPosition) },
+    {
+      key: 'subpartitionOrdinalPosition',
+      label: i18n('workspace.ops.partitionSubpartitionOrder'),
+      children: renderValue(r.subpartitionOrdinalPosition),
+    },
+    { key: 'method', label: i18n('workspace.ops.partitionMethod'), children: renderValue(r.method) },
+    {
+      key: 'subpartitionMethod',
+      label: i18n('workspace.ops.partitionSubpartitionMethod'),
+      children: renderValue(r.subpartitionMethod),
+    },
+    { key: 'expression', label: i18n('workspace.ops.partitionExpression'), children: renderValue(r.expression) },
+    {
+      key: 'subpartitionExpression',
+      label: i18n('workspace.ops.partitionSubpartitionExpression'),
+      children: renderValue(r.subpartitionExpression),
+    },
+    { key: 'description', label: i18n('workspace.ops.partitionBoundary'), children: renderValue(r.description) },
+    { key: 'tableRows', label: i18n('workspace.ops.partitionRows'), children: renderValue(r.tableRows) },
+    { key: 'avgRowLength', label: i18n('workspace.ops.partitionAvgRowLength'), children: renderValue(r.avgRowLength) },
+    { key: 'dataLength', label: i18n('workspace.ops.partitionDataLength'), children: renderBytes(r.dataLength) },
+    { key: 'maxDataLength', label: i18n('workspace.ops.partitionMaxDataLength'), children: renderBytes(r.maxDataLength) },
+    { key: 'indexLength', label: i18n('workspace.ops.partitionIndexLength'), children: renderBytes(r.indexLength) },
+    { key: 'dataFree', label: i18n('workspace.ops.partitionDataFree'), children: renderBytes(r.dataFree) },
+    { key: 'createTime', label: i18n('workspace.ops.partitionCreateTime'), children: renderValue(r.createTime) },
+    { key: 'updateTime', label: i18n('workspace.ops.partitionUpdateTime'), children: renderValue(r.updateTime) },
+    { key: 'checkTime', label: i18n('workspace.ops.partitionCheckTime'), children: renderValue(r.checkTime) },
+    { key: 'checksum', label: i18n('workspace.ops.partitionChecksum'), children: renderValue(r.checksum) },
+    { key: 'comment', label: i18n('workspace.ops.partitionComment'), children: renderValue(r.comment) },
+    { key: 'nodegroup', label: i18n('workspace.ops.partitionNodegroup'), children: renderValue(r.nodegroup) },
+    { key: 'tablespaceName', label: i18n('workspace.ops.partitionTablespace'), children: renderValue(r.tablespaceName) },
+  ];
+
   return (
     <div>
       <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -364,7 +412,10 @@ const PartitionsContent = ({
         dataSource={data}
         loading={loading}
         pagination={false}
-        scroll={{ x: 1100, y: 380 }}
+        scroll={{ x: 1500, y: 380 }}
+        expandable={{
+          expandedRowRender: (r) => <Descriptions size="small" column={2} items={detailItems(r)} />,
+        }}
       />
     </div>
   );

@@ -9,6 +9,30 @@ export interface PartitionOperationContext {
 
 export const RANGE_LIST_METHODS = ['RANGE', 'RANGE COLUMNS', 'LIST', 'LIST COLUMNS'];
 export const HASH_KEY_METHODS = ['HASH', 'LINEAR HASH', 'KEY', 'LINEAR KEY'];
+export const PARTITION_READBACK_FIELD_KEYS = [
+  'partitionName',
+  'subpartitionName',
+  'ordinalPosition',
+  'subpartitionOrdinalPosition',
+  'method',
+  'subpartitionMethod',
+  'expression',
+  'subpartitionExpression',
+  'description',
+  'tableRows',
+  'avgRowLength',
+  'dataLength',
+  'maxDataLength',
+  'indexLength',
+  'dataFree',
+  'createTime',
+  'updateTime',
+  'checkTime',
+  'checksum',
+  'comment',
+  'nodegroup',
+  'tablespaceName',
+] as const;
 
 export interface PartitionOperationAvailability {
   add: boolean;

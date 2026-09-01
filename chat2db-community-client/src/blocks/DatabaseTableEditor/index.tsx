@@ -5,6 +5,7 @@ import lodash from 'lodash';
 import IndexList, { IIndexListRef } from './IndexList';
 import ColumnList, { IColumnListRef } from './ColumnList';
 import BaseInfo, { IBaseInfoRef } from './BaseInfo';
+import PartitionsContent from '@/blocks/NewTree/components/PartitionsContent';
 import sqlService, { IModifyTableSqlParams } from '@/service/sql';
 import ExecuteSQL from '@/components/ExecuteSQL';
 import { IEditTableInfo, IWorkspaceTab, IColumnTypes, IDatabaseBaseInfo } from '@/typings';
@@ -15,6 +16,7 @@ import { staticMessage } from '@chat2db/ui';
 import AIEntryButton from '@/components/AIEntryButton';
 import { useAIStore } from '@/store/ai';
 import { useWorkspaceStore } from '@/store/workspace';
+import { shouldShowMysqlTableBaseInfo } from '@/utils/databaseJudgments';
 
 interface IProps {
   databaseBaseInfo: IDatabaseBaseInfo;
@@ -63,6 +65,10 @@ export default memo((props: IProps) => {
   const indexListRef = useRef<IIndexListRef>(null);
   const [appendValue, setAppendValue] = useState<string>('');
   const aiEntryButtonRef = useRef<HTMLDivElement>(null);
+  const showPartitionTab = shouldShowMysqlTableBaseInfo(databaseBaseInfo.databaseType)
+    && !!dataSourceId
+    && !!databaseName
+    && !!tableName;
 
   const contentList = [
     {
@@ -80,6 +86,20 @@ export default memo((props: IProps) => {
       label: i18n('editTable.tab.indexInfo'),
       content: <IndexList ref={indexListRef} />,
     },
+    ...(showPartitionTab ? [
+      {
+        key: 'partition',
+        label: i18n('workspace.ops.partitions'),
+        content: (
+          <PartitionsContent
+            dataSourceId={dataSourceId!}
+            databaseName={databaseName!}
+            schemaName={schemaName}
+            tableName={tableName!}
+          />
+        ),
+      },
+    ] : []),
   ];
 
   const segmentedOptions = useMemo(() => {
@@ -122,6 +142,9 @@ export default memo((props: IProps) => {
 
   // Get database field type list
   const getDatabaseFieldTypeList = () => {
+    if (!dataSourceId || !databaseName) {
+      return;
+    }
     sqlService
       .getDatabaseFieldTypeList({
         dataSourceId,
@@ -191,7 +214,7 @@ export default memo((props: IProps) => {
   const getTableDetails = (myParams?: { tableNameProps?: string }) => {
     const { tableNameProps } = myParams || {};
     const myTableName = tableNameProps || tableName;
-    if (myTableName) {
+    if (myTableName && dataSourceId) {
       const params = {
         databaseName,
         dataSourceId,
@@ -214,6 +237,9 @@ export default memo((props: IProps) => {
   };
 
   function submit() {
+    if (!dataSourceId || !databaseName) {
+      return;
+    }
     if (baseInfoRef.current && columnListRef.current && indexListRef.current) {
       const newTable = {
         ...oldTableDetails,

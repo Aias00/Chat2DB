@@ -1,5 +1,6 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.model.metadata.TablePartition;
 import ai.chat2db.community.domain.api.service.db.IDbPartitionService;
 import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
 import ai.chat2db.community.tools.exception.BusinessException;
@@ -13,10 +14,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -28,19 +27,22 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
 
     private static final String SQL_PARTITIONS =
             "SELECT PARTITION_NAME, SUBPARTITION_NAME, PARTITION_ORDINAL_POSITION, "
+                    + "SUBPARTITION_ORDINAL_POSITION, "
                     + "PARTITION_METHOD, SUBPARTITION_METHOD, PARTITION_EXPRESSION, "
                     + "SUBPARTITION_EXPRESSION, PARTITION_DESCRIPTION, TABLE_ROWS, "
-                    + "DATA_LENGTH, INDEX_LENGTH, PARTITION_COMMENT "
+                    + "AVG_ROW_LENGTH, DATA_LENGTH, MAX_DATA_LENGTH, INDEX_LENGTH, DATA_FREE, "
+                    + "CREATE_TIME, UPDATE_TIME, CHECK_TIME, CHECKSUM, PARTITION_COMMENT, "
+                    + "NODEGROUP, TABLESPACE_NAME "
                     + "FROM information_schema.PARTITIONS "
                     + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? "
-                    + "ORDER BY PARTITION_ORDINAL_POSITION";
+                    + "ORDER BY PARTITION_ORDINAL_POSITION, SUBPARTITION_ORDINAL_POSITION";
 
     private static final String TABLE_NOT_PARTITIONED = "table.notPartitioned";
     private static final Set<String> RANGE_LIST_METHODS = Set.of("RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS");
     private static final Set<String> HASH_KEY_METHODS = Set.of("HASH", "LINEAR HASH", "KEY", "LINEAR KEY");
 
     @Override
-    public List<Map<String, Object>> list(String databaseName, String tableName) {
+    public List<TablePartition> list(String databaseName, String tableName) {
         requireSupportedMysql();
         if (StringUtils.isBlank(databaseName) || StringUtils.isBlank(tableName)) {
             throw new BusinessException("partition.name.required");
@@ -50,26 +52,37 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
             statement.setString(1, databaseName);
             statement.setString(2, tableName);
             try (ResultSet resultSet = statement.executeQuery()) {
-                List<Map<String, Object>> partitions = new ArrayList<>();
+                List<TablePartition> partitions = new ArrayList<>();
                 while (resultSet.next()) {
                     String partitionName = resultSet.getString("PARTITION_NAME");
                     String subpartitionName = resultSet.getString("SUBPARTITION_NAME");
                     if (StringUtils.isBlank(partitionName) && StringUtils.isBlank(subpartitionName)) {
                         continue;
                     }
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("partitionName", partitionName);
-                    row.put("subpartitionName", subpartitionName);
-                    row.put("ordinalPosition", resultSet.getLong("PARTITION_ORDINAL_POSITION"));
-                    row.put("method", resultSet.getString("PARTITION_METHOD"));
-                    row.put("subpartitionMethod", resultSet.getString("SUBPARTITION_METHOD"));
-                    row.put("expression", resultSet.getString("PARTITION_EXPRESSION"));
-                    row.put("description", resultSet.getString("PARTITION_DESCRIPTION"));
-                    row.put("tableRows", resultSet.getLong("TABLE_ROWS"));
-                    row.put("dataLength", resultSet.getLong("DATA_LENGTH"));
-                    row.put("indexLength", resultSet.getLong("INDEX_LENGTH"));
-                    row.put("comment", resultSet.getString("PARTITION_COMMENT"));
-                    partitions.add(row);
+                    TablePartition partition = new TablePartition();
+                    partition.setPartitionName(partitionName);
+                    partition.setSubpartitionName(subpartitionName);
+                    partition.setOrdinalPosition(nullableLong(resultSet, "PARTITION_ORDINAL_POSITION"));
+                    partition.setSubpartitionOrdinalPosition(nullableLong(resultSet, "SUBPARTITION_ORDINAL_POSITION"));
+                    partition.setMethod(resultSet.getString("PARTITION_METHOD"));
+                    partition.setSubpartitionMethod(resultSet.getString("SUBPARTITION_METHOD"));
+                    partition.setExpression(resultSet.getString("PARTITION_EXPRESSION"));
+                    partition.setSubpartitionExpression(resultSet.getString("SUBPARTITION_EXPRESSION"));
+                    partition.setDescription(resultSet.getString("PARTITION_DESCRIPTION"));
+                    partition.setTableRows(nullableLong(resultSet, "TABLE_ROWS"));
+                    partition.setAvgRowLength(nullableLong(resultSet, "AVG_ROW_LENGTH"));
+                    partition.setDataLength(nullableLong(resultSet, "DATA_LENGTH"));
+                    partition.setMaxDataLength(nullableLong(resultSet, "MAX_DATA_LENGTH"));
+                    partition.setIndexLength(nullableLong(resultSet, "INDEX_LENGTH"));
+                    partition.setDataFree(nullableLong(resultSet, "DATA_FREE"));
+                    partition.setCreateTime(resultSet.getString("CREATE_TIME"));
+                    partition.setUpdateTime(resultSet.getString("UPDATE_TIME"));
+                    partition.setCheckTime(resultSet.getString("CHECK_TIME"));
+                    partition.setChecksum(nullableLong(resultSet, "CHECKSUM"));
+                    partition.setComment(resultSet.getString("PARTITION_COMMENT"));
+                    partition.setNodegroup(resultSet.getString("NODEGROUP"));
+                    partition.setTablespaceName(resultSet.getString("TABLESPACE_NAME"));
+                    partitions.add(partition);
                 }
                 return partitions;
             }
@@ -168,22 +181,27 @@ public class DbPartitionServiceImpl implements IDbPartitionService {
         if (StringUtils.isBlank(databaseName) || StringUtils.isBlank(tableName)) {
             throw new BusinessException("partition.name.required");
         }
-        List<Map<String, Object>> rows = list(databaseName, tableName);
+        List<TablePartition> rows = list(databaseName, tableName);
         if (rows.isEmpty()) {
             throw new BusinessException(TABLE_NOT_PARTITIONED);
         }
-        String method = StringUtils.upperCase(String.valueOf(rows.get(0).get("method")), Locale.ROOT);
+        String method = StringUtils.upperCase(rows.get(0).getMethod(), Locale.ROOT);
         if (!RANGE_LIST_METHODS.contains(method) && !HASH_KEY_METHODS.contains(method)) {
             throw new BusinessException("partition.typeUnsupported");
         }
         Set<String> partitionNames = new HashSet<>();
-        for (Map<String, Object> row : rows) {
-            Object name = row.get("partitionName");
-            if (name != null && StringUtils.isNotBlank(String.valueOf(name))) {
-                partitionNames.add(String.valueOf(name));
+        for (TablePartition row : rows) {
+            String name = row.getPartitionName();
+            if (StringUtils.isNotBlank(name)) {
+                partitionNames.add(name);
             }
         }
         return new PartitionedTable(method, partitionNames);
+    }
+
+    private static Long nullableLong(ResultSet resultSet, String column) throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
     }
 
     private void requireRangeListPartition(String databaseName, String tableName, String partitionName) {

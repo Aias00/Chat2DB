@@ -435,19 +435,31 @@ export interface IPartitionItem {
   partitionName: string | null;
   subpartitionName: string | null;
   ordinalPosition: number | null;
+  subpartitionOrdinalPosition: number | null;
   method: string | null;
   subpartitionMethod: string | null;
   expression: string | null;
+  subpartitionExpression: string | null;
   description: string | null;
   tableRows: number | null;
+  avgRowLength: number | null;
   dataLength: number | null;
+  maxDataLength: number | null;
   indexLength: number | null;
+  dataFree: number | null;
+  createTime: string | null;
+  updateTime: string | null;
+  checkTime: string | null;
+  checksum: number | null;
   comment: string | null;
+  nodegroup: string | null;
+  tablespaceName: string | null;
 }
 
 interface IPartitionRequest {
   dataSourceId: number;
   databaseName: string;
+  schemaName?: string | null;
   tableName: string;
 }
 

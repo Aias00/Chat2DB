@@ -1,7 +1,8 @@
 package ai.chat2db.community.domain.api.service.db;
 
+import ai.chat2db.community.domain.api.model.metadata.TablePartition;
+
 import java.util.List;
-import java.util.Map;
 
 /**
  * MySQL table partition inspection and maintenance (MYSQL-OBJ-009). Partition definitions
@@ -17,9 +18,9 @@ public interface IDbPartitionService {
      *
      * @param databaseName the database name.
      * @param tableName    the table name.
-     * @return partition maps ordered by ordinal position.
+     * @return partition metadata ordered by ordinal position.
      */
-    List<Map<String, Object>> list(String databaseName, String tableName);
+    List<TablePartition> list(String databaseName, String tableName);
 
     /**
      * Generates the TRUNCATE PARTITION statement.

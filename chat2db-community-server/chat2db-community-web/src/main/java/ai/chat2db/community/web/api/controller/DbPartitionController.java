@@ -1,5 +1,6 @@
 package ai.chat2db.community.web.api.controller;
 
+import ai.chat2db.community.domain.api.model.metadata.TablePartition;
 import ai.chat2db.community.domain.api.service.db.IDbPartitionService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Exposes MySQL table partition inspection and maintenance (MYSQL-OBJ-009).
@@ -30,7 +30,7 @@ public class DbPartitionController {
     private IDbPartitionService partitionService;
 
     @PostMapping("/list")
-    public DataResult<List<Map<String, Object>>> list(@Valid @RequestBody PartitionListRequest request) {
+    public DataResult<List<TablePartition>> list(@Valid @RequestBody PartitionListRequest request) {
         return DataResult.of(partitionService.list(request.getDatabaseName(), request.getTableName()));
     }
 
