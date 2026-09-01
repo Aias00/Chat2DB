@@ -46,20 +46,69 @@ const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
     );
   };
 
-  return <>
-    <Button onClick={() => setConstraints((current) => [...current, createCheckConstraintDraft(`check-${Date.now()}`)])}
-    >Add constraint</Button>
-    <Table rowKey={(item) => item.key || item.name} pagination={false} dataSource={visibleCheckConstraints(constraints)} columns={[
-      { title: 'Name', dataIndex: 'name', render: (value, record) => <Input value={value} disabled={record.editStatus !== EditColumnOperationType.Add} onChange={(event) => update(record, 'name', event.target.value)} /> },
-      { title: 'Expression', dataIndex: 'expression', render: (value, record) => <Input value={value} onChange={(event) => update(record, 'expression', event.target.value)} /> },
-      { title: 'Enforced', dataIndex: 'enforced', render: (value, record) => <Checkbox checked={value !== false} onChange={(event) => update(record, 'enforced', event.target.checked)} /> },
-      { title: '', render: (value, item) => <Button danger onClick={() => setConstraints((current) => current
-        .map((entry) => entry.key === item.key ? markCheckConstraintDeleted(entry) : entry)
-        .filter((entry): entry is ICheckConstraintItem => Boolean(entry)))}
-                                                   >Delete</Button> },
-    ]}
-    />
-  </>;
+  return (
+    <>
+      <Button
+        onClick={() =>
+          setConstraints((current) => [...current, createCheckConstraintDraft(`check-${Date.now()}`)])
+        }
+      >
+        Add constraint
+      </Button>
+      <Table
+        rowKey={(item) => item.key || item.name}
+        pagination={false}
+        dataSource={visibleCheckConstraints(constraints)}
+        columns={[
+          {
+            title: 'Name',
+            dataIndex: 'name',
+            render: (value, record) => (
+              <Input
+                value={value}
+                disabled={record.editStatus !== EditColumnOperationType.Add}
+                onChange={(event) => update(record, 'name', event.target.value)}
+              />
+            ),
+          },
+          {
+            title: 'Expression',
+            dataIndex: 'expression',
+            render: (value, record) => (
+              <Input value={value} onChange={(event) => update(record, 'expression', event.target.value)} />
+            ),
+          },
+          {
+            title: 'Enforced',
+            dataIndex: 'enforced',
+            render: (value, record) => (
+              <Checkbox
+                checked={value !== false}
+                onChange={(event) => update(record, 'enforced', event.target.checked)}
+              />
+            ),
+          },
+          {
+            title: '',
+            render: (value, item) => (
+              <Button
+                danger
+                onClick={() =>
+                  setConstraints((current) =>
+                    current
+                      .map((entry) => (entry.key === item.key ? markCheckConstraintDeleted(entry) : entry))
+                      .filter((entry): entry is ICheckConstraintItem => Boolean(entry)),
+                  )
+                }
+              >
+                Delete
+              </Button>
+            ),
+          },
+        ]}
+      />
+    </>
+  );
 });
 
 export default CheckConstraintList;
