@@ -301,6 +301,8 @@ export default {
   'workspace.databaseAccount.passwordExpirationUnsupported':
     'Esta versión de MySQL o los privilegios de la cuenta actual no admiten la caducidad de contraseña',
   'workspace.databaseAccount.passwordExpirePolicy': 'Política de caducidad de contraseña',
+  'workspace.databaseAccount.passwordExpirePolicyHint':
+    'Los estados actuales de predeterminada, no caduca, intervalo y caducar ahora se leen desde mysql.user.',
   'workspace.databaseAccount.passwordExpireDefault': 'Predeterminada',
   'workspace.databaseAccount.passwordExpireNever': 'No caduca',
   'workspace.databaseAccount.passwordExpireImmediate': 'Caducar ahora',
@@ -313,6 +315,8 @@ export default {
   'workspace.databaseAccount.maxUpdatesPerHour': 'Máx. actualizaciones por hora',
   'workspace.databaseAccount.maxConnectionsPerHour': 'Máx. conexiones por hora',
   'workspace.databaseAccount.maxUserConnections': 'Máx. conexiones de usuario',
+  'workspace.databaseAccount.resourceLimitZeroHint':
+    '0 elimina ese límite de recursos; los valores no modificados se conservan.',
   'workspace.routine.button.invoke': 'Invocar rutina',
   'workspace.routine.button.apply': 'Aplicar cambios',
   'workspace.routine.button.refresh': 'Volver a cargar DDL',

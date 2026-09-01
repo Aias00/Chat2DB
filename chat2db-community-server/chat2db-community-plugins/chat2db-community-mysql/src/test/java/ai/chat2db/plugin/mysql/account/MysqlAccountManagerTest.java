@@ -1,7 +1,10 @@
 package ai.chat2db.plugin.mysql.account;
 
+import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
+import ai.chat2db.community.domain.api.model.account.AccountExecuteResponse;
 import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import ai.chat2db.community.domain.api.model.account.AccountManagerCapability;
+import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationHandler;
@@ -17,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class MysqlAccountManagerTest {
 
@@ -46,12 +50,52 @@ class MysqlAccountManagerTest {
         assertEquals("app@%", account.getDisplayName());
         assertEquals(Boolean.TRUE, account.getLocked());
         assertEquals(Boolean.FALSE, account.getPasswordExpired());
+        assertEquals("INTERVAL", account.getPasswordExpirePolicy());
         assertEquals("2026-08-30 10:15:00", account.getPasswordLastChanged());
         assertEquals(90, account.getPasswordLifetime());
         assertEquals(100, account.getMaxQueriesPerHour());
         assertEquals(20, account.getMaxUpdatesPerHour());
         assertEquals(10, account.getMaxConnectionsPerHour());
         assertEquals(3, account.getMaxUserConnections());
+    }
+
+    @Test
+    void listAccountsDerivesEveryPasswordExpirationReadbackPolicy() {
+        QueryConnection connection = new QueryConnection();
+        connection.whenQuery(
+                "SELECT User, Host, plugin, account_locked, password_expired, password_last_changed, password_lifetime,"
+                        + " max_questions, max_updates, max_connections, max_user_connections FROM mysql.user ORDER BY User, Host",
+                List.of(
+                        row("User", "default_policy", "Host", "%", "password_expired", "N", "password_lifetime", null),
+                        row("User", "never_policy", "Host", "%", "password_expired", "N", "password_lifetime", 0),
+                        row("User", "interval_policy", "Host", "%", "password_expired", "N", "password_lifetime", 30),
+                        row("User", "immediate_policy", "Host", "%", "password_expired", "Y", "password_lifetime", null)
+                )
+        );
+
+        List<AccountInfo> accounts = new MysqlAccountManager().listAccounts(connection.proxy());
+
+        assertEquals("DEFAULT", accounts.get(0).getPasswordExpirePolicy());
+        assertEquals("NEVER", accounts.get(1).getPasswordExpirePolicy());
+        assertEquals("INTERVAL", accounts.get(2).getPasswordExpirePolicy());
+        assertEquals("IMMEDIATE", accounts.get(3).getPasswordExpirePolicy());
+    }
+
+    @Test
+    void listAccountsDoesNotSelectSensitiveAuthenticationHashes() {
+        QueryConnection connection = new QueryConnection();
+        connection.whenQuery(
+                "SELECT User, Host, plugin, account_locked, password_expired, password_last_changed, password_lifetime,"
+                        + " max_questions, max_updates, max_connections, max_user_connections FROM mysql.user ORDER BY User, Host",
+                List.of(row("User", "app", "Host", "%"))
+        );
+
+        new MysqlAccountManager().listAccounts(connection.proxy());
+
+        assertEquals(List.of(
+                "SELECT User, Host, plugin, account_locked, password_expired, password_last_changed, password_lifetime,"
+                        + " max_questions, max_updates, max_connections, max_user_connections FROM mysql.user ORDER BY User, Host"
+        ), connection.executedSql());
     }
 
     @Test
@@ -89,6 +133,28 @@ class MysqlAccountManagerTest {
         assertEquals(Boolean.FALSE, capability.getResourceLimitsSupported());
     }
 
+    @Test
+    void executeReturnsMysqlErrorDetailsWithRedactedDisplaySql() {
+        QueryConnection connection = new QueryConnection();
+        AccountOperationRequest command = new AccountOperationRequest();
+        command.setActionType(AccountActionTypeEnum.ALTER_PASSWORD.name());
+        command.setUser("app");
+        command.setHost("%");
+        command.setPassword("Secret123!");
+        command.setPreviewToken(MysqlAccountSqlBuilder.previewToken(MysqlAccountSqlBuilder.buildSql(command)));
+        connection.whenExecuteFails(
+                "ALTER USER 'app'@'%' IDENTIFIED BY 'Secret123!'",
+                new SQLException("Access denied; you need CREATE USER or SYSTEM_USER", "42000", 1227)
+        );
+
+        AccountExecuteResponse result = new MysqlAccountManager().execute(connection.proxy(), command);
+
+        assertFalse(result.getSuccess());
+        assertEquals(1227, result.getErrorCode());
+        assertEquals("42000", result.getSqlState());
+        assertEquals("ALTER USER 'app'@'%' IDENTIFIED BY '******'", result.getSql());
+    }
+
     private static Map<String, Object> row(Object... values) {
         Map<String, Object> row = new HashMap<>();
         for (int i = 0; i < values.length; i += 2) {
@@ -103,6 +169,8 @@ class MysqlAccountManagerTest {
 
     private static final class QueryConnection {
         private final Map<String, List<Map<String, Object>>> results = new HashMap<>();
+        private final Map<String, SQLException> executeFailures = new HashMap<>();
+        private final List<String> executedSql = new ArrayList<>();
         private DatabaseMetaData metadata = MysqlAccountManagerTest.proxy(DatabaseMetaData.class, (target, method, args) -> switch (method.getName()) {
             case "getDatabaseProductName" -> "MySQL";
             case "getDatabaseProductVersion" -> "8.0";
@@ -112,6 +180,10 @@ class MysqlAccountManagerTest {
 
         void whenQuery(String sql, List<Map<String, Object>> rows) {
             results.put(sql, rows);
+        }
+
+        void whenExecuteFails(String sql, SQLException exception) {
+            executeFailures.put(sql, exception);
         }
 
         void metadata(String productName, String productVersion, int majorVersion) {
@@ -131,12 +203,24 @@ class MysqlAccountManagerTest {
             });
         }
 
+        List<String> executedSql() {
+            return executedSql;
+        }
+
         private PreparedStatement statement(String sql) throws SQLException {
-            if (!results.containsKey(sql)) {
+            executedSql.add(sql);
+            if (!results.containsKey(sql) && !executeFailures.containsKey(sql)) {
                 throw new SQLException("Unexpected SQL: " + sql);
             }
             return MysqlAccountManagerTest.proxy(PreparedStatement.class, (target, method, args) -> switch (method.getName()) {
                 case "executeQuery" -> resultSet(results.get(sql));
+                case "execute" -> {
+                    SQLException exception = executeFailures.get(sql);
+                    if (exception != null) {
+                        throw exception;
+                    }
+                    yield true;
+                }
                 case "close" -> null;
                 default -> defaultValue(method.getReturnType());
             });

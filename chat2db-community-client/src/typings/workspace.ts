@@ -105,6 +105,7 @@ export interface IBoundInfo {
   user?: string;
   host?: string;
   passwordExpired?: boolean;
+  passwordExpirePolicy?: import('@/service/accountTypes').AccountPasswordExpirePolicy;
   passwordLastChanged?: string;
   passwordLifetime?: number;
   maxQueriesPerHour?: number;

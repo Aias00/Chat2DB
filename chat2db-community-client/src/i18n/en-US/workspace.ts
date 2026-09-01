@@ -299,6 +299,8 @@ export default {
   'workspace.databaseAccount.passwordExpirationUnsupported':
     'Password expiration is not supported by this MySQL version or current account privileges',
   'workspace.databaseAccount.passwordExpirePolicy': 'Password expiration policy',
+  'workspace.databaseAccount.passwordExpirePolicyHint':
+    'Existing default, never, interval, and immediate-expire states are loaded from mysql.user.',
   'workspace.databaseAccount.passwordExpireDefault': 'Default',
   'workspace.databaseAccount.passwordExpireNever': 'Never expire',
   'workspace.databaseAccount.passwordExpireImmediate': 'Expire now',
@@ -311,6 +313,7 @@ export default {
   'workspace.databaseAccount.maxUpdatesPerHour': 'Max updates per hour',
   'workspace.databaseAccount.maxConnectionsPerHour': 'Max connections per hour',
   'workspace.databaseAccount.maxUserConnections': 'Max user connections',
+  'workspace.databaseAccount.resourceLimitZeroHint': '0 removes that resource limit; unchanged values are preserved.',
   'workspace.routine.button.invoke': 'Invoke routine',
   'workspace.routine.button.apply': 'Apply changes',
   'workspace.routine.button.refresh': 'Reload DDL',

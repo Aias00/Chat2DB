@@ -299,6 +299,8 @@ export default {
   'workspace.databaseAccount.passwordExpirationUnsupported':
     'この MySQL バージョンまたは現在の権限ではパスワード有効期限を利用できません',
   'workspace.databaseAccount.passwordExpirePolicy': 'パスワード有効期限ポリシー',
+  'workspace.databaseAccount.passwordExpirePolicyHint':
+    '既存のデフォルト、期限なし、日数指定、今すぐ期限切れの状態は mysql.user から読み取ります。',
   'workspace.databaseAccount.passwordExpireDefault': 'デフォルト',
   'workspace.databaseAccount.passwordExpireNever': '期限なし',
   'workspace.databaseAccount.passwordExpireImmediate': '今すぐ期限切れ',
@@ -311,6 +313,7 @@ export default {
   'workspace.databaseAccount.maxUpdatesPerHour': '1 時間あたり最大更新数',
   'workspace.databaseAccount.maxConnectionsPerHour': '1 時間あたり最大接続数',
   'workspace.databaseAccount.maxUserConnections': '最大ユーザー接続数',
+  'workspace.databaseAccount.resourceLimitZeroHint': '0 はそのリソース制限を削除し、変更していない値は保持します。',
   'workspace.routine.button.invoke': 'ルーチンを呼び出す',
   'workspace.routine.button.apply': '変更を適用',
   'workspace.routine.button.refresh': 'DDL を再読み込み',

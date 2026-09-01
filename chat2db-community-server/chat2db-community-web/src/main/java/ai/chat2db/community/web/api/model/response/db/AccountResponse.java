@@ -10,6 +10,7 @@ public class AccountResponse {
     private String authenticationPlugin;
     private Boolean locked;
     private Boolean passwordExpired;
+    private String passwordExpirePolicy;
     private String passwordLastChanged;
     private Integer passwordLifetime;
     private Integer maxQueriesPerHour;

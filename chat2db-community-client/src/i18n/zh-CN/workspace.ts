@@ -289,6 +289,8 @@ export default {
   'workspace.databaseAccount.passwordExpiration': '密码过期',
   'workspace.databaseAccount.passwordExpirationUnsupported': '当前 MySQL 版本或账号权限不支持密码过期设置',
   'workspace.databaseAccount.passwordExpirePolicy': '密码过期策略',
+  'workspace.databaseAccount.passwordExpirePolicyHint':
+    '现有默认、永不过期、按天数过期和立即过期状态会从 mysql.user 读取。',
   'workspace.databaseAccount.passwordExpireDefault': '默认',
   'workspace.databaseAccount.passwordExpireNever': '永不过期',
   'workspace.databaseAccount.passwordExpireImmediate': '立即过期',
@@ -300,6 +302,7 @@ export default {
   'workspace.databaseAccount.maxUpdatesPerHour': '每小时最大更新数',
   'workspace.databaseAccount.maxConnectionsPerHour': '每小时最大连接数',
   'workspace.databaseAccount.maxUserConnections': '最大用户连接数',
+  'workspace.databaseAccount.resourceLimitZeroHint': '0 表示移除对应资源限制，未修改的值会保留。',
   'workspace.routine.button.invoke': '调用例程',
   'workspace.routine.button.apply': '提交变更',
   'workspace.routine.button.refresh': '重新加载 DDL',

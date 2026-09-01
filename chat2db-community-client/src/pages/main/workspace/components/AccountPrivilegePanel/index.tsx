@@ -117,6 +117,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
           host: uniqueData.host,
           displayName: uniqueData.popoverContent || `${uniqueData.user}@${uniqueData.host}`,
           passwordExpired: uniqueData.passwordExpired,
+          passwordExpirePolicy: uniqueData.passwordExpirePolicy,
           passwordLastChanged: uniqueData.passwordLastChanged,
           passwordLifetime: uniqueData.passwordLifetime,
           maxQueriesPerHour: uniqueData.maxQueriesPerHour,
@@ -677,6 +678,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
               <Form.Item
                 name="passwordExpirePolicy"
                 label={i18n('workspace.databaseAccount.passwordExpirePolicy')}
+                extra={i18n('workspace.databaseAccount.passwordExpirePolicyHint')}
                 rules={[{ required: true }]}
               >
                 <Select
@@ -710,17 +712,33 @@ const AccountPrivilegePanel = memo((props: IProps) => {
           )}
           {accountActionType === AccountActionType.ALTER_RESOURCE_LIMITS && (
             <>
-              <Form.Item name="maxQueriesPerHour" label={i18n('workspace.databaseAccount.maxQueriesPerHour')}>
-                <InputNumber min={0} precision={0} className={styles.fullWidthControl} />
+              <Form.Item
+                name="maxQueriesPerHour"
+                label={i18n('workspace.databaseAccount.maxQueriesPerHour')}
+                extra={i18n('workspace.databaseAccount.resourceLimitZeroHint')}
+              >
+                <InputNumber min={0} precision={0} className={styles.fullWidthControl} placeholder="0" />
               </Form.Item>
-              <Form.Item name="maxUpdatesPerHour" label={i18n('workspace.databaseAccount.maxUpdatesPerHour')}>
-                <InputNumber min={0} precision={0} className={styles.fullWidthControl} />
+              <Form.Item
+                name="maxUpdatesPerHour"
+                label={i18n('workspace.databaseAccount.maxUpdatesPerHour')}
+                extra={i18n('workspace.databaseAccount.resourceLimitZeroHint')}
+              >
+                <InputNumber min={0} precision={0} className={styles.fullWidthControl} placeholder="0" />
               </Form.Item>
-              <Form.Item name="maxConnectionsPerHour" label={i18n('workspace.databaseAccount.maxConnectionsPerHour')}>
-                <InputNumber min={0} precision={0} className={styles.fullWidthControl} />
+              <Form.Item
+                name="maxConnectionsPerHour"
+                label={i18n('workspace.databaseAccount.maxConnectionsPerHour')}
+                extra={i18n('workspace.databaseAccount.resourceLimitZeroHint')}
+              >
+                <InputNumber min={0} precision={0} className={styles.fullWidthControl} placeholder="0" />
               </Form.Item>
-              <Form.Item name="maxUserConnections" label={i18n('workspace.databaseAccount.maxUserConnections')}>
-                <InputNumber min={0} precision={0} className={styles.fullWidthControl} />
+              <Form.Item
+                name="maxUserConnections"
+                label={i18n('workspace.databaseAccount.maxUserConnections')}
+                extra={i18n('workspace.databaseAccount.resourceLimitZeroHint')}
+              >
+                <InputNumber min={0} precision={0} className={styles.fullWidthControl} placeholder="0" />
               </Form.Item>
             </>
           )}

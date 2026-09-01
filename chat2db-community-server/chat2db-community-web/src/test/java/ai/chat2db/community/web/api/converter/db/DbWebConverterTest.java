@@ -75,6 +75,7 @@ class DbWebConverterTest {
         account.setUser("app");
         account.setHost("%");
         account.setPasswordExpired(Boolean.TRUE);
+        account.setPasswordExpirePolicy(PasswordExpirePolicyEnum.IMMEDIATE.name());
         account.setPasswordLastChanged("2026-08-30 10:15:00");
         account.setPasswordLifetime(90);
         account.setMaxQueriesPerHour(100);
@@ -85,6 +86,7 @@ class DbWebConverterTest {
         AccountResponse response = converter.account2response(account);
 
         assertEquals(Boolean.TRUE, response.getPasswordExpired());
+        assertEquals(PasswordExpirePolicyEnum.IMMEDIATE.name(), response.getPasswordExpirePolicy());
         assertEquals("2026-08-30 10:15:00", response.getPasswordLastChanged());
         assertEquals(90, response.getPasswordLifetime());
         assertEquals(100, response.getMaxQueriesPerHour());

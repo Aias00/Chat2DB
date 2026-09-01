@@ -53,6 +53,7 @@ export interface Account {
   authenticationPlugin?: string;
   locked?: boolean;
   passwordExpired?: boolean;
+  passwordExpirePolicy?: AccountPasswordExpirePolicy;
   passwordLastChanged?: string;
   passwordLifetime?: number;
   maxQueriesPerHour?: number;

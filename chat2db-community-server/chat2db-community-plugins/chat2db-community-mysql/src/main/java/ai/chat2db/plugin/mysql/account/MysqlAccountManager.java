@@ -1,12 +1,13 @@
 package ai.chat2db.plugin.mysql.account;
 
-import ai.chat2db.community.tools.exception.BusinessException;
-import ai.chat2db.spi.IAccountManager;
+import ai.chat2db.community.domain.api.enums.plugin.PasswordExpirePolicyEnum;
 import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import ai.chat2db.community.domain.api.model.account.AccountExecuteResponse;
 import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import ai.chat2db.community.domain.api.model.account.AccountManagerCapability;
 import ai.chat2db.community.domain.api.model.account.AccountPreview;
+import ai.chat2db.community.tools.exception.BusinessException;
+import ai.chat2db.spi.IAccountManager;
 import ai.chat2db.plugin.mysql.enums.account.MysqlPrivilege;
 import org.apache.commons.lang3.StringUtils;
 
@@ -149,6 +150,8 @@ public class MysqlAccountManager implements IAccountManager {
                             : VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(passwordExpired));
                     account.setPasswordLastChanged(safeGetString(resultSet, FIELD_PASSWORD_LAST_CHANGED));
                     account.setPasswordLifetime(safeGetInteger(resultSet, FIELD_PASSWORD_LIFETIME));
+                    account.setPasswordExpirePolicy(passwordExpirePolicy(account.getPasswordExpired(),
+                            account.getPasswordLifetime()));
                     account.setMaxQueriesPerHour(safeGetInteger(resultSet, FIELD_MAX_QUESTIONS));
                     account.setMaxUpdatesPerHour(safeGetInteger(resultSet, FIELD_MAX_UPDATES));
                     account.setMaxConnectionsPerHour(safeGetInteger(resultSet, FIELD_MAX_CONNECTIONS));
@@ -235,6 +238,19 @@ public class MysqlAccountManager implements IAccountManager {
         } catch (SQLException e) {
             return null;
         }
+    }
+
+    private String passwordExpirePolicy(Boolean passwordExpired, Integer passwordLifetime) {
+        if (Boolean.TRUE.equals(passwordExpired)) {
+            return PasswordExpirePolicyEnum.IMMEDIATE.name();
+        }
+        if (passwordLifetime == null) {
+            return PasswordExpirePolicyEnum.DEFAULT.name();
+        }
+        if (passwordLifetime == 0) {
+            return PasswordExpirePolicyEnum.NEVER.name();
+        }
+        return PasswordExpirePolicyEnum.INTERVAL.name();
     }
 
     private enum AccountQueryMode {

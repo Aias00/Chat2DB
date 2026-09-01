@@ -30,7 +30,7 @@ export function getAccountSettingsInitialValues(account: Account): AccountSettin
     user: account.user,
     host: account.host,
     password: '',
-    passwordExpirePolicy: AccountPasswordExpirePolicy.DEFAULT,
+    passwordExpirePolicy: normalizePasswordExpirePolicy(account),
     passwordExpireDays: account.passwordLifetime,
     maxQueriesPerHour: account.maxQueriesPerHour,
     maxUpdatesPerHour: account.maxUpdatesPerHour,
@@ -87,4 +87,20 @@ function copyNumber(values: AccountSettingsValues, command: AccountCommand, fiel
   if (typeof value === 'number') {
     (command as Record<string, unknown>)[field] = value;
   }
+}
+
+function normalizePasswordExpirePolicy(account: Account) {
+  if (account.passwordExpirePolicy) {
+    return account.passwordExpirePolicy;
+  }
+  if (account.passwordExpired) {
+    return AccountPasswordExpirePolicy.IMMEDIATE;
+  }
+  if (account.passwordLifetime === 0) {
+    return AccountPasswordExpirePolicy.NEVER;
+  }
+  if (typeof account.passwordLifetime === 'number') {
+    return AccountPasswordExpirePolicy.INTERVAL;
+  }
+  return AccountPasswordExpirePolicy.DEFAULT;
 }
