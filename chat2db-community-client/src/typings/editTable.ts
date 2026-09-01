@@ -80,6 +80,7 @@ export interface IEditTableInfo extends IBaseInfo {
   columnList: IColumnItemNew[];
   indexList: IIndexItem[];
   checkConstraintList?: ICheckConstraintItem[];
+  dbVersion?: string | null;
 }
 
 export interface ICheckConstraintItem {

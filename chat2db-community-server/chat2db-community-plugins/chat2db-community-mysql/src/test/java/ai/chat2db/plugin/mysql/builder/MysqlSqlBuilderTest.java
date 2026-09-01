@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MysqlSqlBuilderTest {
@@ -120,6 +121,7 @@ class MysqlSqlBuilderTest {
     @Test
     void shouldBuildCreateTableWithCheckConstraints() {
         MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("8.0.16");
         Table table = Table.builder()
                 .databaseName("test_db")
                 .name("payment")
@@ -337,10 +339,72 @@ class MysqlSqlBuilderTest {
         newTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount >= 0", true,
                 EditStatusEnum.ADD.name())));
 
-        BusinessException exception = org.junit.jupiter.api.Assertions.assertThrows(BusinessException.class,
+        BusinessException exception = assertThrows(BusinessException.class,
                 () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
 
         assertEquals("mysql.checkConstraint.unsupportedVersion", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectCheckExpressionThatEscapesIntoAdditionalAlterClauses() {
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of());
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint(
+                "ck_amount", "(amount > 0) ENFORCED, DROP CHECK `ck_other`, CHECK (amount > 0)", true,
+                EditStatusEnum.ADD.name())));
+
+        withMysqlVersion("8.0.36");
+        assertThrows(IllegalArgumentException.class,
+                () -> new MysqlSqlBuilder().ddl().table().buildAlterTable(oldTable, newTable));
+    }
+
+    @Test
+    void shouldRejectCheckConstraintAlterationsWhenMysqlVersionIsUnknown() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("unknown");
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of());
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount >= 0", true,
+                EditStatusEnum.ADD.name())));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+
+        assertEquals("mysql.checkConstraint.unsupportedVersion", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectIncompleteCheckConstraintNameBeforeBuildingDdl() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("8.0.16");
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of());
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint("", "amount >= 0", true,
+                EditStatusEnum.ADD.name())));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+
+        assertTrue(exception.getMessage().contains("Invalid MySQL CHECK constraint name"));
+    }
+
+    @Test
+    void shouldRejectUnsafeCheckExpressionBeforeBuildingDdl() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        withMysqlVersion("8.0.16");
+        Table oldTable = mysqlTable(List.of());
+        oldTable.setCheckConstraintList(List.of());
+        Table newTable = mysqlTable(List.of());
+        newTable.setCheckConstraintList(List.of(checkConstraint("ck_amount", "amount >= 0); DROP TABLE users; --", true,
+                EditStatusEnum.ADD.name())));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> builder.ddl().table().buildAlterTable(oldTable, newTable));
+
+        assertTrue(exception.getMessage().contains("Invalid MySQL CHECK expression"));
     }
 
     private static Table mysqlTable(List<TableColumn> columns) {

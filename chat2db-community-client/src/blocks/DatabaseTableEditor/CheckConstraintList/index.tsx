@@ -1,8 +1,9 @@
 import { forwardRef, useContext, useEffect, useImperativeHandle, useState } from 'react';
-import { Button, Checkbox, Input, Table } from 'antd';
+import { Button, Checkbox, Input, Modal, Popconfirm, Table } from 'antd';
 import { Context } from '..';
 import { EditColumnOperationType } from '@/constants';
 import { ICheckConstraintItem } from '@/typings';
+import i18n from '@/i18n';
 import {
   CheckConstraintField,
   createCheckConstraintDraft,
@@ -16,7 +17,7 @@ export interface ICheckConstraintListRef {
   getCheckConstraintListInfo: () => ICheckConstraintItem[];
 }
 
-const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
+const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_props, ref) => {
   const { tableDetails, databaseBaseInfo } = useContext(Context);
   const [constraints, setConstraints] = useState<ICheckConstraintItem[]>([]);
 
@@ -46,6 +47,28 @@ const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
     );
   };
 
+  const updateEnforced = (record: ICheckConstraintItem, enforced: boolean) => {
+    if (!enforced) {
+      update(record, 'enforced', enforced);
+      return;
+    }
+    Modal.confirm({
+      title: i18n('editTable.check.warning.title'),
+      content: i18n('editTable.check.warning.enforcedContent'),
+      okText: i18n('common.button.confirm'),
+      cancelText: i18n('common.button.cancel'),
+      onOk: () => update(record, 'enforced', enforced),
+    });
+  };
+
+  const deleteConstraint = (item: ICheckConstraintItem) => {
+    setConstraints((current) =>
+      current
+        .map((entry) => (entry.key === item.key ? markCheckConstraintDeleted(entry) : entry))
+        .filter((entry): entry is ICheckConstraintItem => Boolean(entry)),
+    );
+  };
+
   return (
     <>
       <Button
@@ -53,7 +76,7 @@ const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
           setConstraints((current) => [...current, createCheckConstraintDraft(`check-${Date.now()}`)])
         }
       >
-        Add constraint
+        {i18n('editTable.button.addCheckConstraint')}
       </Button>
       <Table
         rowKey={(item) => item.key || item.name}
@@ -61,7 +84,7 @@ const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
         dataSource={visibleCheckConstraints(constraints)}
         columns={[
           {
-            title: 'Name',
+            title: i18n('editTable.check.label.name'),
             dataIndex: 'name',
             render: (value, record) => (
               <Input
@@ -72,37 +95,33 @@ const CheckConstraintList = forwardRef<ICheckConstraintListRef>((_, ref) => {
             ),
           },
           {
-            title: 'Expression',
+            title: i18n('editTable.check.label.expression'),
             dataIndex: 'expression',
             render: (value, record) => (
               <Input value={value} onChange={(event) => update(record, 'expression', event.target.value)} />
             ),
           },
           {
-            title: 'Enforced',
+            title: i18n('editTable.check.label.enforced'),
             dataIndex: 'enforced',
             render: (value, record) => (
               <Checkbox
                 checked={value !== false}
-                onChange={(event) => update(record, 'enforced', event.target.checked)}
+                onChange={(event) => updateEnforced(record, event.target.checked)}
               />
             ),
           },
           {
             title: '',
-            render: (value, item) => (
-              <Button
-                danger
-                onClick={() =>
-                  setConstraints((current) =>
-                    current
-                      .map((entry) => (entry.key === item.key ? markCheckConstraintDeleted(entry) : entry))
-                      .filter((entry): entry is ICheckConstraintItem => Boolean(entry)),
-                  )
-                }
+            render: (_value, item) => (
+              <Popconfirm
+                title={i18n('editTable.check.deleteConfirm.title')}
+                okText={i18n('common.button.confirm')}
+                cancelText={i18n('common.button.cancel')}
+                onConfirm={() => deleteConstraint(item)}
               >
-                Delete
-              </Button>
+                <Button danger>{i18n('editTable.button.delete')}</Button>
+              </Popconfirm>
             ),
           },
         ]}

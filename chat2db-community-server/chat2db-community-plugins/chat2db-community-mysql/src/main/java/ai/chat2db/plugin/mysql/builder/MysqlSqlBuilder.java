@@ -223,15 +223,16 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                     continue;
                 }
                 if (EditStatusEnum.DELETE.name().equals(cc.getEditStatus())) {
+                    requireCheckConstraintName(cc);
                     script.append(SQLConstants.TAB).append(SQL_DROP_CHECK)
                             .append(quoteMysqlIdentifier(cc.getName()))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.ADD.name().equals(cc.getEditStatus())) {
-                    script.append(SQLConstants.TAB).append(SQL_ADD_CONSTRAINT);
-                    if (StringUtils.isNotBlank(cc.getName())) {
-                        script.append(quoteMysqlIdentifier(cc.getName())).append(" ");
-                    }
-                    script.append(SQL_CHECK_PREFIX).append(cc.getExpression()).append(")");
+                    requireCheckConstraintName(cc);
+                    String expression = MysqlSqlGuards.requireCheckExpression(cc.getExpression());
+                    script.append(SQLConstants.TAB).append(SQL_ADD_CONSTRAINT)
+                            .append(quoteMysqlIdentifier(cc.getName())).append(" ");
+                    script.append(SQL_CHECK_PREFIX).append(expression).append(")");
                     if (Boolean.FALSE.equals(cc.getEnforced())) {
                         script.append(SQL_NOT_ENFORCED);
                     } else {
@@ -239,13 +240,15 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                     }
                     script.append(SQLConstants.COMMA_LINE_SEPARATOR);
                 } else if (EditStatusEnum.MODIFY.name().equals(cc.getEditStatus())) {
+                    requireCheckConstraintName(cc);
                     if (isCheckExpressionChanged(oldTable, cc)) {
+                        String expression = MysqlSqlGuards.requireCheckExpression(cc.getExpression());
                         script.append(SQLConstants.TAB).append(SQL_DROP_CHECK)
                                 .append(quoteMysqlIdentifier(cc.getName()))
                                 .append(SQLConstants.COMMA_LINE_SEPARATOR);
                         script.append(SQLConstants.TAB).append(SQL_ADD_CONSTRAINT)
                                 .append(quoteMysqlIdentifier(cc.getName())).append(" ")
-                                .append(SQL_CHECK_PREFIX).append(cc.getExpression()).append(")")
+                                .append(SQL_CHECK_PREFIX).append(expression).append(")")
                                 .append(Boolean.FALSE.equals(cc.getEnforced()) ? SQL_NOT_ENFORCED : SQL_ENFORCED)
                                 .append(SQLConstants.COMMA_LINE_SEPARATOR);
                     } else {
@@ -275,26 +278,12 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
     /**
      * CHECK constraints (ADD/DROP/ALTER CHECK) require MySQL 8.0.16+. Fail DDL generation
      * with a clear message on older servers instead of emitting SQL that errors remotely.
-     * An unparseable version is left to the server to decide.
+     * Unknown or unparseable versions fail closed until the authoritative version proves support.
      */
     private static void requireCheckConstraintSupport() {
         String dbVersion = Chat2DBContext.getDbVersion();
-        if (StringUtils.isBlank(dbVersion)) {
-            return;
-        }
-        String[] parts = dbVersion.trim().split("[^0-9]+");
-        if (parts.length < 3) {
-            return;
-        }
-        try {
-            int major = Integer.parseInt(parts[0]);
-            int minor = Integer.parseInt(parts[1]);
-            int patch = Integer.parseInt(parts[2]);
-            if (major < 8 || (major == 8 && minor == 0 && patch < 16)) {
-                throw new BusinessException("mysql.checkConstraint.unsupportedVersion");
-            }
-        } catch (NumberFormatException e) {
-            // Unparseable version string; let the server decide.
+        if (!MysqlSqlGuards.isCheckConstraintSupportedVersion(dbVersion)) {
+            throw new BusinessException("mysql.checkConstraint.unsupportedVersion");
         }
     }
 
@@ -302,15 +291,13 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
         if (CollectionUtils.isEmpty(checkConstraints)) {
             return;
         }
+        requireCheckConstraintSupport();
         for (CheckConstraintInfo checkConstraint : checkConstraints) {
-            if (StringUtils.isBlank(checkConstraint.getExpression())) {
-                continue;
-            }
+            requireCheckConstraintName(checkConstraint);
+            String expression = MysqlSqlGuards.requireCheckExpression(checkConstraint.getExpression());
             script.append(SQLConstants.TAB);
-            if (StringUtils.isNotBlank(checkConstraint.getName())) {
-                script.append("CONSTRAINT ").append(quoteMysqlIdentifier(checkConstraint.getName())).append(" ");
-            }
-            script.append(SQL_CHECK_PREFIX).append(checkConstraint.getExpression()).append(")");
+            script.append("CONSTRAINT ").append(quoteMysqlIdentifier(checkConstraint.getName())).append(" ");
+            script.append(SQL_CHECK_PREFIX).append(expression).append(")");
             if (Boolean.FALSE.equals(checkConstraint.getEnforced())) {
                 script.append(SQL_NOT_ENFORCED);
             } else {
@@ -329,6 +316,13 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                 .findFirst()
                 .map(oldConstraint -> !StringUtils.equals(oldConstraint.getExpression(), newConstraint.getExpression()))
                 .orElse(false);
+    }
+
+    private static void requireCheckConstraintName(CheckConstraintInfo checkConstraint) {
+        if (checkConstraint == null || StringUtils.isBlank(checkConstraint.getName())) {
+            throw new IllegalArgumentException("Invalid MySQL CHECK constraint name: "
+                    + (checkConstraint == null ? null : checkConstraint.getName()));
+        }
     }
 
     private String findPrevious(TableColumn tableColumn, Table newTable) {

@@ -54,6 +54,9 @@ assertEqual(
 );
 
 const deletedExisting = markCheckConstraintDeleted(existing);
+if (!deletedExisting) {
+  throw new Error('existing check constraint should be preserved as a DELETE row');
+}
 assertEqual(
   deletedExisting.editStatus,
   EditColumnOperationType.Delete,

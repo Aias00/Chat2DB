@@ -43,7 +43,6 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_CREATE
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_CREATE_PROCEDURE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_CREATE_TABLE_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_INDEX_FROM;
-import static ai.chat2db.spi.constant.SQLConstants.SINGLE_QUOTE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_PROCEDURE_STATUS;
 import static ai.chat2db.plugin.mysql.constant.MysqlRoutineManageConstants.FUNCTION;
 import static ai.chat2db.plugin.mysql.constant.MysqlRoutineManageConstants.PROCEDURE;
@@ -96,17 +95,19 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
 
     @Override
     public List<CheckConstraintInfo> checkConstraints(Connection connection, TableMetadataRequest request) {
+        String dbVersion = Chat2DBContext.getDbVersion();
+        if (!MysqlSqlGuards.isCheckConstraintSupportedVersion(dbVersion)) {
+            log.info("MySQL CHECK constraint metadata is unsupported for server version: {}", dbVersion);
+            return List.of();
+        }
         String sql = "SELECT tc.CONSTRAINT_NAME, cc.CHECK_CLAUSE, tc.ENFORCED "
                 + "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
                 + "JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc "
                 + "ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME "
-                + "WHERE tc.CONSTRAINT_TYPE = 'CHECK' AND tc.TABLE_SCHEMA = "
-                + SINGLE_QUOTE + getSQLIdentifierProcessor().escapeString(request.getDatabaseName()) + SINGLE_QUOTE
-                + " AND tc.TABLE_NAME = " + SINGLE_QUOTE
-                + getSQLIdentifierProcessor().escapeString(request.getTableName()) + SINGLE_QUOTE
+                + "WHERE tc.CONSTRAINT_TYPE = 'CHECK' AND tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?"
                 + " ORDER BY tc.CONSTRAINT_NAME";
-        try {
-            return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
+        return DefaultSQLExecutor.getInstance().preExecute(connection, sql,
+                new String[]{request.getDatabaseName(), request.getTableName()}, resultSet -> {
                 List<CheckConstraintInfo> constraints = new ArrayList<>();
                 while (resultSet.next()) {
                     CheckConstraintInfo constraint = new CheckConstraintInfo();
@@ -120,9 +121,6 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                 }
                 return constraints;
             });
-        } catch (Exception e) {
-            return List.of();
-        }
     }
 
 

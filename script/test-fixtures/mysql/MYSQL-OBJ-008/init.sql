@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS `obj008_check_test` (
 INSERT INTO `obj008_check_test` (`name`, `age`, `email`, `status`) VALUES
     ('Alice', 30, 'alice@test.com', 'active'),
     ('Bob', 25, 'bob@test.com', 'active'),
-    ('Carol', -5, 'carol@test.com', 'inactive');
+    ('Carol', 5, 'carol@test.com', 'inactive');

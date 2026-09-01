@@ -1,4 +1,4 @@
-import { ConsoleStatus, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
+import { ConsoleStatus, DatabaseTypeCode, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
 import i18n from '@/i18n';
 import accountAdminService from '@/service/accountAdmin';
 import connectionService from '@/service/connection';
@@ -10,6 +10,13 @@ import { getDatabaseSupport } from '@/utils/database';
 import { canUseAccountManage, isMongodbTreeDataSource, isRedisTreeDataSource } from '@/utils/databaseJudgments';
 import { v4 as uuid } from 'uuid';
 import { createSavedConsoleTreeNodeKey } from '@/store/tree/backgroundRefresh';
+import { isMysqlCheckConstraintsSupported } from '@/utils/mysqlCheckConstraints';
+import {
+  createCheckConstraintNodes,
+  createCheckConstraintsTreeNodeKey,
+  createCheckConstraintTreeNodeKey,
+  loadCheckConstraintNodes,
+} from './checkConstraintTreeNodes';
 
 const fileIcon = 'icon-colourful-folder-close';
 const unfoldFileIcon = 'icon-colourful-folder-open';
@@ -83,6 +90,14 @@ export const switchIcon: Partial<{
     unfoldIcon: unfoldFileIcon,
   },
   [TreeNodeType.INDEX]: {
+    icon: 'icon-extend-nav-info',
+  },
+  [TreeNodeType.CHECK_CONSTRAINTS]: {
+    icon: fileIcon,
+    iconExistDark: true,
+    unfoldIcon: unfoldFileIcon,
+  },
+  [TreeNodeType.CHECK_CONSTRAINT]: {
     icon: 'icon-extend-nav-info',
   },
   [TreeNodeType.VIEW]: {
@@ -794,7 +809,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
   [TreeNodeType.TABLE]: {
     getChildren: (extraParams) => {
       return new Promise((r: (value: TreeNodeData[]) => void) => {
-        const { dataSourceId, databaseName, schemaName, tableName } = extraParams;
+        const { dataSourceId, databaseName, schemaName, tableName, databaseType } = extraParams;
         const params = {
           dataSourceId,
           databaseName,
@@ -804,8 +819,9 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
         const columnsKey = treeConfig[TreeNodeType.COLUMNS].createTreeNodeKey!(params);
         const keysKey = treeConfig[TreeNodeType.KEYS].createTreeNodeKey!(params);
         const indexesKey = treeConfig[TreeNodeType.INDEXES].createTreeNodeKey!(params);
+        const checkConstraintsKey = treeConfig[TreeNodeType.CHECK_CONSTRAINTS].createTreeNodeKey!(params);
 
-        const list = [
+        const list: TreeNodeData[] = [
           {
             key: columnsKey,
             originalTitle: i18n('common.text.columns'),
@@ -832,7 +848,37 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
           },
         ];
 
-        r(list);
+        if (databaseType !== DatabaseTypeCode.MYSQL) {
+          r(list);
+          return;
+        }
+
+        mysqlServer
+          .getTableDetails({
+            dataSourceId,
+            databaseName,
+            schemaName,
+            tableName,
+            refresh: true,
+          })
+          .then((tableDetails) => {
+            const constraints = tableDetails?.checkConstraintList || [];
+            if (isMysqlCheckConstraintsSupported(databaseType, tableDetails?.dbVersion) && constraints.length) {
+              list.push({
+                key: checkConstraintsKey,
+                originalTitle: i18n('editTable.tab.checkConstraints'),
+                title: null,
+                treeNodeType: TreeNodeType.CHECK_CONSTRAINTS,
+                isLeaf: false,
+                extraParams,
+                children: createCheckConstraintNodes(extraParams, constraints),
+              });
+            }
+            r(list);
+          })
+          .catch(() => {
+            r(list);
+          });
       });
     },
     createTreeNodeKey: (params) => {
@@ -844,6 +890,22 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
         `table_${tableName}`,
       ].join('-');
     },
+  },
+
+  [TreeNodeType.CHECK_CONSTRAINTS]: {
+    getChildren: (extraParams) => {
+      return loadCheckConstraintNodes(extraParams, (params) =>
+        mysqlServer.getTableDetails({ ...params, tableName: params.tableName! }),
+      ).catch(() => []);
+    },
+    createTreeNodeKey: (params) => createCheckConstraintsTreeNodeKey(formatObject(params)),
+  },
+
+  [TreeNodeType.CHECK_CONSTRAINT]: {
+    getChildren: () => {
+      return Promise.resolve([]);
+    },
+    createTreeNodeKey: (params) => createCheckConstraintTreeNodeKey(formatObject(params)),
   },
 
   [TreeNodeType.VIEWS]: {
