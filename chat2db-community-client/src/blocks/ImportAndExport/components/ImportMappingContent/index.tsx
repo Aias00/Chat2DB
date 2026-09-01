@@ -7,9 +7,10 @@ import sqlService, { IImportPreview } from '@/service/sql';
 interface IProps {
   dataSourceId: number;
   databaseName: string;
+  schemaName?: string;
   tableName: string;
   file: File;
-  onDone: () => void;
+  onSubmitted: (taskId: number) => void;
 }
 
 const SKIP = '__skip__';
@@ -18,9 +19,9 @@ const SKIP = '__skip__';
  * Import preview and column mapping (MYSQL-IMPORT-001). Loads a bounded preview of the
  * file, lets the user remap source fields to target columns (or skip them), chooses how
  * unmapped target columns are filled (DEFAULT or NULL), executes the import, and reports
- * row-level errors. Preview and execution share the backend parser.
+ * task progress. Preview and execution share the backend parser.
  */
-const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onDone }: IProps) => {
+const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableName, file, onSubmitted }: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
   const [fileId, setFileId] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -33,7 +34,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
     setLoading(true);
     setError(null);
     sqlService
-      .getImportPreview({ dataSourceId, databaseName, tableName, fileId: stagedFileId })
+      .getImportPreview({ dataSourceId, databaseName, schemaName, tableName, fileId: stagedFileId })
       .then((data) => {
         setPreview(data);
         const auto: Record<string, string> = {};
@@ -46,7 +47,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, [dataSourceId, databaseName, tableName]);
+  }, [dataSourceId, databaseName, schemaName, tableName]);
 
   useEffect(() => {
     setLoading(true);
@@ -123,12 +124,14 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
     setExecuting(true);
     setError(null);
     if (!fileId) {
+      setExecuting(false);
       return;
     }
     sqlService
       .executeImportWithMapping({
         dataSourceId,
         databaseName,
+        schemaName,
         tableName,
         fileId,
         mappings: Object.entries(mapping)
@@ -136,7 +139,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, tableName, file, onD
           .map(([source, target]) => ({ sourceColumn: source, targetColumn: target })),
         unmappedTarget,
       })
-      .then(onDone)
+      .then((result) => onSubmitted(result.taskId))
       .catch((e) => setError(e?.message || i18n('common.text.failure')))
       .finally(() => setExecuting(false));
   };

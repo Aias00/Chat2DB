@@ -13,7 +13,6 @@ import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequ
 import ai.chat2db.community.web.api.model.response.task.TaskSubmitResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -86,7 +85,9 @@ public class DbImportPreviewController {
                 .taskType(TaskType.DATA_FILE_IMPORT.name())
                 .taskName("Import " + request.getTableName())
                 .target(TaskTargetSnapshot.builder().dataSourceId(request.getDataSourceId())
-                        .databaseName(request.getDatabaseName()).tableName(request.getTableName()).build())
+                        .databaseName(request.getDatabaseName())
+                        .schemaName(request.getSchemaName())
+                        .tableName(request.getTableName()).build())
                 .sourceFile(file.getAbsolutePath())
                 .importFileId(request.getFileId())
                 .displayFileName(file.getName()).format(extension(file.getName()))
@@ -116,12 +117,7 @@ public class DbImportPreviewController {
     }
 
     @Data
-    public static class ImportExecuteRequest {
-        @NotNull
-        private Long dataSourceId;
-
-        @NotBlank
-        private String databaseName;
+    public static class ImportExecuteRequest extends DataSourceBaseRequest {
 
         @NotBlank
         private String tableName;

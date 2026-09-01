@@ -455,7 +455,7 @@ const uploadImportFile = createRequest<{ file: File }, string>('/api/rdb/import_
 });
 
 const getImportPreview = createRequest<
-  { dataSourceId: number; databaseName: string; tableName: string; fileId: string },
+  { dataSourceId: number; databaseName: string; schemaName?: string; tableName: string; fileId: string },
   IImportPreview
 >('/api/rdb/import_preview/preview', { method: 'post' });
 
@@ -463,6 +463,7 @@ const executeImportWithMapping = createRequest<
   {
     dataSourceId: number;
     databaseName: string;
+    schemaName?: string;
     tableName: string;
     fileId: string;
     mappings: { sourceColumn: string | null; targetColumn: string }[];

@@ -151,6 +151,7 @@ export default {
   'workspace.text.taskStatus': 'Estado de la tarea',
   'workspace.task.status.pending': 'Pendiente',
   'workspace.task.status.running': 'En curso',
+  'workspace.task.status.cancelling': 'Cancelando',
   'workspace.task.status.success': 'Completada',
   'workspace.task.status.failed': 'Fallida',
   'workspace.task.status.cancelled': 'Cancelada',
@@ -160,6 +161,8 @@ export default {
   'workspace.task.events.loadFailed': 'No se pudo cargar el registro de ejecución. Reintentando...',
   'workspace.task.delete.confirm':
     '¿Eliminar la tarea «{1}», todos los registros de ejecución y los archivos exportados?',
+  'workspace.task.cancel.confirmTitle': 'Cancelar tarea',
+  'workspace.task.cancel.confirm': '¿Cancelar la tarea «{1}»?',
   'workspace.text.startTime': 'Hora de inicio',
   'workspace.text.endTime': 'Hora de finalización',
   'workspace.text.importSuccess': 'Importación correcta',
@@ -306,6 +309,9 @@ export default {
   'workspace.importExport.unmappedNull': 'Columnas sin asignar: NULL',
   'workspace.importExport.requiredUnmapped': 'Columnas NOT NULL sin predeterminado sin asignar',
   'workspace.importExport.importSummary': 'Importadas: {1} filas, {2} correctas, {3} fallidas',
+  'workspace.importExport.rowImportFailed': 'Error en la fila de origen {1}: {2}',
+  'workspace.importExport.batchRetryingRows':
+    'Error en la inserción por lote de {1} filas; reintentando fila por fila: {2}',
   'workspace.importExport.errorRow': 'Fila de origen',
   'workspace.importExport.errorColumn': 'Columna de destino',
   'workspace.importExport.errorMessage': 'Error',

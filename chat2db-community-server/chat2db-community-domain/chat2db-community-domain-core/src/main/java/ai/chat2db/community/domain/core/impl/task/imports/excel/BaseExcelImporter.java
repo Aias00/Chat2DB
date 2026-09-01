@@ -2,8 +2,13 @@ package ai.chat2db.community.domain.core.impl.task.imports.excel;
 
 import ai.chat2db.community.domain.core.impl.task.imports.BaseImporter;
 import ai.chat2db.community.domain.core.impl.task.imports.ImportSqlExecutor;
+import ai.chat2db.community.domain.api.model.task.TaskConstants;
+import ai.chat2db.community.domain.api.model.task.TaskCancelledException;
 import ai.chat2db.community.domain.api.model.task.ImportTaskSpec;
+import ai.chat2db.community.domain.api.model.task.TaskErrorCode;
 import ai.chat2db.community.domain.api.model.task.TaskEventCode;
+import ai.chat2db.community.domain.api.model.task.TaskExecutionException;
+import ai.chat2db.community.domain.api.model.task.TaskStage;
 import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
 import ai.chat2db.spi.ISqlBuilder;
 import ai.chat2db.spi.IValueProcessor;
@@ -21,6 +26,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.util.*;
 
 
@@ -31,16 +39,91 @@ public abstract class BaseExcelImporter extends BaseImporter {
         context.checkCancelled();
         ExcelTypeEnum excelType = getExcelType();
         NoModelDataListener noModelDataListener = new NoModelDataListener(spec, context, columns);
-        EasyExcel.read(new File(spec.getSourceFile()), noModelDataListener)
-                .excelType(excelType)
-                .sheet()
-                .headRowNumber(1)
-                .doRead();
-        context.checkCancelled();
+        runInTransaction(() -> {
+            EasyExcel.read(new File(spec.getSourceFile()), noModelDataListener)
+                    .excelType(excelType)
+                    .sheet()
+                    .headRowNumber(1)
+                    .doRead();
+            context.checkCancelled();
+        });
 
     }
 
     protected abstract ExcelTypeEnum getExcelType();
+
+    private void runInTransaction(Runnable importAction) {
+        Connection connection = Chat2DBContext.getConnection();
+        boolean autoCommit;
+        Savepoint savepoint = null;
+        try {
+            autoCommit = connection.getAutoCommit();
+            if (autoCommit) {
+                connection.setAutoCommit(false);
+            } else {
+                savepoint = connection.setSavepoint();
+            }
+        } catch (SQLException e) {
+            throw new TaskExecutionException(TaskErrorCode.IMPORT_FAILED.name(),
+                    "Could not start import transaction", e);
+        }
+
+        RuntimeException failure = null;
+        boolean committed = false;
+        try {
+            importAction.run();
+            if (savepoint != null) {
+                connection.releaseSavepoint(savepoint);
+            } else {
+                connection.commit();
+            }
+            committed = true;
+        } catch (RuntimeException e) {
+            failure = e;
+            throw e;
+        } catch (Exception e) {
+            failure = new TaskExecutionException(TaskErrorCode.IMPORT_FAILED.name(),
+                    "Could not import data file", e);
+            throw failure;
+        } finally {
+            if (!committed) {
+                rollbackImport(connection, savepoint, failure);
+            }
+            if (savepoint == null) {
+                restoreAutoCommit(connection, failure);
+            }
+        }
+    }
+
+    private void rollbackImport(Connection connection, Savepoint savepoint, RuntimeException failure) {
+        try {
+            if (savepoint != null) {
+                connection.rollback(savepoint);
+            } else {
+                connection.rollback();
+            }
+        } catch (Exception rollbackFailure) {
+            if (failure != null) {
+                failure.addSuppressed(rollbackFailure);
+                return;
+            }
+            throw new TaskExecutionException(TaskErrorCode.IMPORT_FAILED.name(),
+                    "Could not roll back failed import", rollbackFailure);
+        }
+    }
+
+    private void restoreAutoCommit(Connection connection, RuntimeException failure) {
+        try {
+            connection.setAutoCommit(true);
+        } catch (SQLException restoreFailure) {
+            if (failure != null) {
+                failure.addSuppressed(restoreFailure);
+                return;
+            }
+            throw new TaskExecutionException(TaskErrorCode.IMPORT_FAILED.name(),
+                    "Could not restore import connection", restoreFailure);
+        }
+    }
 
 
     public class NoModelDataListener extends AnalysisEventListener<Map<Integer, String>> {
@@ -64,9 +147,9 @@ public abstract class BaseExcelImporter extends BaseImporter {
 
         private long successCount;
 
-        private long failedCount;
-
         private long skippedCount;
+
+        private long totalRows;
 
         private static final int BATCH_SIZE = 1000;
 
@@ -129,6 +212,7 @@ public abstract class BaseExcelImporter extends BaseImporter {
             this.taskContext.checkCancelled();
             if (data == null || data.isEmpty()) {
                 skippedCount++;
+                totalRows++;
                 return;
             }
             List<String> values = getValueList(data);
@@ -137,12 +221,14 @@ public abstract class BaseExcelImporter extends BaseImporter {
 
             if (StringUtils.isBlank(sql)) {
                 skippedCount++;
+                totalRows++;
                 return;
             }
             if (sqlList == null) {
                 sqlList = new ArrayList<>();
             }
             sqlList.add(sql);
+            totalRows++;
             if (sqlList.size() >= BATCH_SIZE) {
                 executeBatchInsert();
             } else {
@@ -219,8 +305,9 @@ public abstract class BaseExcelImporter extends BaseImporter {
             this.taskContext.checkCancelled();
             executeBatchInsert();
             taskContext.logInfo("IMPORT_SUMMARY", "Data import completed", Map.of(
+                    "totalRows", totalRows,
                     "successCount", successCount,
-                    "failedCount", failedCount,
+                    "failedCount", 0L,
                     "skippedCount", skippedCount));
         }
 
@@ -233,14 +320,25 @@ public abstract class BaseExcelImporter extends BaseImporter {
                 try {
                     sqlExecutor.executeBatch(sqlList);
                     successCount += statementCount;
+                    reportImportProgress();
+                } catch (TaskCancelledException e) {
+                    throw e;
                 } catch (Exception e) {
-                    failedCount += statementCount;
                     taskContext.logError("IMPORT_BATCH_FAILED", "Could not import batch", Map.of(
                             "statementCount", statementCount,
                             "message", StringUtils.defaultString(e.getMessage())));
+                    throw e;
                 }
             }
             sqlList = new ArrayList<>();
+        }
+
+        private void reportImportProgress() {
+            long processedRows = successCount + skippedCount;
+            int progress = (int) Math.min(TaskConstants.MAX_RUNNING_PROGRESS,
+                    20 + Math.min(70, processedRows / 100));
+            taskContext.reportProgress(progress, TaskStage.IMPORTING.name(),
+                    String.format("Imported %s rows", successCount));
         }
     }
 
