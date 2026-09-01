@@ -38,5 +38,20 @@ const accountPanel = source('pages/main/workspace/components/AccountPrivilegePan
 for (const action of ['GRANT_ROLE', 'REVOKE_ROLE', 'SET_DEFAULT_ROLE', 'DROP_ROLE']) {
   assert.match(accountPanel, new RegExp(`AccountActionType\\.${action}`), `panel should expose ${action}`);
 }
+assert.match(
+  accountPanel,
+  /roleManagementSupported\s*&&\s*!selectedAccount\.role/,
+  'role management controls must stay hidden when capability gates MySQL 5.7 or role nodes',
+);
+assert.match(accountPanel, /setConfirmPreviewState\(previewState\)/, 'privilege changes must go through final SQL confirmation');
+assert.match(accountPanel, /getDestructiveConfirmText/, 'destructive account operations must require typed confirmation');
+assert.match(
+  accountPanel,
+  /DROP_USER[\s\S]*DROP_ROLE[\s\S]*return `\$\{command\.user\}@\$\{command\.host\}`/,
+  'drop user/role confirmation must be tied to the exact account user and host',
+);
+for (const mode of ['SELECTED', 'ALL', 'NONE']) {
+  assert.match(accountPanel, new RegExp(`value:\\s*'${mode}'`), `default role UI should expose ${mode}`);
+}
 
 console.log('Account admin frontend contract tests passed');

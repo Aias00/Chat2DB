@@ -47,6 +47,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmPreviewState, setConfirmPreviewState] = useState<PreviewState | null>(null);
+  const [executeConfirmText, setExecuteConfirmText] = useState('');
   const [executeModalOpen, setExecuteModalOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountActionType, setAccountActionType] = useState<AccountActionType | null>(null);
@@ -110,6 +111,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
 
   const resetConfirmState = () => {
     setConfirmPreviewState(null);
+    setExecuteConfirmText('');
   };
 
   const refreshUserTree = () => {
@@ -386,16 +388,26 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   };
 
   const executeConfirmCommand = () => {
+    const destructiveConfirmText = getDestructiveConfirmText(confirmPreviewState?.command);
+    if (destructiveConfirmText && executeConfirmText !== destructiveConfirmText) {
+      return Promise.resolve();
+    }
     return executePreview(confirmPreviewState).then((result) => {
       if (result?.success) {
         setExecuteModalOpen(false);
+        setExecuteConfirmText('');
       }
     });
   };
 
   const submitPrivilegeCommand = () => {
     form.validateFields().then(() => {
-      executePreview(previewState);
+      if (!previewState) {
+        return;
+      }
+      setConfirmPreviewState(previewState);
+      setExecuteConfirmText('');
+      setExecuteModalOpen(true);
     });
   };
 
@@ -754,11 +766,27 @@ const AccountPrivilegePanel = memo((props: IProps) => {
         width={720}
         open={executeModalOpen}
         confirmLoading={executeLoading}
+        okButtonProps={{
+          danger: !!getDestructiveConfirmText(confirmPreviewState?.command),
+          disabled: !isExecuteConfirmReady(confirmPreviewState?.command, executeConfirmText),
+        }}
         maskClosable={false}
         onOk={executeConfirmCommand}
-        onCancel={() => setExecuteModalOpen(false)}
+        onCancel={() => {
+          setExecuteModalOpen(false);
+          setExecuteConfirmText('');
+        }}
       >
         <SqlPreview sql={confirmPreviewState?.sql || ''} />
+        {getDestructiveConfirmText(confirmPreviewState?.command) && (
+          <Input
+            className={styles.deleteConfirmInput}
+            value={executeConfirmText}
+            placeholder={getDestructiveConfirmText(confirmPreviewState?.command) || ''}
+            status={executeConfirmText && !isExecuteConfirmReady(confirmPreviewState?.command, executeConfirmText) ? 'error' : ''}
+            onChange={(event) => setExecuteConfirmText(event.target.value)}
+          />
+        )}
       </Modal>
     </div>
   );
@@ -807,6 +835,21 @@ function accountActionTitle(actionType: AccountActionType) {
     default:
       return i18n('workspace.databaseAccount.userOperation');
   }
+}
+
+function getDestructiveConfirmText(command?: AccountCommand | null) {
+  if (
+    !command ||
+    (command.actionType !== AccountActionType.DROP_USER && command.actionType !== AccountActionType.DROP_ROLE)
+  ) {
+    return '';
+  }
+  return `${command.user}@${command.host}`;
+}
+
+function isExecuteConfirmReady(command: AccountCommand | undefined | null, confirmText: string) {
+  const destructiveConfirmText = getDestructiveConfirmText(command);
+  return !destructiveConfirmText || confirmText === destructiveConfirmText;
 }
 
 function roleValue(account: Account) {

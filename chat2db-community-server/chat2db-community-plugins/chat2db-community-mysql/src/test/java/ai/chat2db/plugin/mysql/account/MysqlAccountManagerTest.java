@@ -60,6 +60,29 @@ class MysqlAccountManagerTest {
         assertEquals(List.of(), accounts.get(1).getDefaultRoles());
     }
 
+    @Test
+    void listAccountsHandlesNestedRoleDefaultCycleAndAdminEdgeFixtures() {
+        MysqlAccountManager manager = new MysqlAccountManager();
+
+        List<AccountInfo> accounts = manager.listAccounts(connection("MySQL", 8, "8.0.35", this::nestedRoleRows));
+
+        assertEquals(5, accounts.size());
+        assertEquals("alice", accounts.get(0).getUser());
+        assertEquals(Boolean.FALSE, accounts.get(0).getRole());
+        assertEquals(List.of(role("analyst_role", "%")), accounts.get(0).getDefaultRoles());
+        assertEquals("analyst_role", accounts.get(1).getUser());
+        assertEquals(Boolean.TRUE, accounts.get(1).getRole());
+        assertEquals(List.of(), accounts.get(1).getDefaultRoles());
+        assertEquals("cycle_role", accounts.get(2).getUser());
+        assertEquals(Boolean.TRUE, accounts.get(2).getRole());
+        assertEquals(List.of(role("cycle_role", "%")), accounts.get(2).getDefaultRoles());
+        assertEquals("reader_role", accounts.get(3).getUser());
+        assertEquals(Boolean.TRUE, accounts.get(3).getRole());
+        assertEquals("worker", accounts.get(4).getUser());
+        assertEquals(Boolean.FALSE, accounts.get(4).getRole());
+        assertEquals(List.of(), accounts.get(4).getDefaultRoles());
+    }
+
     private List<Row> capabilityRows(String sql, List<String> params) {
         if (Objects.equals(sql, SQL_SELECT_USER_HOST_MYSQL_USER) || Objects.equals(sql, SQL_SELECT_ACCOUNT_LOCKED_MYSQL_USER)) {
             return List.of(row("1"));
@@ -86,6 +109,33 @@ class MysqlAccountManagerTest {
             return List.of(row("reader", "%"));
         }
         if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("reader", "%"))) {
+            return List.of();
+        }
+        return capabilityRows(sql, params);
+    }
+
+    private List<Row> nestedRoleRows(String sql, List<String> params) {
+        if (Objects.equals(sql, SQL_SELECT_MYSQL_USERS_WITH_LOCK)) {
+            return List.of(
+                    row(Map.of("User", "alice", "Host", "%", "plugin", "caching_sha2_password", "account_locked", "N")),
+                    row(Map.of("User", "analyst_role", "Host", "%", "plugin", "", "account_locked", "Y")),
+                    row(Map.of("User", "cycle_role", "Host", "%", "plugin", "", "account_locked", "Y")),
+                    row(Map.of("User", "reader_role", "Host", "%", "plugin", "", "account_locked", "Y")),
+                    row(Map.of("User", "worker", "Host", "%", "plugin", "caching_sha2_password", "account_locked", "N")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_ACCOUNTS)) {
+            return List.of(
+                    row(Map.of("role_user", "reader_role", "role_host", "%")),
+                    row(Map.of("role_user", "analyst_role", "role_host", "%")),
+                    row(Map.of("role_user", "cycle_role", "role_host", "%")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("alice", "%"))) {
+            return List.of(row("analyst_role", "%"));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES) && Objects.equals(params, List.of("cycle_role", "%"))) {
+            return List.of(row("cycle_role", "%"));
+        }
+        if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES)) {
             return List.of();
         }
         return capabilityRows(sql, params);
