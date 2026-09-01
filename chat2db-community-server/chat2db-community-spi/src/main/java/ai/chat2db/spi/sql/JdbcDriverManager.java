@@ -80,15 +80,16 @@ public class JdbcDriverManager {
             if (Objects.isNull(driverEntry)) {
                 driverEntry = getJDBCDriver(driver);
             }
+            String connectionUrl = trustedConnectionUrl(url, driverEntry.getDriver());
             try {
-                Connection connection = driverEntry.getDriver().connect(url, info);
+                Connection connection = driverEntry.getDriver().connect(connectionUrl, info);
                 if (Objects.isNull(connection)) {
-                    throw new SQLException(String.format(
-                            "driver.connect return null , No suitable driver found for url %s", url), SQL_STATE_CODE);
+                    throw new SQLException("driver.connect returned null; no suitable driver accepted the JDBC URL",
+                            SQL_STATE_CODE);
                 }
                 return connection;
             } catch (SQLException sqlException) {
-                Connection con = tryConnectionAgain(driverEntry, url, info);
+                Connection con = tryConnectionAgain(driverEntry, connectionUrl, info);
 
                 if (Objects.isNull(con)) {
                     throw new SQLException(String.format("Cannot create connection (%s)",
@@ -101,6 +102,22 @@ public class JdbcDriverManager {
         } finally {
             MySqlTlsTranslator.cleanupTemporaryStores(info);
         }
+    }
+
+    private static String trustedConnectionUrl(String url, Driver driver) throws SQLException {
+        if (!url.startsWith("jdbc:") || containsControlCharacter(url) || !driver.acceptsURL(url)) {
+            throw new SQLException("The configured JDBC driver does not accept the connection URL", SQL_STATE_CODE);
+        }
+        return new String(url.toCharArray());
+    }
+
+    private static boolean containsControlCharacter(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isISOControl(value.charAt(index))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static DriverPropertyInfo[] getProperty(DriverConfig driver)

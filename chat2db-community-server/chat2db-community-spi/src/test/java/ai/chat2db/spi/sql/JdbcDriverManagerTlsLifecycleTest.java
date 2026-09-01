@@ -79,6 +79,22 @@ class JdbcDriverManagerTlsLifecycleTest {
         assertFalse(Files.exists(store));
     }
 
+    @Test
+    void rejectsNonJdbcAndControlCharacterUrlsBeforeConnecting() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        DriverConfig config = registerDriver((url, info) -> {
+            attempts.incrementAndGet();
+            return connection();
+        });
+
+        assertThrows(SQLException.class, () -> JdbcDriverManager.getConnection(
+                "https://metadata.invalid/latest", "root", "password", config));
+        assertThrows(SQLException.class, () -> JdbcDriverManager.getConnection(
+                "jdbc:mysql://localhost/test\nignored", "root", "password", config));
+
+        assertEquals(0, attempts.get());
+    }
+
     private DriverConfig registerDriver(Connector connector) throws Exception {
         driverId = "tls-lifecycle-" + UUID.randomUUID();
         DriverConfig config = new DriverConfig();
