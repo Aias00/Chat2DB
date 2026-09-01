@@ -2,9 +2,11 @@
 
 ## Fixture
 
-- `init.sql` creates `sec006_double` (function) and `sec006_bump` (procedure) plus a
-  manager with EXECUTE/ALTER ROUTINE + GRANT OPTION and an unprivileged user.
-- `grants.sql` is a no-op placeholder; routine grants are applied through the UI.
+- `init.sql` creates `sec006_double` (function), `sec006_bump` (procedure), a
+  manager with EXECUTE/ALTER ROUTINE + GRANT OPTION, an unprivileged user, and a
+  routine role for inherited-role evidence.
+- `grants.sql` applies direct routine grants, an inherited database EXECUTE
+  grant, a role assignment, and then runs `SHOW GRANTS FOR 'sec006_user'@'%'`.
 - `cleanup.sql` drops test objects and users.
 
 ## Verification
@@ -22,3 +24,7 @@
 7. Try granting SELECT at function scope — verify it is rejected with the
    "only EXECUTE and ALTER ROUTINE" error.
 8. Revoke the procedure grant — verify the REVOKE preview and SHOW GRANTS consistency.
+9. Run `grants.sql` and refresh the privilege panel. Verify direct Function and
+   Procedure grants are labeled separately from inherited Database and Role
+   sources, and that routine REVOKE remains available only for matching direct
+   routine grants.

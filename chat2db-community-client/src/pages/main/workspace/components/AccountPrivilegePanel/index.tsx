@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, ConfigProvider, Empty, Form, Input, Modal, Select, Space, Spin, Tooltip, theme } from 'antd';
-import { DeleteOutlined, KeyOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
+import { Alert, Button, Checkbox, ConfigProvider, Empty, Form, Input, Modal, Select, Space, Spin, Tag, Tooltip, theme } from 'antd';
+import { DeleteOutlined, KeyOutlined, LockOutlined, ReloadOutlined, UnlockOutlined } from '@ant-design/icons';
 import { staticMessage } from '@chat2db/ui';
 import i18n from '@/i18n';
 import SQLPreview from '@/components/SQLPreview';
@@ -12,12 +12,20 @@ import accountAdminService, {
   type AccountCapability,
   type AccountCommand,
   type AccountExecute,
+  type AccountGrant,
+  type AccountGrantSummary,
 } from '@/service/accountAdmin';
 import connectionService from '@/service/connection';
 import sqlService from '@/service/sql';
 import { DatabaseTypeCode, TreeNodeType } from '@/constants';
 import { useTreeStore } from '@/store/tree';
 import { IBoundInfo } from '@/typings';
+import {
+  canRevokeRoutinePrivileges,
+  grantSourceLabelKey,
+  isRoutineScope,
+  routineGrantEvidence,
+} from './accountGrantSummary';
 import styles from './index.less';
 
 interface IProps {
@@ -56,9 +64,12 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const [tableLoading, setTableLoading] = useState(false);
   const [routineOptions, setRoutineOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [routineLoading, setRoutineLoading] = useState(false);
+  const [grantSummary, setGrantSummary] = useState<AccountGrantSummary | null>(null);
+  const [grantSummaryLoading, setGrantSummaryLoading] = useState(false);
   const [form] = Form.useForm();
   const [accountForm] = Form.useForm();
   const previewRequestRef = useRef(0);
+  const grantSummaryRequestRef = useRef(0);
   const updateTreeNodeDataByDetail = useTreeStore((state) => state.updateTreeNodeDataByDetail);
   const accountLockSupported = capability?.accountLockSupported !== false;
   const { token } = theme.useToken();
@@ -82,6 +93,24 @@ const AccountPrivilegePanel = memo((props: IProps) => {
   const watchedPrivileges = Form.useWatch('privileges', form);
   const watchedGrantOption = Form.useWatch('grantOption', form);
   const watchedActionType = Form.useWatch('actionType', form);
+  const routineEvidence = useMemo(
+    () => routineGrantEvidence(grantSummary, watchedScope, watchedDatabaseName, watchedObjectName),
+    [grantSummary, watchedScope, watchedDatabaseName, watchedObjectName],
+  );
+  const routineRevokeBlocked =
+    watchedActionType === AccountActionType.REVOKE_PRIVILEGE &&
+    isRoutineScope(watchedScope) &&
+    !!watchedDatabaseName &&
+    !!watchedObjectName &&
+    !!watchedPrivileges?.length &&
+    (grantSummaryLoading ||
+      !canRevokeRoutinePrivileges(
+        grantSummary,
+        watchedScope,
+        watchedDatabaseName,
+        watchedObjectName,
+        watchedPrivileges,
+      ));
 
   const selectedAccount =
     uniqueData?.user && uniqueData?.host
@@ -199,6 +228,45 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     });
   };
 
+  const loadGrantSummary = () => {
+    const requestId = ++grantSummaryRequestRef.current;
+    setGrantSummary(null);
+    if (!dataSourceId || !selectedAccount) {
+      setGrantSummaryLoading(false);
+      return Promise.resolve(null);
+    }
+    setGrantSummaryLoading(true);
+    return accountAdminService
+      .grantSummary({
+        dataSourceId,
+        user: selectedAccount.user,
+        host: selectedAccount.host,
+      })
+      .then((nextGrantSummary) => {
+        if (grantSummaryRequestRef.current === requestId) {
+          setGrantSummary(nextGrantSummary);
+        }
+        return nextGrantSummary;
+      })
+      .catch((error) => {
+        const message = error?.errorMessage || error?.message;
+        if (grantSummaryRequestRef.current === requestId) {
+          setGrantSummary({
+            readable: false,
+            message,
+            rawStatements: [],
+            grants: [],
+          });
+        }
+        return null;
+      })
+      .finally(() => {
+        if (grantSummaryRequestRef.current === requestId) {
+          setGrantSummaryLoading(false);
+        }
+      });
+  };
+
   useEffect(() => {
     if (!dataSourceId) {
       resetPreview();
@@ -223,6 +291,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
     setExecuteModalOpen(false);
     setAccountModalOpen(false);
     setAccountActionType(null);
+    loadGrantSummary();
   }, [dataSourceId, uniqueData?.user, uniqueData?.host]);
 
   useEffect(() => {
@@ -380,6 +449,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
         showExecutionMessage(result);
         if (result.success && dataSourceId) {
           refreshUserTree();
+          loadGrantSummary();
         }
         return result;
       })
@@ -602,6 +672,16 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                 </Form.Item>
               )}
             </Form>
+            {isRoutineScope(watchedScope) && (
+              <RoutineGrantSummary
+                grants={routineEvidence}
+                loading={grantSummaryLoading}
+                readable={grantSummary?.readable}
+                message={grantSummary?.message}
+                revokeBlocked={routineRevokeBlocked}
+                onRefresh={loadGrantSummary}
+              />
+            )}
             <section className={styles.previewSection}>
               <div className={styles.previewHeader}>
                 <span>{i18n('workspace.databaseAccount.previewSql')}</span>
@@ -620,7 +700,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
                 className={styles.submitButton}
                 style={submitButtonStyle}
                 loading={executeLoading}
-                disabled={!selectedAccount || !previewState}
+                disabled={!selectedAccount || !previewState || routineRevokeBlocked}
                 onClick={submitPrivilegeCommand}
               >
                 {i18n('workspace.databaseAccount.confirmChange')}
@@ -675,6 +755,70 @@ const AccountPrivilegePanel = memo((props: IProps) => {
 function SqlPreview({ sql }: { sql: string }) {
   return (
     <SQLPreview className={styles.sqlPreview} sql={sql} source="account-privilege-panel" foldable={false} />
+  );
+}
+
+function RoutineGrantSummary({
+  grants,
+  loading,
+  readable,
+  message,
+  revokeBlocked,
+  onRefresh,
+}: {
+  grants: AccountGrant[];
+  loading: boolean;
+  readable?: boolean;
+  message?: string;
+  revokeBlocked: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className={styles.grantSummary}>
+      <div className={styles.previewHeader}>
+        <span>{i18n('workspace.databaseAccount.grantSources')}</span>
+        <Tooltip title={i18n('workspace.databaseAccount.refreshGrants')}>
+          <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={onRefresh} />
+        </Tooltip>
+      </div>
+      {readable === false && (
+        <Alert
+          className={styles.inlineAlert}
+          type="warning"
+          showIcon
+          message={i18n('workspace.databaseAccount.grantsUnreadable')}
+          description={message}
+        />
+      )}
+      {readable !== false && grants.length === 0 && (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={i18n('workspace.databaseAccount.noDirectRoutineGrant')} />
+      )}
+      {readable !== false && grants.length > 0 && (
+        <div className={styles.grantList}>
+          {grants.map((grant) => (
+            <div className={styles.grantItem} key={`${grant.source}-${grant.rawStatement}`}>
+              <Space size={[4, 4]} wrap>
+                <Tag color={grant.direct ? 'green' : 'default'}>{i18n(grantSourceLabelKey(grant.source) as any)}</Tag>
+                {grant.grantOption && <Tag color="blue">{i18n('workspace.databaseAccount.grantOptionTag')}</Tag>}
+                {grant.roleName && <Tag>{grant.roleName}</Tag>}
+                {(grant.privileges || []).map((privilege) => (
+                  <Tag key={privilege}>{privilege.replace(/_/g, ' ')}</Tag>
+                ))}
+              </Space>
+              <div className={styles.grantSql}>{grant.rawStatement}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {revokeBlocked && (
+        <Alert
+          className={styles.inlineAlert}
+          type="info"
+          showIcon
+          message={i18n('workspace.databaseAccount.routineRevokeBlocked')}
+        />
+      )}
+    </section>
   );
 }
 

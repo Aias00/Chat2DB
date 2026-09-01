@@ -2,8 +2,11 @@ package ai.chat2db.community.web.api.converter.db;
 
 import ai.chat2db.community.domain.api.model.result.ExecuteResponse;
 import ai.chat2db.community.domain.api.model.result.ResultCell;
+import ai.chat2db.community.domain.api.model.account.AccountGrant;
+import ai.chat2db.community.domain.api.model.account.AccountGrantSummary;
 import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import ai.chat2db.community.web.api.model.request.db.AccountCommandRequest;
+import ai.chat2db.community.web.api.model.response.db.AccountGrantSummaryResponse;
 import ai.chat2db.community.web.api.model.response.db.ExecuteResultResponse;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
@@ -58,5 +61,33 @@ class DbWebConverterTest {
         AccountOperationRequest command = converter.request2command(request);
 
         assertEquals("calculate_total", command.getObjectName());
+    }
+
+    @Test
+    void accountGrantSummaryPreservesRoutineGrantSourceLabels() {
+        AccountGrant grant = new AccountGrant();
+        grant.setSource("DIRECT_ROUTINE");
+        grant.setScope("FUNCTION");
+        grant.setDatabaseName("app");
+        grant.setObjectName("calculate_total");
+        grant.setPrivileges(List.of("EXECUTE"));
+        grant.setGrantOption(Boolean.TRUE);
+        grant.setDirect(Boolean.TRUE);
+        grant.setRevocable(Boolean.TRUE);
+        grant.setRawStatement("GRANT EXECUTE ON FUNCTION `app`.`calculate_total` TO 'runner'@'%'");
+
+        AccountGrantSummary summary = new AccountGrantSummary();
+        summary.setReadable(Boolean.TRUE);
+        summary.setRawStatements(List.of(grant.getRawStatement()));
+        summary.setGrants(List.of(grant));
+
+        AccountGrantSummaryResponse response = converter.accountGrantSummary2response(summary);
+
+        assertEquals(Boolean.TRUE, response.getReadable());
+        assertEquals(List.of(grant.getRawStatement()), response.getRawStatements());
+        assertEquals("DIRECT_ROUTINE", response.getGrants().get(0).getSource());
+        assertEquals("FUNCTION", response.getGrants().get(0).getScope());
+        assertEquals("calculate_total", response.getGrants().get(0).getObjectName());
+        assertEquals(Boolean.TRUE, response.getGrants().get(0).getRevocable());
     }
 }

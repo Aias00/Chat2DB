@@ -37,6 +37,14 @@ export enum AccountPrivilege {
   CREATE_TEMPORARY_TABLES = 'CREATE_TEMPORARY_TABLES',
 }
 
+export enum AccountGrantSource {
+  DIRECT_ROUTINE = 'DIRECT_ROUTINE',
+  INHERITED_DATABASE = 'INHERITED_DATABASE',
+  INHERITED_GLOBAL = 'INHERITED_GLOBAL',
+  INHERITED_ROLE = 'INHERITED_ROLE',
+  UNPARSED = 'UNPARSED',
+}
+
 export interface AccountBaseParams {
   dataSourceId: number;
   user?: string;
@@ -89,6 +97,26 @@ export interface AccountExecute extends AccountPreview {
   sqlState?: string;
 }
 
+export interface AccountGrant {
+  source: AccountGrantSource | string;
+  scope?: AccountPrivilegeScope | string;
+  databaseName?: string;
+  objectName?: string;
+  roleName?: string;
+  privileges: string[];
+  grantOption?: boolean;
+  direct?: boolean;
+  revocable?: boolean;
+  rawStatement: string;
+}
+
+export interface AccountGrantSummary {
+  readable: boolean;
+  message?: string;
+  rawStatements: string[];
+  grants: AccountGrant[];
+}
+
 export function formatAccountExecuteMessage(result: AccountExecute) {
   if (result.success) {
     return i18n('workspace.databaseAccount.executeSuccess');
@@ -138,10 +166,16 @@ const grants = createRequest<AccountBaseParams, string[]>('/api/rdb/account/gran
   errorLevel: 'toast',
 });
 
+const grantSummary = createRequest<AccountBaseParams, AccountGrantSummary>('/api/rdb/account/grant-summary', {
+  method: 'get',
+  errorLevel: false,
+});
+
 export default {
   capability,
   list,
   preview,
   execute,
   grants,
+  grantSummary,
 };

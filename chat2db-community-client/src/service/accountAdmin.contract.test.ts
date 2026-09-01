@@ -39,6 +39,18 @@ assert.match(
 );
 
 assert.match(
+  accountAdminSource,
+  /AccountGrantSource[\s\S]*DIRECT_ROUTINE[\s\S]*INHERITED_DATABASE[\s\S]*INHERITED_GLOBAL[\s\S]*INHERITED_ROLE/,
+  'AccountGrantSource labels direct routine grants separately from inherited access',
+);
+
+assert.match(
+  accountAdminSource,
+  /\/api\/rdb\/account\/grant-summary/,
+  'accountAdmin exposes the structured grant summary endpoint',
+);
+
+assert.match(
   panelSource,
   /const watchedObjectName = Form\.useWatch\('objectName', form\);/,
   'AccountPrivilegePanel watches selected routine objects',
@@ -61,4 +73,16 @@ assert.match(
   panelSource,
   /\(command\.scope === AccountPrivilegeScope\.FUNCTION \|\| command\.scope === AccountPrivilegeScope\.PROCEDURE\)[\s\S]*?!command\.objectName/,
   'routine-level previews require a selected object before calling preview',
+);
+
+assert.match(
+  panelSource,
+  /routineRevokeBlocked[\s\S]*disabled=\{!selectedAccount \|\| !previewState \|\| routineRevokeBlocked\}/,
+  'routine revokes are blocked unless direct revocable grants are loaded',
+);
+
+assert.match(
+  panelSource,
+  /accountAdminService\s*\n\s*\.grantSummary/,
+  'AccountPrivilegePanel loads SHOW GRANTS summaries for selected accounts',
 );
