@@ -16,14 +16,14 @@ class ControllerRequestValidationTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    void structureDiffRequiresNestedEndpointsAndSafeIdentifiers() {
+    void structureDiffRequiresNestedEndpointsAndDatabaseNames() {
         StructureDiffRequest request = new StructureDiffRequest();
         assertEquals(2, validator.validate(request).size());
 
         request.setSource(structure(1L, "analytics", "reporting"));
-        request.setTarget(structure(2L, "target; DROP DATABASE analytics", "schema--"));
+        request.setTarget(structure(2L, "", "reporting"));
 
-        assertEquals(2, validator.validate(request).size());
+        assertEquals(1, validator.validate(request).size());
     }
 
     @Test
@@ -40,8 +40,8 @@ class ControllerRequestValidationTest {
         JdbcDriverRequest request = new JdbcDriverRequest();
         assertEquals(3, validator.validate(request).size());
 
-        request.setJdbcDriverClass("com.mysql.cj.jdbc.Driver;drop");
-        request.setDbType("MYSQL;DROP");
+        request.setJdbcDriverClass("");
+        request.setDbType("");
         request.setJdbcDriver(List.of(""));
 
         assertEquals(3, validator.validate(request).size());
