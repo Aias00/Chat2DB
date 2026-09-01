@@ -251,7 +251,6 @@ public class SqlServerExecutor extends DefaultSQLExecutor {
     }
 
     // GO batches are intentionally user-authored SQL-console statements and cannot be parameterized as values.
-    @SuppressWarnings("lgtm[java/sql-injection]")
     private List<ExecuteResponse> executeSqlServerBatch(String originalSql, List<String> sqlList, Connection connection,
                                                       boolean limitRowSize, Integer offset, Integer count,
                                                       Integer resultSetId)
@@ -260,6 +259,7 @@ public class SqlServerExecutor extends DefaultSQLExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(originalSql).success(Boolean.TRUE).build();
         int resultCount = 0;
         for (String sql : sqlList) {
+            // codeql[java/sql-injection]
             try (PreparedStatement stmt = connection.prepareStatement(sql)) {
                 ExecutionContext executionContext = JdbcExecutionContext.capture(connection);
                 long startedAtEpochMs = System.currentTimeMillis();

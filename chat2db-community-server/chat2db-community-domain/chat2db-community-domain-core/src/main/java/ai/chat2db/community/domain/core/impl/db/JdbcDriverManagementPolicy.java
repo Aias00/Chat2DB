@@ -19,10 +19,10 @@ final class JdbcDriverManagementPolicy {
 
     record PromotedDrivers(String jdbcDriver, List<Path> files) {
         // Paths are created only by promoteUploadedDrivers after token and parent-directory validation.
-        @SuppressWarnings("lgtm[java/path-injection]")
         void rollback() {
             for (Path file : files) {
                 try {
+                    // codeql[java/path-injection]
                     Files.deleteIfExists(file);
                 } catch (Exception ignored) {
                     // Preserve the original save failure; the unreferenced file can be cleaned later.
@@ -39,7 +39,6 @@ final class JdbcDriverManagementPolicy {
     }
 
     // Upload tokens are allowlisted and both resolved paths must remain direct children of trusted directories.
-    @SuppressWarnings("lgtm[java/path-injection]")
     static PromotedDrivers promoteUploadedDrivers(List<String> uploadTokens, Path stagingDirectory,
                                                    Path driverDirectory) {
         if (uploadTokens == null || uploadTokens.isEmpty()) {
@@ -65,6 +64,8 @@ final class JdbcDriverManagementPolicy {
                         || !normalizedDirectory.equals(driverFile.getParent())) {
                     throw uploadFailure("uploaded driver file is unavailable");
                 }
+                // driverFile is a direct child of normalizedDirectory with an allowlisted JAR file name.
+                // codeql[java/path-injection]
                 if (Files.exists(driverFile)) {
                     throw uploadFailure("a managed driver with the same file name already exists");
                 }
@@ -86,6 +87,7 @@ final class JdbcDriverManagementPolicy {
         } catch (Exception exception) {
             for (Path promotedFile : promotedFiles) {
                 try {
+                    // codeql[java/path-injection]
                     Files.deleteIfExists(promotedFile);
                 } catch (Exception ignored) {
                     // Keep the original promotion failure.
@@ -97,23 +99,27 @@ final class JdbcDriverManagementPolicy {
     }
 
     static void moveWithoutReplacement(Path source, Path target) throws Exception {
+        // source and target are validated managed-directory children before this call.
+        // codeql[java/path-injection]
         moveWithoutReplacement(source, target, (link, existing) -> Files.createLink(link, existing));
     }
 
     // Callers pass only paths validated as direct children of the managed staging and driver directories.
-    @SuppressWarnings("lgtm[java/path-injection]")
     static void moveWithoutReplacement(Path source, Path target, LinkCreator linkCreator) throws Exception {
         try {
             linkCreator.create(target, source);
         } catch (FileAlreadyExistsException exception) {
             throw exception;
         } catch (UnsupportedOperationException | FileSystemException ignored) {
+            // codeql[java/path-injection]
             Files.copy(source, target);
         }
         try {
+            // codeql[java/path-injection]
             Files.delete(source);
         } catch (Exception exception) {
             try {
+                // codeql[java/path-injection]
                 Files.deleteIfExists(target);
             } catch (Exception cleanupFailure) {
                 exception.addSuppressed(cleanupFailure);
@@ -122,10 +128,10 @@ final class JdbcDriverManagementPolicy {
         }
     }
 
-    @SuppressWarnings("lgtm[java/path-injection]")
     private static void cleanupStagedFiles(List<UploadTarget> targets) {
         for (UploadTarget target : targets) {
             try {
+                // codeql[java/path-injection]
                 Files.deleteIfExists(target.stagedFile());
             } catch (Exception ignored) {
                 // Preserve the validation failure.
