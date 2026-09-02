@@ -231,7 +231,8 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
     public List<TableColumn> columns(Connection connection, String databaseName, String schemaName, String tableName) {
         String sql = String.format(SELECT_TABLE_COLUMNS, getSQLIdentifierProcessor().escapeString(databaseName), getSQLIdentifierProcessor().escapeString(tableName));
         List<TableColumn> tableColumns = new ArrayList<>();
-        boolean supportsGeneratedColumnMetadata = MysqlSqlGuards.supportsGeneratedColumns(Chat2DBContext.getDbVersion());
+        String dbVersion = Chat2DBContext.getConnectInfo() == null ? null : Chat2DBContext.getDbVersion();
+        boolean supportsGeneratedColumnMetadata = MysqlSqlGuards.supportsGeneratedColumns(dbVersion);
         return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
             while (resultSet.next()) {
                 TableColumn column = new TableColumn();
@@ -241,14 +242,15 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                 column.setName(resultSet.getString(FIELD_COLUMN_NAME_UPPER));
                 column.setColumnType(resultSet.getString(FIELD_DATA_TYPE).toUpperCase());
                 column.setDefaultValue(resultSet.getString(FIELD_COLUMN_DEFAULT));
-                String extra = resultSet.getString(FIELD_EXTRA);
-                column.setAutoIncrement(StringUtils.contains(extra, SQL_AUTO_INCREMENT));
-                column.setOnUpdateCurrentTimestamp(StringUtils.contains(extra, SQL_ON_UPDATE_CURRENT_TIMESTAMP));
+                String columnExtra = StringUtils.defaultString(resultSet.getString(FIELD_EXTRA));
+                column.setAutoIncrement(columnExtra.contains(SQL_AUTO_INCREMENT));
+                column.setOnUpdateCurrentTimestamp(columnExtra.contains(SQL_ON_UPDATE_CURRENT_TIMESTAMP));
+                column.setVisible(!columnExtra.contains(SQL_INVISIBLE));
                 column.setComment(resultSet.getString(FIELD_COLUMN_COMMENT));
                 column.setPrimaryKey(SQL_PRIMARY_KEY_FLAG.equalsIgnoreCase(resultSet.getString(FIELD_COLUMN_KEY)));
                 column.setNullable(SQL_YES.equalsIgnoreCase(resultSet.getString(FIELD_IS_NULLABLE)) ? 1 : 0);
                 if (supportsGeneratedColumnMetadata) {
-                    readGeneratedColumnMetadata(resultSet, column, extra);
+                    readGeneratedColumnMetadata(resultSet, column, columnExtra);
                 }
                 column.setOrdinalPosition(resultSet.getInt(FIELD_ORDINAL_POSITION));
                 column.setDecimalDigits(resultSet.getInt(FIELD_NUMERIC_SCALE));
@@ -367,6 +369,11 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                     } catch (SQLException e) {
                         log.error(LOG_INDEX_COMMENT_FAILED, keyName, e);
                         index.setComment(resultSet.getString(FIELD_INDEX_COMMENT_FALLBACK));
+                    }
+                    try {
+                        index.setVisible(INDEX_VISIBLE_VALUE.equalsIgnoreCase(resultSet.getString(FIELD_IS_VISIBLE)));
+                    } catch (SQLException e) {
+                        index.setVisible(Boolean.TRUE);
                     }
                     List<TableIndexColumn> tableIndexColumns = new ArrayList<>();
                     tableIndexColumns.add(getTableIndexColumn(resultSet));

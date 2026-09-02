@@ -98,4 +98,10 @@ assertEqual(
   'generated columns clear incompatible defaults and use VIRTUAL by default',
 );
 
+assertEqual(
+  normalizeColumnForSubmit(column({ visible: false })).visible,
+  false,
+  'preserve invisible column state for submission',
+);
+
 console.log('normalizeColumn tests passed');
