@@ -3,6 +3,7 @@ package ai.chat2db.community.web.api.aspect.connection;
 import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
+import ai.chat2db.community.web.api.model.request.db.SqlEditorExecuteRequest;
 import ai.chat2db.community.web.api.util.ApplicationContextUtil;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -75,6 +76,28 @@ class ConnectionInfoHandlerLoggingTest {
                 })));
 
         assertEquals("boom", thrown.getMessage());
+        assertEquals(1, clears.get());
+    }
+
+    @Test
+    void bindsSqlEditorRequestWithConsoleAndSchemaContext() throws Throwable {
+        AtomicInteger clears = new AtomicInteger();
+        AtomicReference<DbConnectionContextRequest> bound = new AtomicReference<>();
+        ConnectionInfoHandler handler = new ConnectionInfoHandler();
+        setConnectionContextService(handler, proxyConnectionContextService(bound, clears));
+        SqlEditorExecuteRequest request = new SqlEditorExecuteRequest();
+        request.setDataSourceId(42L);
+        request.setDatabaseName("request_db");
+        request.setSchemaName("request_schema");
+        request.setConsoleId(84L);
+
+        Object result = handler.connectionInfoHandler(joinPoint(new Object[]{request}, () -> "executed"));
+
+        assertEquals("executed", result);
+        assertEquals(42L, bound.get().getDataSourceId());
+        assertEquals("request_db", bound.get().getDatabaseName());
+        assertEquals("request_schema", bound.get().getSchemaName());
+        assertEquals(84L, bound.get().getConsoleId());
         assertEquals(1, clears.get());
     }
 

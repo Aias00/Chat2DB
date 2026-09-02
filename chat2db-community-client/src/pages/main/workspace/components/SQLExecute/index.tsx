@@ -905,6 +905,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
       ...(requestParams.pageSize === undefined && resultPageSizeRef.current !== undefined
         ? { pageSize: resultPageSizeRef.current }
         : {}),
+      consoleId: executionSnapshot.consoleId,
       databaseType: executionSnapshot.databaseType,
       dataSourceId: executionSnapshot.dataSourceId,
       dataSourceName: executionSnapshot.dataSourceName,
