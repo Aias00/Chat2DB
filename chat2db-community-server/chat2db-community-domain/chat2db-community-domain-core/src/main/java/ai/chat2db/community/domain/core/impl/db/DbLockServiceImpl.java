@@ -44,7 +44,7 @@ public class DbLockServiceImpl implements IDbLockService {
             "SELECT requesting_trx_id, requested_lock_id, blocking_trx_id, blocking_lock_id "
                     + "FROM information_schema.innodb_lock_waits";
     private static final String SQL_METADATA_LOCKS =
-            "SELECT OBJECT_SCHEMA, OBJECT_NAME, LOCK_TYPE, LOCK_DURATION, OWNER_THREAD_ID, OWNER_EVENT_ID "
+            "SELECT OBJECT_SCHEMA, OBJECT_NAME, LOCK_TYPE, LOCK_DURATION, LOCK_STATUS, OWNER_THREAD_ID, OWNER_EVENT_ID "
                     + "FROM performance_schema.metadata_locks ORDER BY OBJECT_SCHEMA, OBJECT_NAME";
     private static final String SQL_SESSION_INFO_PS =
             "SELECT th.THREAD_ID, th.PROCESSLIST_ID, th.PROCESSLIST_USER, th.PROCESSLIST_HOST, "

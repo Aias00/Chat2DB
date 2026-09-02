@@ -21,5 +21,5 @@ INSERT INTO `ops003_ledger` (`account`, `amount`) VALUES
 CREATE USER IF NOT EXISTS 'ops003_admin'@'%' IDENTIFIED BY 'Ops003_admin_2026';
 CREATE USER IF NOT EXISTS 'ops003_user'@'%' IDENTIFIED BY 'Ops003_user_2026';
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON `ops003_test`.* TO 'ops003_admin'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE, ALTER ON `ops003_test`.* TO 'ops003_admin'@'%';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `ops003_test`.* TO 'ops003_user'@'%';

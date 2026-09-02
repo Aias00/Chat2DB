@@ -4,7 +4,14 @@ import { SquarePen } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 
-import { ConsoleOpenedStatus, OperationColumn, TreeNodeType, WorkspaceTabType, databaseTypeList } from '@/constants';
+import {
+  ConsoleOpenedStatus,
+  DatabaseTypeCode,
+  OperationColumn,
+  TreeNodeType,
+  WorkspaceTabType,
+  databaseTypeList,
+} from '@/constants';
 import { ImportExportType } from '@/constants/importExport';
 import { ShortcutAction } from '@/constants/shortcut';
 import { TreeNodeData } from '@/typings';
@@ -447,6 +454,7 @@ export const useCreateRightClickMenu = () => {
             ),
             footer: null,
             width: 1100,
+            closable: true,
           });
         },
       },

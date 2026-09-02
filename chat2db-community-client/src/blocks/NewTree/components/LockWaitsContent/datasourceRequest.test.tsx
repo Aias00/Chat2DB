@@ -187,7 +187,16 @@ async function testLockSnapshotShowsDatasourceAndDegradedSessionState() {
     source: 'performance_schema',
     dataLocks: [],
     waits: [],
-    metaLocks: [],
+    metaLocks: [
+      {
+        OBJECT_SCHEMA: 'app',
+        OBJECT_NAME: 'orders',
+        LOCK_TYPE: 'EXCLUSIVE',
+        LOCK_DURATION: 'TRANSACTION',
+        LOCK_STATUS: 'PENDING',
+        OWNER_THREAD_ID: '52',
+      },
+    ],
     sessions: [
       {
         THREAD_ID: '55',
@@ -268,6 +277,79 @@ async function testLockSnapshotShowsDatasourceAndDegradedSessionState() {
       host: 'client-a',
       query: 'update waiting',
     });
+
+    const metadataLocksTab = Array.from(container.querySelectorAll('[role="tab"]')).find((tab) =>
+      tab.textContent?.includes('Metadata Locks'),
+    );
+    assert.ok(metadataLocksTab);
+    await act(async () => {
+      metadataLocksTab.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    assert.match(container.textContent || '', /PENDING/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    mockSqlService.getLockView = originalGetLockView;
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function emptyLockView(dataSourceId: number) {
+  return {
+    dataSourceId,
+    source: 'performance_schema',
+    dataLocks: [],
+    waits: [],
+    metaLocks: [],
+    sessions: [],
+    waitChains: [],
+    errors: [],
+  };
+}
+
+async function testLatestRefreshWins() {
+  const { default: LockWaitsContent } = await import('./index');
+  const originalGetLockView = mockSqlService.getLockView;
+  const first = deferred<any>();
+  const second = deferred<any>();
+  let requestCount = 0;
+  mockSqlService.getLockView = () => (++requestCount === 1 ? first.promise : second.promise);
+  const container = createTestContainer();
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(createElement(LockWaitsContent, { dataSourceId: 80 }));
+    });
+    assert.equal(requestCount, 1);
+    await act(async () => {
+      root.render(createElement(LockWaitsContent, { dataSourceId: 81 }));
+    });
+    assert.equal(requestCount, 2);
+
+    await act(async () => {
+      second.resolve(emptyLockView(81));
+      await second.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.match(container.textContent || '', /Datasource ID: 81/);
+
+    await act(async () => {
+      first.resolve(emptyLockView(80));
+      await first.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.match(container.textContent || '', /Datasource ID: 81/);
+    assert.doesNotMatch(container.textContent || '', /Datasource ID: 80/);
   } finally {
     await act(async () => {
       root.unmount();
@@ -280,6 +362,7 @@ async function testLockSnapshotShowsDatasourceAndDegradedSessionState() {
 Promise.resolve()
   .then(testLockViewRequestUsesRenderedDatasource)
   .then(testLockSnapshotShowsDatasourceAndDegradedSessionState)
+  .then(testLatestRefreshWins)
   .catch((error) => {
   console.error(error);
   process.exitCode = 1;

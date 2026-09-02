@@ -161,9 +161,9 @@ class DbLockServiceImplTest {
                 ),
                 "performance_schema.metadata_locks", List.of(
                         row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders", "LOCK_TYPE", "SHARED_READ",
-                                "LOCK_DURATION", "TRANSACTION", "OWNER_THREAD_ID", "30"),
+                                "LOCK_DURATION", "TRANSACTION", "LOCK_STATUS", "GRANTED", "OWNER_THREAD_ID", "30"),
                         row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers", "LOCK_TYPE", "EXCLUSIVE",
-                                "LOCK_DURATION", "TRANSACTION", "OWNER_THREAD_ID", "40")
+                                "LOCK_DURATION", "TRANSACTION", "LOCK_STATUS", "PENDING", "OWNER_THREAD_ID", "40")
                 ),
                 "performance_schema.threads", List.of(
                         session("10", "101", "100", "alice", "client-a", "app", "LOCK WAIT", "wait 100"),
@@ -195,6 +195,9 @@ class DbLockServiceImplTest {
         Map<String, Object> secondRoot = chain(chains, "200", "400");
         assertTrue((Boolean) secondRoot.get("rootBlocker"));
         assertEquals(1, secondRoot.get("blockerMetadataLockCount"));
+        assertEquals(List.of("GRANTED", "PENDING"), rows(view, "metaLocks").stream()
+                .map(row -> row.get("LOCK_STATUS"))
+                .toList());
         Map<String, Object> cycle = chain(chains, "500", "600");
         assertTrue((Boolean) cycle.get("cycle"));
         assertFalse((Boolean) cycle.get("rootBlocker"));

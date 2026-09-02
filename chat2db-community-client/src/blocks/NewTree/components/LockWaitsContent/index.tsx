@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
 import sqlService, { ILockView } from '@/service/sql';
+import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 /**
  * Lock waits and blocking chains (MYSQL-OPS-003). Read-only; InnoDB data locks come from
@@ -54,26 +55,33 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
   const [view, setView] = useState<ILockView | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestGenerationRef = useRef(0);
 
   const load = useCallback(() => {
+    const requestGeneration = beginLatestRequest(requestGenerationRef);
     setLoading(true);
     setError(null);
     sqlService
       .getLockView({ dataSourceId })
       .then((result) => {
+        if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         setView(result);
         const firstError = result.errors?.[0];
         setError(firstError ? `${firstError.section}: ${firstError.code}` : null);
       })
       .catch((e) => {
+        if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         setView(null);
         setError(e?.message || i18n('common.text.failure'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (isLatestRequest(requestGenerationRef, requestGeneration)) setLoading(false);
+      });
   }, [dataSourceId]);
 
   useEffect(() => {
     load();
+    return () => invalidateLatestRequest(requestGenerationRef);
   }, [load]);
 
   const renderSessionThread = (
@@ -309,6 +317,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
                     },
                     { title: i18n('workspace.ops.lockType'), dataIndex: 'LOCK_TYPE', width: 120 },
                     { title: i18n('workspace.ops.lockDuration'), dataIndex: 'LOCK_DURATION', width: 120 },
+                    { title: i18n('workspace.ops.lockStatus'), dataIndex: 'LOCK_STATUS', width: 100, render: valueText },
                     { title: i18n('workspace.ops.ownerThread'), dataIndex: 'OWNER_THREAD_ID', width: 120 },
                     { title: i18n('workspace.ops.sessionId'), dataIndex: 'OWNER_PROCESSLIST_ID', width: 100, render: valueText },
                     { title: i18n('workspace.ops.user'), dataIndex: 'OWNER_USER', width: 120, render: valueText },
