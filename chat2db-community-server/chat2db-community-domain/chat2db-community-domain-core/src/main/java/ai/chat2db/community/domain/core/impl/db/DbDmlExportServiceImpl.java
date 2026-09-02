@@ -24,6 +24,7 @@ import ai.chat2db.community.tools.exception.ParamBusinessException;
 import ai.chat2db.community.tools.util.EasyCollectionUtils;
 import ai.chat2db.community.tools.util.EasyEnumUtils;
 import ai.chat2db.spi.DefaultSQLExecutor;
+import ai.chat2db.spi.DefaultSqlSyntaxHandler;
 import ai.chat2db.spi.ISqlBuilder;
 import ai.chat2db.spi.IValueProcessor;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
@@ -152,6 +153,9 @@ public class DbDmlExportServiceImpl implements IDbDmlExportService {
     private void requireSelectSql(String sql) {
         DbType dbType = currentDruidDbType();
         if (dbType == null) {
+            if (!DefaultSqlSyntaxHandler.isSelect(sql, Chat2DBContext.getConnectInfo().getDbType())) {
+                throw new BusinessException("dataSource.sqlAnalysisError");
+            }
             return;
         }
         SQLStatement sqlStatement = SQLUtils.parseSingleStatement(sql, dbType);

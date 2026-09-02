@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -175,6 +176,25 @@ class DbDmlExportServicePolicyTest {
     @Test
     void xlsxExportRejectsDmlSql() {
         assertRejectsNonSelectExport("EXCEL", "DELETE FROM orders");
+    }
+
+    @Test
+    void csvExportRejectsNonSelectSqlWhenDatasourceIsNotDruidSupported() {
+        Chat2DBContext.getConnectInfo().setDbType("REDIS");
+        DbDmlExportServiceImpl selectValidationService = selectValidationService();
+        DbDmlExportRequest request = new DbDmlExportRequest();
+        request.setSql("DEL export_guard");
+        request.setOriginalSql("DEL export_guard");
+        request.setExportSize("ALL");
+        request.setExportType("CSV");
+        request.setDatabaseName("shop");
+
+        DbDmlExportPlan plan = selectValidationService.prepareExport(request);
+
+        assertThrows(BusinessException.class,
+                () -> selectValidationService.export(plan.getExportRequest(), new ByteArrayOutputStream(), null, () -> {},
+                        ignored -> {}, () -> {}));
+        assertNull(jdbcExecution.executedSql);
     }
 
     @Test
