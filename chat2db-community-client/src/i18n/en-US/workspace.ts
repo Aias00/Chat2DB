@@ -301,6 +301,7 @@ export default {
   'workspace.menu.disableEvent': 'Disable event',
   'workspace.menu.dropEvent': 'Drop event',
   'workspace.menu.eventPreviewTitle': 'Confirm SQL',
+  'workspace.event.schedulerOff': 'Scheduler off',
   'workspace.routine.button.invoke': 'Invoke routine',
   'workspace.routine.button.apply': 'Apply changes',
   'workspace.routine.button.refresh': 'Reload DDL',

@@ -10,3 +10,16 @@ export function createEventTreeNodeKey(params: {
     `event_${params.eventName}`,
   ].join('-');
 }
+
+export function supportsEventTree(databaseType?: string | null) {
+  return databaseType === 'MYSQL';
+}
+
+export function createEventTreeNodeDescription(
+  status: string | null | undefined,
+  schedulerEnabled: boolean | undefined,
+  schedulerDisabledLabel: string,
+) {
+  const parts = [status?.trim(), schedulerEnabled === false ? schedulerDisabledLabel : undefined].filter(Boolean);
+  return parts.length ? parts.join(' - ') : undefined;
+}

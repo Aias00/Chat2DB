@@ -301,6 +301,7 @@ export default {
   'workspace.menu.disableEvent': 'イベントを無効化',
   'workspace.menu.dropEvent': 'イベントを削除',
   'workspace.menu.eventPreviewTitle': 'SQL の確認',
+  'workspace.event.schedulerOff': 'スケジューラー停止中',
   'workspace.routine.button.invoke': 'ルーチンを呼び出す',
   'workspace.routine.button.apply': '変更を適用',
   'workspace.routine.button.refresh': 'DDL を再読み込み',

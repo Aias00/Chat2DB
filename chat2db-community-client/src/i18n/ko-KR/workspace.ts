@@ -299,6 +299,7 @@ export default {
   'workspace.menu.disableEvent': '이벤트 비활성화',
   'workspace.menu.dropEvent': '이벤트 삭제',
   'workspace.menu.eventPreviewTitle': 'SQL 확인',
+  'workspace.event.schedulerOff': '스케줄러 꺼짐',
   'workspace.routine.button.invoke': '루틴 호출',
   'workspace.routine.button.apply': '변경 사항 적용',
   'workspace.routine.button.refresh': 'DDL 다시 불러오기',

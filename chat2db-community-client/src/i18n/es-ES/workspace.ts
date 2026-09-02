@@ -303,6 +303,7 @@ export default {
   'workspace.menu.disableEvent': 'Deshabilitar evento',
   'workspace.menu.dropEvent': 'Eliminar evento',
   'workspace.menu.eventPreviewTitle': 'Confirmar SQL',
+  'workspace.event.schedulerOff': 'Programador desactivado',
   'workspace.routine.button.invoke': 'Invocar rutina',
   'workspace.routine.button.apply': 'Aplicar cambios',
   'workspace.routine.button.refresh': 'Volver a cargar DDL',

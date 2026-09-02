@@ -27,7 +27,15 @@ import { staticMessage, staticModal } from '@chat2db/ui';
 import { deleteTable } from '../functions/deleteTable';
 import { generateJavaClass } from '../functions/generateJavaClass';
 import { neatenMoveToGroup } from '../functions/moveToGroup';
-import { editView, openCreateEvent, openEvent, openFunction, openProcedure, openTrigger, openView } from '../functions/openAsyncSql';
+import {
+  editView,
+  openCreateEvent,
+  openEvent,
+  openFunction,
+  openProcedure,
+  openTrigger,
+  openView,
+} from '../functions/openAsyncSql';
 import { handelPinTable } from '../functions/pinTable';
 import { openSchemaSyncModal } from '../functions/schemaSync';
 import { viewDDL } from '../functions/viewDDL';
@@ -489,19 +497,23 @@ export const useCreateRightClickMenu = () => {
         danger: true,
         handle: () => {
           const eventName = extraParams.eventName || treeNodeData.originalTitle;
-          openUnifiedConfirmationModal({
-            title: i18n('workspace.menu.dropEvent'),
-            needInputConfirmText: eventName,
-            onOk: () => {
-              return sqlService
-                .getEventDropSql({ dataSourceId: dataSourceId!, databaseName: extraParams.databaseName, eventName })
-                .then((sql) => {
-                return sqlService.executeDDL({ dataSourceId: dataSourceId!, sql }).then(() => {
-                  refreshAfterDelete();
-                });
+          sqlService
+            .getEventDropSql({ dataSourceId: dataSourceId!, databaseName: extraParams.databaseName, eventName })
+            .then((sql) => {
+              openUnifiedConfirmationModal({
+                title: i18n('workspace.menu.dropEvent'),
+                content: <pre style={{ whiteSpace: 'pre-wrap' }}>{sql}</pre>,
+                needInputConfirmText: eventName,
+                onOk: () => {
+                  return sqlService.executeDDL({ dataSourceId: dataSourceId!, sql }).then(() => {
+                    refreshAfterDelete();
+                  });
+                },
               });
-            },
-          });
+            })
+            .catch((error) => {
+              staticMessage.error(error?.message || i18n('common.text.failure'));
+            });
         },
       },
 

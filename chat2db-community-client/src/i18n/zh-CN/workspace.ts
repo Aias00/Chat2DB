@@ -292,6 +292,7 @@ export default {
   'workspace.menu.disableEvent': '禁用事件',
   'workspace.menu.dropEvent': '删除事件',
   'workspace.menu.eventPreviewTitle': '确认 SQL',
+  'workspace.event.schedulerOff': '调度器已关闭',
   'workspace.routine.button.invoke': '调用例程',
   'workspace.routine.button.apply': '提交变更',
   'workspace.routine.button.refresh': '重新加载 DDL',
