@@ -86,6 +86,7 @@ export default memo((props: IProps) => {
     indexTypes: [],
     defaultValues: [],
     engineTypes: [],
+    supportInvisibleIndex: false,
   });
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { styles, cx } = useStyles();

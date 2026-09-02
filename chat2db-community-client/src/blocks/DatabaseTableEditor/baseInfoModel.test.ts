@@ -21,9 +21,12 @@ const supportField = {
   indexTypes: [],
   defaultValues: [],
   engineTypes: [],
+  supportInvisibleIndex: true,
 };
 
 const options = mapDatabaseSupportFieldOptions(supportField);
+
+assert.equal(options.supportInvisibleIndex, true, 'MySQL invisible-index capability survives option mapping');
 
 assert.deepEqual(
   options.charsets[1],

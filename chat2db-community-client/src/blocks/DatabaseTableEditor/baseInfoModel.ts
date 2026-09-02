@@ -27,6 +27,7 @@ export interface IDatabaseSupportFieldOptions {
   indexTypes: IOption[];
   defaultValues: IOption[];
   engineTypes: IOption[];
+  supportInvisibleIndex?: boolean;
 }
 
 interface IDatabaseSupportFieldResponse {
@@ -36,6 +37,7 @@ interface IDatabaseSupportFieldResponse {
   indexTypes?: IIndexTypes[];
   defaultValues?: IDefaultValue[];
   engineTypes?: IEngineType[];
+  supportInvisibleIndex?: boolean;
 }
 
 export function mapDatabaseSupportFieldOptions(res?: IDatabaseSupportFieldResponse): IDatabaseSupportFieldOptions {
@@ -73,6 +75,7 @@ export function mapDatabaseSupportFieldOptions(res?: IDatabaseSupportFieldRespon
         value: i.name,
         label: i.name,
       })) || [],
+    supportInvisibleIndex: res?.supportInvisibleIndex === true,
   };
 }
 

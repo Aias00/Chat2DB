@@ -73,6 +73,7 @@ export interface IIndexItem {
   comment?: string | null;
   type: any | null;
   method?: string | null;
+  visible?: boolean | null;
   columnList: IIndexIncludeColumnItem[];
   editStatus: EditColumnOperationType | null; // Operation type
 }
