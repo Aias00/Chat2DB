@@ -29,7 +29,7 @@ const VIEWS: { key: string; scope: 'GLOBAL' | 'SESSION'; kind: 'VARIABLES' | 'ST
  * variables registered in the editable registry offer a SET action, with a preview
  * confirmation before execution. High-risk variables require typing the variable name.
  */
-const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
+const VariablesStatusContent = ({ dataSourceId, consoleId }: { dataSourceId: number; consoleId: number }) => {
   const [activeKey, setActiveKey] = useState('globalVariables');
   const [filter, setFilter] = useState('');
   const [data, setData] = useState<Record<string, IVariableItem[]>>({});
@@ -45,7 +45,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
     setLoading(true);
     setError(null);
     sqlService
-      .getVariableList({ dataSourceId, scope: view.scope, kind: view.kind })
+      .getVariableList({ dataSourceId, consoleId, scope: view.scope, kind: view.kind })
       .then((list) => {
         setData((prev) => ({ ...prev, [view.key]: list || [] }));
       })
@@ -53,7 +53,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, [dataSourceId]);
+  }, [consoleId, dataSourceId]);
 
   useEffect(() => {
     const view = VIEWS.find((v) => v.key === activeKey)!;
@@ -63,14 +63,14 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
   const editMetaByName = useCallback(
     (name: string): IVariableEditMeta | null | undefined => {
       if (!(name in metaCache)) {
-        void sqlService.getVariableEditable({ dataSourceId, name }).then((m) => {
+        void sqlService.getVariableEditable({ dataSourceId, consoleId, name }).then((m) => {
           setMetaCache((prev) => ({ ...prev, [name]: m }));
         });
         return undefined;
       }
       return metaCache[name];
     },
-    [dataSourceId, metaCache],
+    [consoleId, dataSourceId, metaCache],
   );
 
   const currentView = VIEWS.find((v) => v.key === activeKey)!;
@@ -84,7 +84,7 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
   }, [data, activeKey, filter]);
 
   const openEdit = async (record: IVariableItem) => {
-    const meta = await sqlService.getVariableEditable({ dataSourceId, name: record.name });
+    const meta = await sqlService.getVariableEditable({ dataSourceId, consoleId, name: record.name });
     setEditTarget(record);
     setEditMeta(meta || null);
     setConfirmName('');
@@ -100,14 +100,15 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
     form.validateFields().then((values) => {
       const scope = values.scope;
       sqlService
-        .previewSetVariableSql({ dataSourceId, variableName: editTarget.name, value: values.value, scope })
+        .previewSetVariableSql({ dataSourceId, consoleId, variableName: editTarget.name, value: values.value, scope })
         .then((sql) => {
+          setEditTarget(null);
           Modal.confirm({
             title: i18n('workspace.ops.variablePreviewTitle'),
             content: <pre style={{ whiteSpace: 'pre-wrap' }}>{sql}</pre>,
             okText: i18n('common.button.execute'),
             cancelText: i18n('common.button.cancel'),
-            onOk: () => sqlService.executeDDL({ dataSourceId, sql } as never),
+            onOk: () => sqlService.executeDDL({ dataSourceId, consoleId, sql }).then(() => load(currentView)),
           });
         })
         .catch((e) => {
@@ -125,23 +126,27 @@ const VariablesStatusContent = ({ dataSourceId }: { dataSourceId: number }) => {
           { title: i18n('workspace.ops.variablePath'), dataIndex: 'path', width: 260, ellipsis: true },
         ]
       : []),
-    {
-      title: i18n('workspace.ops.variableAction'),
-      width: 140,
-      render: (_, record) => {
-        const meta = editMetaByName(record.name);
-        if (meta === undefined) {
-          return null;
-        }
-        return meta ? (
-          <Button size="small" onClick={() => void openEdit(record)}>
-            {i18n('workspace.ops.variableEdit')}
-          </Button>
-        ) : (
-          <span style={{ color: 'var(--text-color-secondary)' }}>{i18n('workspace.ops.variableReadOnly')}</span>
-        );
-      },
-    },
+    ...(currentView.kind === 'VARIABLES'
+      ? [
+          {
+            title: i18n('workspace.ops.variableAction'),
+            width: 140,
+            render: (_: unknown, record: IVariableItem) => {
+              const meta = editMetaByName(record.name);
+              if (meta === undefined) {
+                return null;
+              }
+              return meta ? (
+                <Button size="small" onClick={() => void openEdit(record)}>
+                  {i18n('workspace.ops.variableEdit')}
+                </Button>
+              ) : (
+                <span style={{ color: 'var(--text-color-secondary)' }}>{i18n('workspace.ops.variableReadOnly')}</span>
+              );
+            },
+          },
+        ]
+      : []),
   ];
 
   const isHighRisk = editMeta?.highRisk && editTarget != null;

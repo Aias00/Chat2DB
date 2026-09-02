@@ -4,7 +4,14 @@ import { SquarePen } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 
-import { ConsoleOpenedStatus, OperationColumn, TreeNodeType, WorkspaceTabType, databaseTypeList } from '@/constants';
+import {
+  ConsoleOpenedStatus,
+  DatabaseTypeCode,
+  OperationColumn,
+  TreeNodeType,
+  WorkspaceTabType,
+  databaseTypeList,
+} from '@/constants';
 import { ImportExportType } from '@/constants/importExport';
 import { ShortcutAction } from '@/constants/shortcut';
 import { TreeNodeData } from '@/typings';
@@ -84,6 +91,8 @@ interface IOperationColumnConfigItem {
   renderLabel?: (context: MenuLabelRenderContext) => ReactNode;
   children?: IOperationColumnConfigItem[];
 }
+
+let variablesSessionId = -Math.max(1, Math.floor(Math.random() * (Number.MAX_SAFE_INTEGER / 2)));
 
 interface IRightClickMenu {
   key: number | string;
@@ -409,12 +418,18 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.VariablesStatus]: {
         text: i18n('workspace.ops.variablesStatus'),
         icon: 'icon-setting',
+        discard: databaseType !== DatabaseTypeCode.MYSQL,
         handle: () => {
+          const consoleId = variablesSessionId--;
           staticModal.confirm({
             title: i18n('workspace.ops.variablesStatus'),
-            content: <VariablesStatusContent dataSourceId={dataSourceId!} />,
+            content: <VariablesStatusContent dataSourceId={dataSourceId!} consoleId={consoleId} />,
             footer: null,
             width: 1000,
+            closable: true,
+            afterClose: () => {
+              void sqlService.closeVariableSession({ dataSourceId: dataSourceId!, consoleId });
+            },
           });
         },
       },

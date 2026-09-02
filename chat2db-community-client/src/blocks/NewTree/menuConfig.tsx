@@ -44,8 +44,6 @@ export const dropMenuConfig = {
       OperationColumn.CopyMcpConfig,
       OperationColumn.Divider,
       OperationColumn.MoveToGroup,
-      OperationColumn.ActiveTransactions,
-      OperationColumn.VariablesStatus,
       OperationColumn.Refresh,
       OperationColumn.Divider,
       OperationColumn.RemoveDataSource,
@@ -163,6 +161,7 @@ export const dropMenuConfig = {
       OperationColumn.Divider,
       // Management
       OperationColumn.MoveToGroup,
+      OperationColumn.VariablesStatus,
       OperationColumn.Refresh,
       OperationColumn.Divider,
       OperationColumn.RemoveDataSource,

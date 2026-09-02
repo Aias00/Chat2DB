@@ -452,20 +452,29 @@ export interface IVariableEditMeta {
   maxValue?: string | null;
 }
 
-const getVariableList = createRequest<{ dataSourceId: number; scope: string; kind: string }, IVariableItem[]>(
+interface IVariableSessionContext {
+  dataSourceId: number;
+  consoleId: number;
+}
+
+const getVariableList = createRequest<IVariableSessionContext & { scope: string; kind: string }, IVariableItem[]>(
   '/api/rdb/variable/list',
   { method: 'get' },
 );
 
-const getVariableEditable = createRequest<{ dataSourceId: number; name: string }, IVariableEditMeta | null>(
+const getVariableEditable = createRequest<IVariableSessionContext & { name: string }, IVariableEditMeta | null>(
   '/api/rdb/variable/editable',
   { method: 'get' },
 );
 
 const previewSetVariableSql = createRequest<
-  { dataSourceId: number; variableName: string; value: string; scope: string },
+  IVariableSessionContext & { variableName: string; value: string; scope: string },
   string
 >('/api/rdb/variable/set_preview', { method: 'post' });
+const closeVariableSession = createRequest<IVariableSessionContext, boolean>('/api/rdb/variable/session/close', {
+  method: 'post',
+  errorLevel: false,
+});
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
 
 const getDataSourceList = createRequest<IPageParams, IPageResponse<IConnectionDetails>>(
@@ -527,5 +536,6 @@ export default {
   getVariableList,
   getVariableEditable,
   previewSetVariableSql,
+  closeVariableSession,
   getDataSourceList,
 };
