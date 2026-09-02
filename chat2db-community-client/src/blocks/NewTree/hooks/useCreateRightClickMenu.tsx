@@ -412,9 +412,12 @@ export const useCreateRightClickMenu = () => {
         handle: () => {
           staticModal.confirm({
             title: i18n('workspace.ops.databaseProperties'),
-            content: <DatabasePropertiesContent dataSourceId={dataSourceId!} databaseName={originalTitle} />,
+            content: (
+              <DatabasePropertiesContent dataSourceId={dataSourceId!} databaseName={treeNodeData.originalTitle} />
+            ),
             footer: null,
             width: 480,
+            closable: true,
           });
         },
       },

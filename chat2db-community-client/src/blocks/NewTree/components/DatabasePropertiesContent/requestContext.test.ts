@@ -4,11 +4,27 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.tsx'), 'utf8');
+const menuSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../../hooks/useCreateRightClickMenu.tsx'),
+  'utf8',
+);
 
 assert.match(
   source,
   /getDatabaseInfo\(\{\s*dataSourceId,\s*databaseName\s*\}\)/s,
   'database charset readback must send dataSourceId with databaseName',
+);
+
+assert.match(
+  menuSource,
+  /DatabasePropertiesContent\s+dataSourceId=\{dataSourceId!\}\s+databaseName=\{treeNodeData\.originalTitle\}/s,
+  'database properties menu must use the selected tree node name',
+);
+
+assert.match(
+  menuSource,
+  /DatabasePropertiesContent[\s\S]*?footer:\s*null,[\s\S]*?closable:\s*true/,
+  'database properties dialog without a footer must expose a close button',
 );
 
 assert.match(
