@@ -9,14 +9,14 @@ import PartitionsContent from '@/blocks/NewTree/components/PartitionsContent';
 import sqlService, { IModifyTableSqlParams } from '@/service/sql';
 import ExecuteSQL from '@/components/ExecuteSQL';
 import { IEditTableInfo, IWorkspaceTab, IColumnTypes, IDatabaseBaseInfo } from '@/typings';
-import { WorkspaceTabType } from '@/constants';
+import { DatabaseCapability, WorkspaceTabType } from '@/constants';
 import LoadingContent from '@/components/Loading/LoadingContent';
 import { useStyles } from './style';
 import { staticMessage } from '@chat2db/ui';
 import AIEntryButton from '@/components/AIEntryButton';
 import { useAIStore } from '@/store/ai';
 import { useWorkspaceStore } from '@/store/workspace';
-import { shouldShowMysqlTableBaseInfo } from '@/utils/databaseJudgments';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 
 interface IProps {
   databaseBaseInfo: IDatabaseBaseInfo;
@@ -65,7 +65,10 @@ export default memo((props: IProps) => {
   const indexListRef = useRef<IIndexListRef>(null);
   const [appendValue, setAppendValue] = useState<string>('');
   const aiEntryButtonRef = useRef<HTMLDivElement>(null);
-  const showPartitionTab = shouldShowMysqlTableBaseInfo(databaseBaseInfo.databaseType)
+  const showPartitionTab = isDatabaseCapabilitySupported(
+    databaseBaseInfo.databaseType,
+    DatabaseCapability.TABLE_EDITOR_BASE_INFO,
+  )
     && !!dataSourceId
     && !!databaseName
     && !!tableName;
