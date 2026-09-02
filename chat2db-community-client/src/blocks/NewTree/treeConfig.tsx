@@ -1,4 +1,4 @@
-import { ConsoleStatus, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
+import { ConsoleStatus, DatabaseCapability, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
 import i18n from '@/i18n';
 import accountAdminService from '@/service/accountAdmin';
 import connectionService from '@/service/connection';
@@ -8,7 +8,7 @@ import tablespaceService from '@/service/tablespace';
 import { useTreeStore } from '@/store/tree';
 import { IConnectionDetails, TreeNodeData } from '@/typings';
 import { getDatabaseSupport } from '@/utils/database';
-import { canUseAccountManage, canUseTablespaceManage, isMongodbTreeDataSource, isRedisTreeDataSource } from '@/utils/databaseJudgments';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import { v4 as uuid } from 'uuid';
 import { createSavedConsoleTreeNodeKey } from '@/store/tree/backgroundRefresh';
 
@@ -264,7 +264,10 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
       return new Promise((r, j) => {
         const { dataSourceId, databaseType } = extraParams;
         const { supportDatabase, supportSchema } = getDatabaseSupport(databaseType);
-        const accountNode: TreeNodeData | null = canUseAccountManage(databaseType)
+        const accountNode: TreeNodeData | null = isDatabaseCapabilitySupported(
+          databaseType,
+          DatabaseCapability.ACCOUNT_MANAGEMENT,
+        )
           ? {
               key: treeConfig[TreeNodeType.DATABASE_ACCOUNTS].createTreeNodeKey!({ dataSourceId }),
               originalTitle: i18n('workspace.databaseAccount.title'),
@@ -274,7 +277,10 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
               extraParams,
             }
           : null;
-        const tablespaceNode: TreeNodeData | null = canUseTablespaceManage(databaseType)
+        const tablespaceNode: TreeNodeData | null = isDatabaseCapabilitySupported(
+          databaseType,
+          DatabaseCapability.TABLESPACE_MANAGEMENT,
+        )
           ? {
               key: treeConfig[TreeNodeType.TABLESPACES].createTreeNodeKey!({ dataSourceId }),
               originalTitle: i18n('workspace.tablespace.title'),
@@ -674,7 +680,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
             },
             createSaveConsolesNode(nodeExtraParams),
           ];
-          if (isRedisTreeDataSource(databaseType)) {
+          if (isDatabaseCapabilitySupported(databaseType, DatabaseCapability.REDIS_TREE)) {
             finalData = redisData;
           }
           r(finalData);
@@ -776,7 +782,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
         ];
 
         let finalData = data;
-        if (isMongodbTreeDataSource(databaseType)) {
+        if (isDatabaseCapabilitySupported(databaseType, DatabaseCapability.MONGODB_TREE)) {
           finalData = mongodbData;
         }
         r(finalData);

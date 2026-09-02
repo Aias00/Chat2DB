@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_DETAIL_SQL_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_DETAIL_SQL_TEMPLATE_MYSQL57;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_OCCUPYING_TABLES_SQL;
+import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACE_OCCUPYING_TABLES_SQL_MYSQL57;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACES_SQL;
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.TABLESPACES_SQL_MYSQL57;
 
@@ -189,12 +190,12 @@ class MysqlTablespaceSqlBuilderTest {
 
     @Test
     void shouldUseInformationSchemaDiscoverySupportedByMysql57And80() {
-        assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.TABLESPACES"));
+        assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.INNODB_TABLESPACES"));
         assertTrue(TABLESPACES_SQL.contains("INFORMATION_SCHEMA.FILES"));
-        assertTrue(TABLESPACES_SQL.contains("T.ENGINE = 'InnoDB'"));
-        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("INFORMATION_SCHEMA.TABLES"));
-        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("INFORMATION_SCHEMA.PARTITIONS"));
-        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("PARTITION"));
+        assertTrue(TABLESPACES_SQL.contains("T.SPACE_TYPE = 'General'"));
+        assertTrue(TABLESPACES_SQL.contains("T.NAME <> 'mysql'"));
+        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL.contains("INFORMATION_SCHEMA.INNODB_TABLES"));
+        assertTrue(TABLESPACE_OCCUPYING_TABLES_SQL_MYSQL57.contains("INFORMATION_SCHEMA.INNODB_SYS_TABLES"));
         assertEquals(TABLESPACES_SQL.replace("ORDER BY T.NAME", "AND T.NAME = '%s' ORDER BY T.NAME"),
                 TABLESPACE_DETAIL_SQL_TEMPLATE);
         assertTrue(TABLESPACES_SQL_MYSQL57.contains("INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES"));
@@ -228,16 +229,16 @@ class MysqlTablespaceSqlBuilderTest {
     }
 
     @Test
-    void shouldReadBackTableAndPartitionOccupancy() {
+    void shouldReadBackTableOccupancy() {
         Map<String, Object> tableRow = new HashMap<>();
         tableRow.put("OBJECT_NAME", "app.orders");
-        Map<String, Object> partitionRow = new HashMap<>();
-        partitionRow.put("OBJECT_NAME", "app.orders_archive PARTITION p2024");
-        Connection connection = connectionReturning(resultSet(List.of(tableRow, partitionRow)));
+        Map<String, Object> archiveRow = new HashMap<>();
+        archiveRow.put("OBJECT_NAME", "app.orders_archive");
+        Connection connection = connectionReturning(resultSet(List.of(tableRow, archiveRow)));
 
         List<String> occupyingTables = new MysqlMetaData().occupyingTables(connection, "ts_archive");
 
-        assertEquals(List.of("app.orders", "app.orders_archive PARTITION p2024"), occupyingTables);
+        assertEquals(List.of("app.orders", "app.orders_archive"), occupyingTables);
     }
 
     @Test

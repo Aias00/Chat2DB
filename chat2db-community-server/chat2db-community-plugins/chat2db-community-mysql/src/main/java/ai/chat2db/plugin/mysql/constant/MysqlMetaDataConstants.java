@@ -71,6 +71,8 @@ public final class MysqlMetaDataConstants {
     public static final String FIELD_INDEX_COMMENT = "Index_comment";
     public static final String FIELD_INDEX_COMMENT_FALLBACK = "Comment";
     public static final String FIELD_INDEX_TYPE = "Index_type";
+    public static final String FIELD_IS_VISIBLE = "Visible";
+    public static final String INDEX_VISIBLE_VALUE = "YES";
     public static final String FIELD_IS_NULLABLE = "IS_NULLABLE";
     public static final String FIELD_KEY_NAME = "Key_name";
     public static final String FIELD_NAME = "Name";
@@ -124,6 +126,7 @@ public final class MysqlMetaDataConstants {
     public static final String SQL_DOT = ".";
     public static final String SQL_ENUM_TYPE = "ENUM";
     public static final String SQL_FULLTEXT_INDEX_TYPE = "FULLTEXT";
+    public static final String SQL_INVISIBLE = "INVISIBLE";
     public static final String SQL_METADATA_QUOTE = "`";
     public static final String SQL_NAME_SIZE_CLOSE = ")";
     public static final String SQL_NAME_SIZE_OPEN = "(";
@@ -162,27 +165,26 @@ public final class MysqlMetaDataConstants {
             Types.TIMESTAMP, ResultSetEditorTypeEnum.TIMESTAMP
     );
     public static final String TABLE_STATUS = "select * FROM information_schema.collation_character_set_applicability limit 10000";
-    public static final String TABLES_SQL = "SELECT TABLE_SCHEMA, TABLE_NAME, `ENGINE`, `VERSION`, TABLE_ROWS, DATA_LENGTH, `AUTO_INCREMENT`, CREATE_TIME, UPDATE_TIME, TABLE_COLLATION, TABLE_COMMENT, TABLESPACE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE in ('BASE TABLE','SYSTEM VIEW') AND TABLE_SCHEMA = '%s'";
+    public static final String TABLES_SQL = "SELECT T.TABLE_SCHEMA, T.TABLE_NAME, T.`ENGINE`, T.`VERSION`, T.TABLE_ROWS, T.DATA_LENGTH, T.`AUTO_INCREMENT`, T.CREATE_TIME, T.UPDATE_TIME, T.TABLE_COLLATION, T.TABLE_COMMENT, CASE WHEN S.SPACE_TYPE = 'General' THEN S.NAME END AS TABLESPACE_NAME FROM INFORMATION_SCHEMA.TABLES T LEFT JOIN INFORMATION_SCHEMA.INNODB_TABLES I ON I.NAME = CONCAT(T.TABLE_SCHEMA, '/', T.TABLE_NAME) LEFT JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES S ON S.SPACE = I.SPACE WHERE T.TABLE_TYPE in ('BASE TABLE','SYSTEM VIEW') AND T.TABLE_SCHEMA = '%s'";
+    public static final String TABLES_SQL_MYSQL57 = "SELECT T.TABLE_SCHEMA, T.TABLE_NAME, T.`ENGINE`, T.`VERSION`, T.TABLE_ROWS, T.DATA_LENGTH, T.`AUTO_INCREMENT`, T.CREATE_TIME, T.UPDATE_TIME, T.TABLE_COLLATION, T.TABLE_COMMENT, CASE WHEN S.SPACE_TYPE = 'General' THEN S.NAME END AS TABLESPACE_NAME FROM INFORMATION_SCHEMA.TABLES T LEFT JOIN INFORMATION_SCHEMA.INNODB_SYS_TABLES I ON I.NAME = CONCAT(T.TABLE_SCHEMA, '/', T.TABLE_NAME) LEFT JOIN INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES S ON S.SPACE = I.SPACE WHERE T.TABLE_TYPE in ('BASE TABLE','SYSTEM VIEW') AND T.TABLE_SCHEMA = '%s'";
     /**
      * Lists InnoDB General Tablespaces (server-scoped), excluding the InnoDB system, undo, and
      * temporary tablespaces which are not general tablespaces. LEFT JOINs INFORMATION_SCHEMA.FILES
      * for the data-file path; FILES rows require PROCESS/FILE privilege on 8.0.21+, so the path
-     * may be null and must be tolerated. Works on MySQL 5.7 and 8.0.
+     * may be null and must be tolerated.
      */
     public static final String TABLESPACES_SQL =
-            "SELECT T.SPACE, T.NAME, T.ENGINE, T.FILE_BLOCK_SIZE, "
-                    + "F.FILE_NAME, F.AUTOEXTEND_NEXT_SIZE, F.MAXIMUM_SIZE, "
+            "SELECT T.SPACE, T.NAME, 'InnoDB' AS ENGINE, T.FS_BLOCK_SIZE AS FILE_BLOCK_SIZE, "
+                    + "F.FILE_NAME, F.AUTOEXTEND_SIZE AS AUTOEXTEND_NEXT_SIZE, F.MAXIMUM_SIZE, "
                     + "F.TOTAL_EXTENTS, F.EXTENT_SIZE, F.INITIAL_SIZE, F.STATUS "
-                    + "FROM INFORMATION_SCHEMA.TABLESPACES T "
+                    + "FROM INFORMATION_SCHEMA.INNODB_TABLESPACES T "
                     + "LEFT JOIN INFORMATION_SCHEMA.FILES F ON F.TABLESPACE_NAME = T.NAME "
-                    + "WHERE T.ENGINE = 'InnoDB' "
-                    + "AND T.NAME NOT IN ('innodb_system','innodb_undo_001','innodb_undo_002','innodb_temporary') "
-                    + "AND T.NAME NOT LIKE 'innodb_undo_%' "
-                    + "AND T.NAME NOT LIKE 'innodb_temp_%' "
+                    + "WHERE T.SPACE_TYPE = 'General' "
+                    + "AND T.NAME <> 'mysql' "
                     + "ORDER BY T.NAME";
     public static final String TABLESPACES_SQL_MYSQL57 =
             "SELECT T.SPACE, T.NAME, 'InnoDB' AS ENGINE, T.PAGE_SIZE AS FILE_BLOCK_SIZE, "
-                    + "F.FILE_NAME, F.AUTOEXTEND_NEXT_SIZE, F.MAXIMUM_SIZE, "
+                    + "F.FILE_NAME, F.AUTOEXTEND_SIZE AS AUTOEXTEND_NEXT_SIZE, F.MAXIMUM_SIZE, "
                     + "F.TOTAL_EXTENTS, F.EXTENT_SIZE, F.INITIAL_SIZE, F.STATUS "
                     + "FROM INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES T "
                     + "LEFT JOIN INFORMATION_SCHEMA.FILES F ON F.TABLESPACE_NAME = T.NAME "
@@ -200,16 +202,15 @@ public final class MysqlMetaDataConstants {
      * bound as a prepared-statement parameter.
      */
     public static final String TABLESPACE_OCCUPYING_TABLES_SQL =
-            "SELECT CONCAT(TABLE_SCHEMA, '.', TABLE_NAME) AS OBJECT_NAME "
-                    + "FROM INFORMATION_SCHEMA.TABLES "
-                    + "WHERE TABLESPACE_NAME = ? AND TABLE_TYPE = 'BASE TABLE' "
-                    + "UNION "
-                    + "SELECT CONCAT(P.TABLE_SCHEMA, '.', P.TABLE_NAME, ' PARTITION ', P.PARTITION_NAME, "
-                    + "IF(P.SUBPARTITION_NAME IS NULL OR P.SUBPARTITION_NAME = '', '', "
-                    + "CONCAT(' SUBPARTITION ', P.SUBPARTITION_NAME))) AS OBJECT_NAME "
-                    + "FROM INFORMATION_SCHEMA.PARTITIONS P "
-                    + "WHERE P.TABLESPACE_NAME = ? AND P.PARTITION_NAME IS NOT NULL "
-                    + "ORDER BY OBJECT_NAME";
+            "SELECT REPLACE(I.NAME, '/', '.') AS OBJECT_NAME "
+                    + "FROM INFORMATION_SCHEMA.INNODB_TABLES I "
+                    + "JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES S ON S.SPACE = I.SPACE "
+                    + "WHERE S.NAME = ? ORDER BY OBJECT_NAME";
+    public static final String TABLESPACE_OCCUPYING_TABLES_SQL_MYSQL57 =
+            "SELECT REPLACE(I.NAME, '/', '.') AS OBJECT_NAME "
+                    + "FROM INFORMATION_SCHEMA.INNODB_SYS_TABLES I "
+                    + "JOIN INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES S ON S.SPACE = I.SPACE "
+                    + "WHERE S.NAME = ? ORDER BY OBJECT_NAME";
     public static final String ROUTINES_SQL = "SELECT SPECIFIC_NAME, ROUTINE_COMMENT, ROUTINE_DEFINITION FROM information_schema.routines WHERE routine_type = '%s' AND ROUTINE_SCHEMA ='%s'  AND routine_name = '%s';";
     public static final String TRIGGER_SQL = "show create trigger %s.%s";
     public static final String TRIGGER_SQL_LIST = "SELECT TRIGGER_NAME FROM INFORMATION_SCHEMA.TRIGGERS where TRIGGER_SCHEMA = '%s';";

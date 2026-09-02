@@ -151,8 +151,10 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
      * value, so it is bound as a prepared-statement parameter.
      */
     public List<String> occupyingTables(Connection connection, String tablespaceName) {
-        return DefaultSQLExecutor.getInstance().preExecute(connection, TABLESPACE_OCCUPYING_TABLES_SQL,
-                new String[] {tablespaceName, tablespaceName}, resultSet -> {
+        String sql = useMysql57TablespaceMetadata() ? TABLESPACE_OCCUPYING_TABLES_SQL_MYSQL57
+                : TABLESPACE_OCCUPYING_TABLES_SQL;
+        return DefaultSQLExecutor.getInstance().preExecute(connection, sql,
+                new String[] {tablespaceName}, resultSet -> {
                     List<String> tables = new ArrayList<>();
                     while (resultSet.next()) {
                         tables.add(resultSet.getString(FIELD_TABLESPACE_OCCUPYING_OBJECT));
@@ -182,7 +184,8 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
 
     @Override
     public List<Table> tables(Connection connection, @NotEmpty String databaseName, String schemaName, String tableName) {
-        String sql = String.format(TABLES_SQL, getSQLIdentifierProcessor().escapeString(databaseName));
+        String tablesSql = useMysql57TablespaceMetadata() ? TABLES_SQL_MYSQL57 : TABLES_SQL;
+        String sql = String.format(tablesSql, getSQLIdentifierProcessor().escapeString(databaseName));
         if (StringUtils.isNotBlank(tableName)) {
             sql += SQL_TABLE_NAME_EQUALS_FILTER + getSQLIdentifierProcessor().escapeString(tableName) + SQL_SINGLE_QUOTE;
         }
@@ -361,8 +364,10 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                 column.setName(resultSet.getString(FIELD_COLUMN_NAME_UPPER));
                 column.setColumnType(resultSet.getString(FIELD_DATA_TYPE).toUpperCase());
                 column.setDefaultValue(resultSet.getString(FIELD_COLUMN_DEFAULT));
-                column.setAutoIncrement(resultSet.getString(FIELD_EXTRA).contains(SQL_AUTO_INCREMENT));
-                column.setOnUpdateCurrentTimestamp(resultSet.getString(FIELD_EXTRA).contains(SQL_ON_UPDATE_CURRENT_TIMESTAMP));
+                String columnExtra = StringUtils.defaultString(resultSet.getString(FIELD_EXTRA));
+                column.setAutoIncrement(columnExtra.contains(SQL_AUTO_INCREMENT));
+                column.setOnUpdateCurrentTimestamp(columnExtra.contains(SQL_ON_UPDATE_CURRENT_TIMESTAMP));
+                column.setVisible(!columnExtra.contains(SQL_INVISIBLE));
                 column.setComment(resultSet.getString(FIELD_COLUMN_COMMENT));
                 column.setPrimaryKey(SQL_PRIMARY_KEY_FLAG.equalsIgnoreCase(resultSet.getString(FIELD_COLUMN_KEY)));
                 column.setNullable(SQL_YES.equalsIgnoreCase(resultSet.getString(FIELD_IS_NULLABLE)) ? 1 : 0);
@@ -464,6 +469,11 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                     } catch (SQLException e) {
                         log.error(LOG_INDEX_COMMENT_FAILED, keyName, e);
                         index.setComment(resultSet.getString(FIELD_INDEX_COMMENT_FALLBACK));
+                    }
+                    try {
+                        index.setVisible(INDEX_VISIBLE_VALUE.equalsIgnoreCase(resultSet.getString(FIELD_IS_VISIBLE)));
+                    } catch (SQLException e) {
+                        index.setVisible(Boolean.TRUE);
                     }
                     List<TableIndexColumn> tableIndexColumns = new ArrayList<>();
                     tableIndexColumns.add(getTableIndexColumn(resultSet));
