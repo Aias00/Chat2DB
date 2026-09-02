@@ -86,6 +86,9 @@ class SqlFileOptionsHandlerTest {
         handler.flush();
 
         assertEquals(3, context.lastInfoDetails.get("committedStatements"));
+        assertFalse(context.lastInfoDetails.containsValue(null));
+        assertEquals("", context.lastInfoDetails.get("unexecutedStatementRange"));
+        assertFalse(context.lastInfoDetails.containsKey("cancelledStatement"));
     }
 
     @Test

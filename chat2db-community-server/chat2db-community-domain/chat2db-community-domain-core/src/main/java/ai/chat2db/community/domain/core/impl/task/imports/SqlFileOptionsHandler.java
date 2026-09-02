@@ -374,13 +374,19 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
         details.put("rolledBackStatements", rolledBackStatements);
         details.put("rolledBackStatementRanges", List.copyOf(rolledBackStatementRanges));
         details.put("unexecutedStatements", unexecutedStatements());
-        details.put("unexecutedStatementRange", unexecutedStatementRange());
+        putIfNotNull(details, "unexecutedStatementRange", unexecutedStatementRange());
         details.put("cancelled", cancelled);
-        details.put("cancelledStatement", cancelledStatement());
+        putIfNotNull(details, "cancelledStatement", cancelledStatement());
         details.put("commitMode", commitMode);
         details.put("errorPolicy", errorPolicy);
         details.put("batchSize", batchSize);
         return details;
+    }
+
+    private void putIfNotNull(Map<String, Object> details, String key, Object value) {
+        if (value != null) {
+            details.put(key, value);
+        }
     }
 
     private void logTerminalSummary(String message) {
