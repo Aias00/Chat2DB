@@ -180,11 +180,20 @@ class DbDmlExportServicePolicyTest {
 
     @Test
     void csvExportRejectsNonSelectSqlWhenDatasourceIsNotDruidSupported() {
-        Chat2DBContext.getConnectInfo().setDbType("REDIS");
+        assertRejectsNonSelectExportForDatasource("REDIS", "DEL export_guard");
+    }
+
+    @Test
+    void csvExportRejectsNonSelectSqlWhenSyntaxPluginIsUnavailable() {
+        assertRejectsNonSelectExportForDatasource("SNOWFLAKE", "DELETE FROM export_guard");
+    }
+
+    private void assertRejectsNonSelectExportForDatasource(String databaseType, String sql) {
+        Chat2DBContext.getConnectInfo().setDbType(databaseType);
         DbDmlExportServiceImpl selectValidationService = selectValidationService();
         DbDmlExportRequest request = new DbDmlExportRequest();
-        request.setSql("DEL export_guard");
-        request.setOriginalSql("DEL export_guard");
+        request.setSql(sql);
+        request.setOriginalSql(sql);
         request.setExportSize("ALL");
         request.setExportType("CSV");
         request.setDatabaseName("shop");

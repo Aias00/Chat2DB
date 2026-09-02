@@ -153,7 +153,13 @@ public class DbDmlExportServiceImpl implements IDbDmlExportService {
     private void requireSelectSql(String sql) {
         DbType dbType = currentDruidDbType();
         if (dbType == null) {
-            if (!DefaultSqlSyntaxHandler.isSelect(sql, Chat2DBContext.getConnectInfo().getDbType())) {
+            boolean selectSql;
+            try {
+                selectSql = DefaultSqlSyntaxHandler.isSelect(sql, Chat2DBContext.getConnectInfo().getDbType());
+            } catch (RuntimeException ignored) {
+                selectSql = false;
+            }
+            if (!selectSql) {
                 throw new BusinessException("dataSource.sqlAnalysisError");
             }
             return;
