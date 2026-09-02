@@ -55,7 +55,29 @@ class SqlGenerateUtilTest {
                 "SELECT status, COUNT(*) FROM orders GROUP BY status", "mysql");
 
         assertEquals("SELECT COUNT(*) FROM (SELECT status, COUNT(*) FROM orders GROUP BY status) chat2db_count_temp_table",
-                result);
+                result.replaceAll("\\s+", " ").trim());
+    }
+
+    @Test
+    void normalPathRemovesPagingBeforeCountingGroupedSelect() {
+        String result = SqlGenerateUtil.generateSelectCountSql(
+                "SELECT status, COUNT(*) FROM orders GROUP BY status ORDER BY status LIMIT 10 OFFSET 5", "mysql");
+
+        assertTrue(result.contains("GROUP BY status"), () -> "Expected GROUP BY in: " + result);
+        assertFalse(result.contains("ORDER BY"), () -> "Must not page grouped count: " + result);
+        assertFalse(result.contains("LIMIT"), () -> "Must not page grouped count: " + result);
+        assertFalse(result.contains("OFFSET"), () -> "Must not page grouped count: " + result);
+    }
+
+    @Test
+    void druidFallbackRemovesPagingBeforeCountingGroupedSelect() {
+        String result = SqlGenerateUtil.generateSelectCountSqlWithDruid(
+                "SELECT status, COUNT(*) FROM orders GROUP BY status ORDER BY status LIMIT 10 OFFSET 5", "mysql");
+
+        assertTrue(result.contains("GROUP BY status"), () -> "Expected GROUP BY in: " + result);
+        assertFalse(result.contains("ORDER BY"), () -> "Must not page grouped count: " + result);
+        assertFalse(result.contains("LIMIT"), () -> "Must not page grouped count: " + result);
+        assertFalse(result.contains("OFFSET"), () -> "Must not page grouped count: " + result);
     }
 
     /**
