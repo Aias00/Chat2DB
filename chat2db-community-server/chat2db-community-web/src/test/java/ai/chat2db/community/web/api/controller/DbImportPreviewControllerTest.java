@@ -14,9 +14,11 @@ import ai.chat2db.community.web.api.model.response.task.TaskSubmitResponse;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -34,6 +36,15 @@ class DbImportPreviewControllerTest {
     @Test
     void importExecuteRequestParticipatesInDatasourceBinding() {
         assertInstanceOf(DataSourceBaseRequest.class, new DbImportPreviewController.ImportExecuteRequest());
+    }
+
+    @Test
+    void previewRequestUsesJsonBodyBinding() throws Exception {
+        assertInstanceOf(DataSourceBaseRequest.class, new DbImportPreviewController.ImportPreviewRequest());
+        Method preview = DbImportPreviewController.class.getDeclaredMethod(
+                "preview", DbImportPreviewController.ImportPreviewRequest.class);
+
+        assertTrue(preview.getParameters()[0].isAnnotationPresent(RequestBody.class));
     }
 
     @Test
