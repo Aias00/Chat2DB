@@ -17,6 +17,7 @@ import { useAIStore } from '@/store/ai';
 import { useWorkspaceStore } from '@/store/workspace';
 import {
   IDatabaseSupportFieldOptions,
+  getFirstTablePreviewSql,
   mapDatabaseSupportFieldOptions,
   validateTableCharsetCollations,
 } from './baseInfoModel';
@@ -171,8 +172,13 @@ export default memo((props: IProps) => {
         params.oldTable = oldTableDetails;
       }
       sqlService.getModifyTableSql(params).then((res) => {
+        const sql = getFirstTablePreviewSql(res);
+        if (!sql) {
+          staticMessage.info(i18n('workspace.ops.noChange'));
+          return;
+        }
         setViewSqlModal(true);
-        setAppendValue(res?.[0].sql);
+        setAppendValue(sql);
       });
     }
   }

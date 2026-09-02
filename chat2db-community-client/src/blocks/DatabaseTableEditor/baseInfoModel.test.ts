@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildBaseInfoFormValues,
   filterCollationsByCharset,
+  getFirstTablePreviewSql,
   isCharsetCollationCompatible,
   mapDatabaseSupportFieldOptions,
 } from './baseInfoModel';
@@ -72,6 +73,13 @@ assert.equal(
   isCharsetCollationCompatible('utf8mb4', 'utf8mb4_general_ci', options.collations),
   true,
   'matching charset and collation remain valid',
+);
+
+assert.equal(getFirstTablePreviewSql([{ sql: '' }]), null, 'empty table DDL is treated as no changes');
+assert.equal(
+  getFirstTablePreviewSql([{ sql: ' ALTER TABLE `orders` COLLATE=utf8mb4_general_ci; ' }]),
+  'ALTER TABLE `orders` COLLATE=utf8mb4_general_ci;',
+  'non-empty table DDL is normalized for preview',
 );
 
 console.log('DatabaseTableEditor base info model tests passed');

@@ -120,3 +120,8 @@ export function validateTableCharsetCollations(
     isCharsetCollationCompatible(column.charSetName, column.collationName, collations),
   );
 }
+
+export function getFirstTablePreviewSql(result?: Array<{ sql?: string | null }>): string | null {
+  const sql = result?.[0]?.sql?.trim();
+  return sql || null;
+}
