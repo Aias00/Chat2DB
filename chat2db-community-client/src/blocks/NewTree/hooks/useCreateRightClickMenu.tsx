@@ -4,7 +4,14 @@ import { SquarePen } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 
-import { ConsoleOpenedStatus, OperationColumn, TreeNodeType, WorkspaceTabType, databaseTypeList } from '@/constants';
+import {
+  ConsoleOpenedStatus,
+  DatabaseCapability,
+  OperationColumn,
+  TreeNodeType,
+  WorkspaceTabType,
+  databaseTypeList,
+} from '@/constants';
 import { ImportExportType } from '@/constants/importExport';
 import { ShortcutAction } from '@/constants/shortcut';
 import { TreeNodeData } from '@/typings';
@@ -34,15 +41,7 @@ import { viewDDL } from '../functions/viewDDL';
 
 // ----- utils -----
 import { compatibleDataBaseName, getDatabaseSupport } from '@/utils/database';
-import {
-  canDeleteDatabase,
-  canDeleteSchema,
-  canExportData,
-  canExportSqlFile,
-  canGenerateJavaClass,
-  canImportData,
-  canRunSqlFile,
-} from '@/utils/databaseJudgments';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import { dropMenuConfig } from '../menuConfig';
 
 import { handleExportSqlFile } from '@/blocks/ImportAndExport/functions/exportSqlFile';
@@ -761,7 +760,7 @@ export const useCreateRightClickMenu = () => {
           treeNodeType !== TreeNodeType.DATABASE ||
           !hasPermission ||
           !supportDatabase ||
-          !canDeleteDatabase(databaseType),
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.DATABASE_DELETE),
         requiredOperations: ['DROP'],
       },
 
@@ -770,7 +769,10 @@ export const useCreateRightClickMenu = () => {
         icon: 'icon-trash',
         handle: openDeleteSchemaModal,
         discard:
-          treeNodeType !== TreeNodeType.SCHEMA || !hasPermission || !supportSchema || !canDeleteSchema(databaseType),
+          treeNodeType !== TreeNodeType.SCHEMA ||
+          !hasPermission ||
+          !supportSchema ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.SCHEMA_DELETE),
         requiredOperations: ['DROP'],
       },
 
@@ -1028,7 +1030,10 @@ export const useCreateRightClickMenu = () => {
             schemaName,
           });
         },
-        discard: !canImportExport || !canRunSqlFile(databaseType) || !hasPermission,
+        discard:
+          !canImportExport ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.IMPORT_EXPORT) ||
+          !hasPermission,
       },
 
       [OperationColumn.CopyMcpConfig]: {
@@ -1105,7 +1110,7 @@ export const useCreateRightClickMenu = () => {
         discard:
           (treeNodeType === TreeNodeType.DATABASE && supportSchema) ||
           !canImportExport ||
-          !canExportSqlFile(databaseType),
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.IMPORT_EXPORT),
       },
 
       // Export data.
@@ -1123,7 +1128,9 @@ export const useCreateRightClickMenu = () => {
           });
         },
         discard:
-          (treeNodeType === TreeNodeType.DATABASE && supportSchema) || !canImportExport || !canExportData(databaseType),
+          (treeNodeType === TreeNodeType.DATABASE && supportSchema) ||
+          !canImportExport ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.IMPORT_EXPORT),
       },
 
       // Import data.
@@ -1141,7 +1148,9 @@ export const useCreateRightClickMenu = () => {
           });
         },
         discard:
-          (treeNodeType === TreeNodeType.DATABASE && supportSchema) || !canImportExport || !canImportData(databaseType),
+          (treeNodeType === TreeNodeType.DATABASE && supportSchema) ||
+          !canImportExport ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.IMPORT_EXPORT),
         requiredOperations: ['INSERT'],
       },
 
@@ -1157,7 +1166,9 @@ export const useCreateRightClickMenu = () => {
             tableName: tableName!,
           });
         },
-        discard: !canImportExport || !canGenerateJavaClass(databaseType),
+        discard:
+          !canImportExport ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.JAVA_CLASS_GENERATION),
       },
 
       // Truncate the table.
