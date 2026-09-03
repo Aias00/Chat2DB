@@ -342,6 +342,8 @@ export default {
   'workspace.ops.noLockWaits': 'No active lock waits',
   'workspace.ops.metadataLocksUnavailable': 'Metadata lock instrumentation unavailable',
   'workspace.ops.sessionsUnavailable': 'Session rows unavailable',
+  'workspace.ops.lockPrivilegeRequired': 'The current database account cannot read lock metadata.',
+  'workspace.ops.lockMetadataUnavailable': 'Some lock metadata is unavailable for this database server.',
   'workspace.routine.button.invoke': 'Invoke routine',
   'workspace.routine.button.apply': 'Apply changes',
   'workspace.routine.button.refresh': 'Reload DDL',

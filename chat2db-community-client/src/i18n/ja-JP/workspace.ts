@@ -342,6 +342,8 @@ export default {
   'workspace.ops.noLockWaits': 'アクティブなロック待機はありません',
   'workspace.ops.metadataLocksUnavailable': 'メタデータロックの計装が利用できません',
   'workspace.ops.sessionsUnavailable': 'セッション行を利用できません',
+  'workspace.ops.lockPrivilegeRequired': '現在のデータベースアカウントにはロックメタデータの参照権限がありません。',
+  'workspace.ops.lockMetadataUnavailable': 'このデータベースサーバーでは一部のロックメタデータを利用できません。',
   'workspace.routine.button.invoke': 'ルーチンを呼び出す',
   'workspace.routine.button.apply': '変更を適用',
   'workspace.routine.button.refresh': 'DDL を再読み込み',

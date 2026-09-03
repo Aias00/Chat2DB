@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
-import sqlService, { ILockView } from '@/service/sql';
+import sqlService, {
+  type IDataLock,
+  type ILockSession,
+  type ILockView,
+  type IMetadataLock,
+  LockViewErrorCode,
+  LockViewSource,
+} from '@/service/sql';
 import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
 /**
@@ -16,7 +23,6 @@ interface LockWaitsContentProps {
   onOpenSession?: (target: LockSessionNavigationTarget) => void;
 }
 
-type LockSnapshotRow = Record<string, string | null | boolean | number | undefined>;
 type WaitChainRow = ILockView['waitChains'][number];
 
 export interface LockSessionNavigationTarget {
@@ -30,10 +36,10 @@ export interface LockSessionNavigationTarget {
 }
 
 const sourceLabel = (source: ILockView['source']) => {
-  if (source === 'performance_schema') {
+  if (source === LockViewSource.PERFORMANCE_SCHEMA) {
     return 'Performance Schema (8.0)';
   }
-  if (source === 'information_schema') {
+  if (source === LockViewSource.INFORMATION_SCHEMA) {
     return 'information_schema (5.7)';
   }
   return i18n('workspace.ops.lockSourceUnavailable');
@@ -41,14 +47,35 @@ const sourceLabel = (source: ILockView['source']) => {
 
 const valueText = (value: unknown) => (value == null || value === '' ? i18n('workspace.ops.valueUnavailable') : String(value));
 
-const firstRowValue = (row: LockSnapshotRow, ...keys: string[]) => {
-  for (const key of keys) {
-    const value = row[key];
-    if (value != null && value !== '') {
-      return String(value);
-    }
-  }
-  return null;
+export const lockObjectText = (
+  objectSchema: string | null,
+  objectName: string | null,
+  fallback?: string | null,
+) => {
+  const object = [objectSchema, objectName].filter(Boolean).join('.');
+  return object || fallback || null;
+};
+
+export const metadataLockRowKey = (row: IMetadataLock) =>
+  [
+    row.objectInstanceId,
+    row.objectType,
+    row.objectSchema,
+    row.objectName,
+    row.lockType,
+    row.lockDuration,
+    row.lockStatus,
+    row.ownerThreadId,
+    row.ownerEventId,
+  ]
+    .map((value) => value ?? '')
+    .join(':');
+
+export const lockViewErrorText = (errors: ILockView['errors']) => {
+  if (!errors.length) return null;
+  return errors.some(({ code }) => code === LockViewErrorCode.PRIVILEGE_REQUIRED)
+    ? i18n('workspace.ops.lockPrivilegeRequired')
+    : i18n('workspace.ops.lockMetadataUnavailable');
 };
 
 const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps) => {
@@ -66,8 +93,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
       .then((result) => {
         if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         setView(result);
-        const firstError = result.errors?.[0];
-        setError(firstError ? `${firstError.section}: ${firstError.code}` : null);
+        setError(lockViewErrorText(result.errors));
       })
       .catch((e) => {
         if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
@@ -179,23 +205,26 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     },
   ];
 
-  const lockColumns: ColumnsType<LockSnapshotRow> = [
-    { title: i18n('workspace.ops.lockId'), dataIndex: 'ENGINE_LOCK_ID', width: 200, render: (v, r) => v ?? r.lock_id },
-    { title: i18n('workspace.ops.lockObject'), dataIndex: 'OBJECT_SCHEMA', width: 220, render: (v, r) => (v != null ? `${v}.${r.OBJECT_NAME}` : r.lock_table) },
-    { title: i18n('workspace.ops.lockType'), dataIndex: 'LOCK_TYPE', width: 110, render: (v, r) => v ?? r.lock_type },
-    { title: i18n('workspace.ops.lockMode'), dataIndex: 'LOCK_MODE', width: 110, render: (v, r) => v ?? r.lock_mode },
-    { title: i18n('workspace.ops.lockStatus'), dataIndex: 'LOCK_STATUS', width: 110 },
-    { title: i18n('workspace.ops.lockData'), dataIndex: 'LOCK_DATA', ellipsis: true, render: (v, r) => v ?? r.lock_data },
+  const lockColumns: ColumnsType<IDataLock> = [
+    { title: i18n('workspace.ops.lockId'), dataIndex: 'lockId', width: 200 },
+    {
+      title: i18n('workspace.ops.lockObject'),
+      width: 220,
+      render: (_, record) => valueText(lockObjectText(record.objectSchema, record.objectName)),
+    },
+    { title: i18n('workspace.ops.lockType'), dataIndex: 'lockType', width: 110 },
+    { title: i18n('workspace.ops.lockMode'), dataIndex: 'lockMode', width: 110 },
+    { title: i18n('workspace.ops.lockStatus'), dataIndex: 'lockStatus', width: 110, render: valueText },
+    { title: i18n('workspace.ops.lockData'), dataIndex: 'lockData', ellipsis: true },
   ];
 
-  const sessionColumns: ColumnsType<LockSnapshotRow> = [
+  const sessionColumns: ColumnsType<ILockSession> = [
     {
       title: i18n('workspace.ops.sessionId'),
-      dataIndex: 'PROCESSLIST_ID',
+      dataIndex: 'sessionId',
       width: 100,
       render: (_v, r) => {
-        const sessionId = firstRowValue(r, 'PROCESSLIST_ID', 'trx_mysql_thread_id');
-        const engineThreadId = firstRowValue(r, 'THREAD_ID');
+        const { sessionId, engineThreadId } = r;
         if (!onOpenSession || !sessionId) {
           return valueText(sessionId ?? engineThreadId);
         }
@@ -208,10 +237,10 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
                 dataSourceId: view?.dataSourceId ?? dataSourceId,
                 sessionId,
                 engineThreadId,
-                databaseName: firstRowValue(r, 'PROCESSLIST_DB', 'DB'),
-                user: firstRowValue(r, 'PROCESSLIST_USER', 'USER'),
-                host: firstRowValue(r, 'PROCESSLIST_HOST', 'HOST'),
-                query: firstRowValue(r, 'trx_query', 'PROCESSLIST_INFO'),
+                databaseName: r.databaseName,
+                user: r.user,
+                host: r.host,
+                query: r.query,
               })
             }
             aria-label={i18n('workspace.ops.openSession', sessionId)}
@@ -221,12 +250,27 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
         );
       },
     },
-    { title: i18n('workspace.ops.engineThreadId'), dataIndex: 'THREAD_ID', width: 110 },
-    { title: i18n('workspace.ops.user'), dataIndex: 'PROCESSLIST_USER', width: 120, render: (v, r) => v ?? r.USER },
-    { title: i18n('workspace.ops.host'), dataIndex: 'PROCESSLIST_HOST', width: 160, render: (v, r) => v ?? r.HOST },
-    { title: i18n('workspace.ops.database'), dataIndex: 'PROCESSLIST_DB', width: 120, render: (v, r) => v ?? r.DB },
-    { title: i18n('workspace.ops.state'), dataIndex: 'trx_state', width: 120, render: (v, r) => v ?? r.PROCESSLIST_STATE },
-    { title: i18n('workspace.ops.query'), dataIndex: 'trx_query', ellipsis: true, render: (v, r) => v ?? r.PROCESSLIST_INFO },
+    { title: i18n('workspace.ops.engineThreadId'), dataIndex: 'engineThreadId', width: 110 },
+    { title: i18n('workspace.ops.user'), dataIndex: 'user', width: 120, render: valueText },
+    { title: i18n('workspace.ops.host'), dataIndex: 'host', width: 160, render: valueText },
+    { title: i18n('workspace.ops.database'), dataIndex: 'databaseName', width: 120, render: valueText },
+    { title: i18n('workspace.ops.state'), dataIndex: 'state', width: 120, render: valueText },
+    { title: i18n('workspace.ops.query'), dataIndex: 'query', ellipsis: true, render: valueText },
+  ];
+
+  const metadataColumns: ColumnsType<IMetadataLock> = [
+    {
+      title: i18n('workspace.ops.lockObject'),
+      width: 220,
+      render: (_, record) => valueText(lockObjectText(record.objectSchema, record.objectName, record.objectType)),
+    },
+    { title: i18n('workspace.ops.lockType'), dataIndex: 'lockType', width: 120 },
+    { title: i18n('workspace.ops.lockDuration'), dataIndex: 'lockDuration', width: 120 },
+    { title: i18n('workspace.ops.lockStatus'), dataIndex: 'lockStatus', width: 100, render: valueText },
+    { title: i18n('workspace.ops.ownerThread'), dataIndex: 'ownerThreadId', width: 120 },
+    { title: i18n('workspace.ops.sessionId'), dataIndex: 'ownerSessionId', width: 100, render: valueText },
+    { title: i18n('workspace.ops.user'), dataIndex: 'ownerUser', width: 120, render: valueText },
+    { title: i18n('workspace.ops.state'), dataIndex: 'ownerState', width: 120, render: valueText },
   ];
 
   return (
@@ -284,7 +328,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
               children: (
                 <Table
                   size="small"
-                  rowKey={(r, index) => String(r.ENGINE_LOCK_ID ?? r.lock_id ?? `lock-${index}`)}
+                  rowKey="lockId"
                   columns={lockColumns}
                   dataSource={view.dataLocks}
                   loading={loading}
@@ -299,30 +343,8 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
               children: (
                 <Table
                   size="small"
-                  rowKey={(r) =>
-                    [
-                      r.OBJECT_SCHEMA,
-                      r.OBJECT_NAME,
-                      r.LOCK_TYPE,
-                      r.OWNER_THREAD_ID,
-                      r.OWNER_EVENT_ID,
-                    ].join('.')
-                  }
-                  columns={[
-                    {
-                      title: i18n('workspace.ops.lockObject'),
-                      dataIndex: 'OBJECT_SCHEMA',
-                      width: 220,
-                      render: (v, r) => `${v}.${r.OBJECT_NAME}`,
-                    },
-                    { title: i18n('workspace.ops.lockType'), dataIndex: 'LOCK_TYPE', width: 120 },
-                    { title: i18n('workspace.ops.lockDuration'), dataIndex: 'LOCK_DURATION', width: 120 },
-                    { title: i18n('workspace.ops.lockStatus'), dataIndex: 'LOCK_STATUS', width: 100, render: valueText },
-                    { title: i18n('workspace.ops.ownerThread'), dataIndex: 'OWNER_THREAD_ID', width: 120 },
-                    { title: i18n('workspace.ops.sessionId'), dataIndex: 'OWNER_PROCESSLIST_ID', width: 100, render: valueText },
-                    { title: i18n('workspace.ops.user'), dataIndex: 'OWNER_USER', width: 120, render: valueText },
-                    { title: i18n('workspace.ops.state'), dataIndex: 'OWNER_STATE', width: 120, render: valueText },
-                  ]}
+                  rowKey={metadataLockRowKey}
+                  columns={metadataColumns}
                   dataSource={view.metaLocks}
                   loading={loading}
                   pagination={false}
@@ -337,9 +359,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
               children: (
                 <Table
                   size="small"
-                  rowKey={(r, index) =>
-                    `${String(r.PROCESSLIST_ID ?? r.trx_mysql_thread_id ?? r.THREAD_ID ?? 'session')}-${index}`
-                  }
+                  rowKey={(r) => r.sessionId ?? r.engineThreadId ?? r.transactionId ?? 'unknown-session'}
                   columns={sessionColumns}
                   dataSource={view.sessions || []}
                   loading={loading}

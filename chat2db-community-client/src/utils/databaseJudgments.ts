@@ -26,6 +26,9 @@ const databaseJudgments: Record<DatabaseCapability, DatabaseCapabilityJudgment> 
     implementedBy: [DatabaseTypeCode.MYSQL],
     normalizeDatabaseType: true,
   },
+  [DatabaseCapability.LOCK_INSPECTION]: {
+    implementedBy: [DatabaseTypeCode.MYSQL],
+  },
   [DatabaseCapability.DATABASE_DELETE]: {
     implementedBy: [DatabaseTypeCode.MYSQL, DatabaseTypeCode.POSTGRESQL],
   },

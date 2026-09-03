@@ -2,9 +2,10 @@
 
 ## Fixture
 
-- `init.sql` creates `ops003_admin` (PROCESS) and `ops003_user`, plus `ops003_ledger`
+- `init.sql` creates `ops003_admin` and `ops003_user`, plus `ops003_ledger`
   with a unique key for row-lock and gap-lock wait chains.
-- `grants.sql` grants PROCESS to the admin account.
+- `grants.sql` grants the admin account `PROCESS` and read access to the four
+  Performance Schema tables used by this view.
 - `cleanup.sql` drops test objects and users.
 
 ## Verification

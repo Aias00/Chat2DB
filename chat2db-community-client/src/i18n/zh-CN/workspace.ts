@@ -333,6 +333,8 @@ export default {
   'workspace.ops.noLockWaits': '没有活动的锁等待',
   'workspace.ops.metadataLocksUnavailable': '元数据锁探针不可用',
   'workspace.ops.sessionsUnavailable': '会话行不可用',
+  'workspace.ops.lockPrivilegeRequired': '当前数据库账号无权读取锁元数据。',
+  'workspace.ops.lockMetadataUnavailable': '当前数据库服务的部分锁元数据不可用。',
   'workspace.routine.button.invoke': '调用例程',
   'workspace.routine.button.apply': '提交变更',
   'workspace.routine.button.refresh': '重新加载 DDL',

@@ -1,19 +1,28 @@
 package ai.chat2db.community.domain.core.impl.db;
 
+import ai.chat2db.community.domain.api.model.lock.LockView;
+import ai.chat2db.community.domain.api.model.lock.LockView.DataLock;
+import ai.chat2db.community.domain.api.model.lock.LockView.ErrorCode;
+import ai.chat2db.community.domain.api.model.lock.LockView.ErrorSection;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockSession;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockWait;
+import ai.chat2db.community.domain.api.model.lock.LockView.MetadataLock;
+import ai.chat2db.community.domain.api.model.lock.LockView.Source;
+import ai.chat2db.community.domain.api.model.lock.LockView.ViewError;
+import ai.chat2db.community.domain.api.model.lock.LockView.WaitChain;
 import ai.chat2db.community.domain.api.service.db.IDbLockService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.DefaultSQLExecutor;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +32,6 @@ import java.util.Set;
  * Lock inspection using Performance Schema on MySQL 8.0 and the legacy InnoDB
  * information_schema tables on 5.7, plus metadata locks when instrumented.
  */
-@Slf4j
 @Service
 public class DbLockServiceImpl implements IDbLockService {
 
@@ -44,8 +52,10 @@ public class DbLockServiceImpl implements IDbLockService {
             "SELECT requesting_trx_id, requested_lock_id, blocking_trx_id, blocking_lock_id "
                     + "FROM information_schema.innodb_lock_waits";
     private static final String SQL_METADATA_LOCKS =
-            "SELECT OBJECT_SCHEMA, OBJECT_NAME, LOCK_TYPE, LOCK_DURATION, LOCK_STATUS, OWNER_THREAD_ID, OWNER_EVENT_ID "
-                    + "FROM performance_schema.metadata_locks ORDER BY OBJECT_SCHEMA, OBJECT_NAME";
+            "SELECT OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_INSTANCE_BEGIN, "
+                    + "LOCK_TYPE, LOCK_DURATION, LOCK_STATUS, OWNER_THREAD_ID, OWNER_EVENT_ID "
+                    + "FROM performance_schema.metadata_locks "
+                    + "ORDER BY OBJECT_TYPE, OBJECT_SCHEMA, OBJECT_NAME, OWNER_THREAD_ID, OWNER_EVENT_ID";
     private static final String SQL_SESSION_INFO_PS =
             "SELECT th.THREAD_ID, th.PROCESSLIST_ID, th.PROCESSLIST_USER, th.PROCESSLIST_HOST, "
                     + "th.PROCESSLIST_DB, th.PROCESSLIST_COMMAND, th.PROCESSLIST_TIME, "
@@ -60,39 +70,46 @@ public class DbLockServiceImpl implements IDbLockService {
                     + "LEFT JOIN information_schema.processlist p ON t.trx_mysql_thread_id = p.ID";
 
     @Override
-    public Map<String, Object> lockView(Long dataSourceId) {
+    public LockView lockView(Long dataSourceId) {
         requireDatasourceContext(dataSourceId);
         Connection connection = Chat2DBContext.getConnection();
-        List<Map<String, Object>> errors = new ArrayList<>();
+        List<ViewError> errors = new ArrayList<>();
         LockSourceProbe probe = probeLockSource(connection);
-        boolean ps = probe.performanceSchema();
+        boolean performanceSchema = probe.performanceSchema();
 
-        List<Map<String, Object>> dataLocks;
-        List<Map<String, Object>> waits;
+        List<DataLock> dataLocks;
+        List<LockWait> waits;
         if (probe.failure() == null) {
-            dataLocks = queryRows(connection, ps ? SQL_DATA_LOCKS_8 : SQL_DATA_LOCKS_57, "dataLocks", errors);
-            waits = queryRows(connection, ps ? SQL_DATA_LOCK_WAITS_8 : SQL_DATA_LOCK_WAITS_57, "waits", errors);
+            dataLocks = queryRows(connection,
+                    performanceSchema ? SQL_DATA_LOCKS_8 : SQL_DATA_LOCKS_57,
+                    ErrorSection.DATA_LOCKS,
+                    errors,
+                    resultSet -> readDataLock(resultSet, performanceSchema));
+            waits = queryRows(connection,
+                    performanceSchema ? SQL_DATA_LOCK_WAITS_8 : SQL_DATA_LOCK_WAITS_57,
+                    ErrorSection.WAITS,
+                    errors,
+                    resultSet -> readLockWait(resultSet, performanceSchema));
         } else {
-            errors.add(error("dataLocks", probe.failure()));
-            errors.add(error("waits", probe.failure()));
+            errors.add(error(ErrorSection.DATA_LOCKS, probe.failure()));
+            errors.add(error(ErrorSection.WAITS, probe.failure()));
             dataLocks = List.of();
             waits = List.of();
         }
-        List<Map<String, Object>> metaLocks = queryRows(connection, SQL_METADATA_LOCKS, "metaLocks", errors);
-        List<Map<String, Object>> sessions = querySessionRows(connection, errors);
-        List<Map<String, Object>> enrichedMetaLocks = enrichMetadataLocks(metaLocks, sessions);
-        List<Map<String, Object>> waitChains = buildWaitChains(waits, dataLocks, enrichedMetaLocks, sessions, ps,
-                dataSourceId);
+        List<MetadataLock> metadataLocks = queryRows(connection, SQL_METADATA_LOCKS,
+                ErrorSection.METADATA_LOCKS, errors, DbLockServiceImpl::readMetadataLock);
+        List<LockSession> sessions = querySessionRows(connection, errors);
+        enrichMetadataLocks(metadataLocks, sessions);
 
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("dataSourceId", dataSourceId);
-        view.put("source", lockSource(ps, errors));
-        view.put("dataLocks", dataLocks);
-        view.put("waits", waits);
-        view.put("metaLocks", enrichedMetaLocks);
-        view.put("sessions", sessions);
-        view.put("waitChains", waitChains);
-        view.put("errors", errors);
+        LockView view = new LockView();
+        view.setDataSourceId(dataSourceId);
+        view.setSource(lockSource(performanceSchema, errors));
+        view.setDataLocks(dataLocks);
+        view.setWaits(waits);
+        view.setMetaLocks(metadataLocks);
+        view.setSessions(sessions);
+        view.setWaitChains(buildWaitChains(waits, dataLocks, metadataLocks, sessions, dataSourceId));
+        view.setErrors(errors);
         return view;
     }
 
@@ -106,36 +123,33 @@ public class DbLockServiceImpl implements IDbLockService {
         }
     }
 
-    private static String lockSource(boolean performanceSchema, List<Map<String, Object>> errors) {
+    private static Source lockSource(boolean performanceSchema, List<ViewError> errors) {
         boolean lockTablesUnavailable = errors.stream()
-                .map(error -> error.get("section"))
-                .anyMatch(section -> "dataLocks".equals(section) || "waits".equals(section));
+                .map(ViewError::getSection)
+                .anyMatch(section -> section == ErrorSection.DATA_LOCKS || section == ErrorSection.WAITS);
         if (lockTablesUnavailable) {
-            return "unavailable";
+            return Source.UNAVAILABLE;
         }
-        return performanceSchema ? "performance_schema" : "information_schema";
+        return performanceSchema ? Source.PERFORMANCE_SCHEMA : Source.INFORMATION_SCHEMA;
     }
 
-    /**
-     * Detects whether performance_schema.data_locks is queryable (MySQL 8.0 with the
-     * data_locks instrumentation enabled); 5.7 falls back to innodb_locks.
-     */
     private static LockSourceProbe probeLockSource(Connection connection) {
         try {
             DefaultSQLExecutor.getInstance().execute(connection,
                     "SELECT 1 FROM performance_schema.data_locks LIMIT 1", resultSet -> Boolean.TRUE);
             return new LockSourceProbe(true, null);
-        } catch (RuntimeException e) {
-            return shouldFallbackToLegacyLocks(e) ? new LockSourceProbe(false, null) : new LockSourceProbe(true, e);
+        } catch (RuntimeException exception) {
+            return shouldFallbackToLegacyLocks(exception)
+                    ? new LockSourceProbe(false, null)
+                    : new LockSourceProbe(true, exception);
         }
     }
 
     static boolean shouldFallbackToLegacyLocks(Throwable throwable) {
         Throwable cause = rootCause(throwable);
-        if (cause instanceof SQLException sqlException) {
-            if (sqlException.getErrorCode() == 1146 || "42S02".equals(sqlException.getSQLState())) {
-                return true;
-            }
+        if (cause instanceof SQLException sqlException
+                && (sqlException.getErrorCode() == 1146 || "42S02".equals(sqlException.getSQLState()))) {
+            return true;
         }
         String message = cause.getMessage();
         return message != null && (message.toLowerCase().contains("unknown table")
@@ -143,101 +157,145 @@ public class DbLockServiceImpl implements IDbLockService {
                 || message.toLowerCase().contains("does not exist"));
     }
 
-    private static List<Map<String, Object>> queryRows(Connection connection, String sql, String section,
-            List<Map<String, Object>> errors) {
+    private static <T> List<T> queryRows(Connection connection, String sql, ErrorSection section,
+            List<ViewError> errors, RowMapper<T> mapper) {
         try {
-            return queryRows(connection, sql);
-        } catch (RuntimeException e) {
-            errors.add(error(section, e));
+            return queryRows(connection, sql, mapper);
+        } catch (RuntimeException exception) {
+            errors.add(error(section, exception));
             return List.of();
         }
     }
 
-    private static Map<String, Object> error(String section, RuntimeException exception) {
-        Throwable cause = rootCause(exception);
-        Map<String, Object> error = new LinkedHashMap<>();
-        error.put("section", section);
-        boolean privilegeError = isPrivilegeError(cause);
-        error.put("code", privilegeError ? "privilege_required" : "unavailable");
-        error.put("message", privilegeError
-                ? "Lock metadata access was denied for the current database account."
-                : "Lock metadata is unavailable for this server or database account.");
-        return error;
-    }
-
-    private static List<Map<String, Object>> querySessionRows(Connection connection, List<Map<String, Object>> errors) {
-        try {
-            return queryRows(connection, SQL_SESSION_INFO_PS);
-        } catch (RuntimeException performanceSchemaException) {
-            try {
-                return queryRows(connection, SQL_SESSION_INFO_57);
-            } catch (RuntimeException informationSchemaException) {
-                errors.add(error("sessions", informationSchemaException));
-                return List.of();
-            }
-        }
-    }
-
-    private static Throwable rootCause(Throwable throwable) {
-        Throwable current = throwable;
-        while (current.getCause() != null) {
-            current = current.getCause();
-        }
-        return current;
-    }
-
-    private static boolean isPrivilegeError(Throwable throwable) {
-        if (throwable instanceof SQLException sqlException) {
-            String sqlState = sqlException.getSQLState();
-            if ("42000".equals(sqlState) || "28000".equals(sqlState)) {
-                return true;
-            }
-        }
-        String message = throwable.getMessage();
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase();
-        return lower.contains("denied") || lower.contains("permission") || lower.contains("privilege");
-    }
-
-    private record LockSourceProbe(boolean performanceSchema, RuntimeException failure) {
-    }
-
-    private static List<Map<String, Object>> queryRows(Connection connection, String sql) {
+    private static <T> List<T> queryRows(Connection connection, String sql, RowMapper<T> mapper) {
         return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
-            List<Map<String, Object>> rows = new ArrayList<>();
+            List<T> rows = new ArrayList<>();
             while (resultSet.next()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                for (int i = 1; i <= resultSet.getMetaData().getColumnCount(); i++) {
-                    String label = resultSet.getMetaData().getColumnLabel(i);
-                    Object value = resultSet.getObject(i);
-                    row.put(label, value == null ? null : String.valueOf(value));
-                }
-                rows.add(row);
+                rows.add(mapper.map(resultSet));
             }
             return rows;
         });
     }
 
-    /**
-     * Builds waiter -> blocker pairs from the wait graph. Root blockers are graph
-     * leaves, so multiple blockers and disconnected components are handled naturally.
-     * Cycles have no root; rows whose sessions disappeared mid-refresh remain visible
-     * with session availability flags.
-     */
-    private static List<Map<String, Object>> buildWaitChains(List<Map<String, Object>> waits,
-                                                             List<Map<String, Object>> dataLocks,
-                                                             List<Map<String, Object>> metaLocks,
-                                                             List<Map<String, Object>> sessions, boolean ps,
-                                                             Long dataSourceId) {
+    private static ViewError error(ErrorSection section, RuntimeException exception) {
+        ViewError error = new ViewError();
+        error.setSection(section);
+        error.setCode(isPrivilegeError(rootCause(exception)) ? ErrorCode.PRIVILEGE_REQUIRED : ErrorCode.UNAVAILABLE);
+        return error;
+    }
+
+    private static List<LockSession> querySessionRows(Connection connection, List<ViewError> errors) {
+        try {
+            return queryRows(connection, SQL_SESSION_INFO_PS, DbLockServiceImpl::readPerformanceSchemaSession);
+        } catch (RuntimeException performanceSchemaException) {
+            try {
+                return queryRows(connection, SQL_SESSION_INFO_57, DbLockServiceImpl::readLegacySession);
+            } catch (RuntimeException informationSchemaException) {
+                errors.add(error(ErrorSection.SESSIONS, informationSchemaException));
+                return List.of();
+            }
+        }
+    }
+
+    private static DataLock readDataLock(ResultSet resultSet, boolean performanceSchema) throws SQLException {
+        DataLock lock = new DataLock();
+        if (performanceSchema) {
+            lock.setLockId(value(resultSet, "ENGINE_LOCK_ID"));
+            lock.setTransactionId(value(resultSet, "ENGINE_TRANSACTION_ID"));
+            lock.setEngineThreadId(value(resultSet, "THREAD_ID"));
+            lock.setEventId(value(resultSet, "EVENT_ID"));
+            lock.setObjectSchema(value(resultSet, "OBJECT_SCHEMA"));
+            lock.setObjectName(value(resultSet, "OBJECT_NAME"));
+            lock.setIndexName(value(resultSet, "INDEX_NAME"));
+            lock.setLockType(value(resultSet, "LOCK_TYPE"));
+            lock.setLockMode(value(resultSet, "LOCK_MODE"));
+            lock.setLockStatus(value(resultSet, "LOCK_STATUS"));
+            lock.setLockData(value(resultSet, "LOCK_DATA"));
+        } else {
+            lock.setLockId(value(resultSet, "lock_id"));
+            lock.setTransactionId(value(resultSet, "lock_trx_id"));
+            lock.setObjectName(value(resultSet, "lock_table"));
+            lock.setIndexName(value(resultSet, "lock_index"));
+            lock.setLockType(value(resultSet, "lock_type"));
+            lock.setLockMode(value(resultSet, "lock_mode"));
+            lock.setLockData(value(resultSet, "lock_data"));
+            lock.setSpaceId(value(resultSet, "lock_space"));
+            lock.setPageId(value(resultSet, "lock_page"));
+            lock.setRecordId(value(resultSet, "lock_rec"));
+        }
+        return lock;
+    }
+
+    private static LockWait readLockWait(ResultSet resultSet, boolean performanceSchema) throws SQLException {
+        LockWait wait = new LockWait();
+        if (performanceSchema) {
+            wait.setWaiterLockId(value(resultSet, "REQUESTING_ENGINE_LOCK_ID"));
+            wait.setWaiterTransactionId(value(resultSet, "REQUESTING_ENGINE_TRANSACTION_ID"));
+            wait.setWaiterThreadId(value(resultSet, "REQUESTING_THREAD_ID"));
+            wait.setWaiterEventId(value(resultSet, "REQUESTING_EVENT_ID"));
+            wait.setBlockerLockId(value(resultSet, "BLOCKING_ENGINE_LOCK_ID"));
+            wait.setBlockerTransactionId(value(resultSet, "BLOCKING_ENGINE_TRANSACTION_ID"));
+            wait.setBlockerThreadId(value(resultSet, "BLOCKING_THREAD_ID"));
+            wait.setBlockerEventId(value(resultSet, "BLOCKING_EVENT_ID"));
+        } else {
+            wait.setWaiterTransactionId(value(resultSet, "requesting_trx_id"));
+            wait.setWaiterLockId(value(resultSet, "requested_lock_id"));
+            wait.setBlockerTransactionId(value(resultSet, "blocking_trx_id"));
+            wait.setBlockerLockId(value(resultSet, "blocking_lock_id"));
+        }
+        return wait;
+    }
+
+    private static MetadataLock readMetadataLock(ResultSet resultSet) throws SQLException {
+        MetadataLock lock = new MetadataLock();
+        lock.setObjectType(value(resultSet, "OBJECT_TYPE"));
+        lock.setObjectSchema(value(resultSet, "OBJECT_SCHEMA"));
+        lock.setObjectName(value(resultSet, "OBJECT_NAME"));
+        lock.setObjectInstanceId(value(resultSet, "OBJECT_INSTANCE_BEGIN"));
+        lock.setLockType(value(resultSet, "LOCK_TYPE"));
+        lock.setLockDuration(value(resultSet, "LOCK_DURATION"));
+        lock.setLockStatus(value(resultSet, "LOCK_STATUS"));
+        lock.setOwnerThreadId(value(resultSet, "OWNER_THREAD_ID"));
+        lock.setOwnerEventId(value(resultSet, "OWNER_EVENT_ID"));
+        return lock;
+    }
+
+    private static LockSession readPerformanceSchemaSession(ResultSet resultSet) throws SQLException {
+        LockSession session = new LockSession();
+        session.setEngineThreadId(value(resultSet, "THREAD_ID"));
+        session.setSessionId(first(value(resultSet, "PROCESSLIST_ID"), value(resultSet, "trx_mysql_thread_id")));
+        session.setUser(value(resultSet, "PROCESSLIST_USER"));
+        session.setHost(value(resultSet, "PROCESSLIST_HOST"));
+        session.setDatabaseName(value(resultSet, "PROCESSLIST_DB"));
+        session.setCommand(value(resultSet, "PROCESSLIST_COMMAND"));
+        session.setTimeSeconds(value(resultSet, "PROCESSLIST_TIME"));
+        session.setState(first(value(resultSet, "trx_state"), value(resultSet, "PROCESSLIST_STATE")));
+        session.setQuery(first(value(resultSet, "trx_query"), value(resultSet, "PROCESSLIST_INFO")));
+        session.setTransactionId(value(resultSet, "trx_id"));
+        return session;
+    }
+
+    private static LockSession readLegacySession(ResultSet resultSet) throws SQLException {
+        LockSession session = new LockSession();
+        session.setSessionId(value(resultSet, "trx_mysql_thread_id"));
+        session.setUser(value(resultSet, "USER"));
+        session.setHost(value(resultSet, "HOST"));
+        session.setDatabaseName(value(resultSet, "DB"));
+        session.setState(value(resultSet, "trx_state"));
+        session.setQuery(value(resultSet, "trx_query"));
+        session.setTransactionId(value(resultSet, "trx_id"));
+        return session;
+    }
+
+    private static List<WaitChain> buildWaitChains(List<LockWait> waits, List<DataLock> dataLocks,
+            List<MetadataLock> metadataLocks, List<LockSession> sessions, Long dataSourceId) {
         SessionIndex sessionIndex = new SessionIndex(sessions);
-        Map<String, Map<String, Object>> dataLocksById = indexBy(dataLocks, ps ? "ENGINE_LOCK_ID" : "lock_id");
-        Map<String, Integer> metadataLockCountsByThread = metadataLockCountsByThread(metaLocks);
+        Map<String, DataLock> dataLocksById = indexDataLocks(dataLocks);
+        Map<String, Integer> metadataLockCountsByThread = metadataLockCountsByThread(metadataLocks);
         List<WaitEdge> edges = new ArrayList<>();
         Map<String, Set<String>> outgoing = new HashMap<>();
-        for (Map<String, Object> wait : waits) {
-            WaitEdge edge = waitEdge(wait, dataLocksById, ps);
+        for (LockWait wait : waits) {
+            WaitEdge edge = waitEdge(wait, dataLocksById);
             if (edge == null) {
                 continue;
             }
@@ -245,127 +303,105 @@ public class DbLockServiceImpl implements IDbLockService {
             outgoing.computeIfAbsent(edge.waiterKey(), ignored -> new LinkedHashSet<>()).add(edge.blockerKey());
         }
 
-        List<Map<String, Object>> chains = new ArrayList<>();
+        List<WaitChain> chains = new ArrayList<>();
         for (WaitEdge edge : edges) {
-            Map<String, Object> waiter = sessionIndex.find(edge.waiterTrx(), edge.waiterThread());
-            Map<String, Object> blocker = sessionIndex.find(edge.blockerTrx(), edge.blockerThread());
+            LockSession waiter = sessionIndex.find(edge.waiterTransactionId(), edge.waiterThreadId());
+            LockSession blocker = sessionIndex.find(edge.blockerTransactionId(), edge.blockerThreadId());
             boolean cycle = reaches(edge.blockerKey(), edge.waiterKey(), outgoing, new HashSet<>());
-            boolean blockerIsRoot = !cycle && !outgoing.containsKey(edge.blockerKey());
-            Map<String, Object> chain = new LinkedHashMap<>();
-            chain.put("dataSourceId", dataSourceId);
-            chain.put("waiterTransactionId", edge.waiterTrx());
-            chain.put("waiterLockId", edge.waiterLockId());
-            chain.put("waiterThreadId", displayThreadId(waiter, edge.waiterThread()));
-            chain.put("waiterEngineThreadId", edge.waiterThread());
-            chain.put("waiterState", firstValue(waiter, "trx_state", "PROCESSLIST_STATE"));
-            chain.put("waiterUser", firstValue(waiter, "PROCESSLIST_USER", "USER"));
-            chain.put("waiterHost", firstValue(waiter, "PROCESSLIST_HOST", "HOST"));
-            chain.put("waiterDatabase", firstValue(waiter, "PROCESSLIST_DB", "DB"));
-            chain.put("waiterQuery", firstValue(waiter, "trx_query", "PROCESSLIST_INFO"));
-            chain.put("waiterSessionAvailable", waiter != null);
-            chain.put("waiterMetadataLockCount", metadataLockCount(waiter, edge.waiterThread(),
+
+            WaitChain chain = new WaitChain();
+            chain.setDataSourceId(dataSourceId);
+            chain.setWaiterTransactionId(edge.waiterTransactionId());
+            chain.setWaiterLockId(edge.waiterLockId());
+            chain.setWaiterThreadId(displayThreadId(waiter, edge.waiterThreadId()));
+            chain.setWaiterEngineThreadId(edge.waiterThreadId());
+            chain.setWaiterState(waiter == null ? null : waiter.getState());
+            chain.setWaiterUser(waiter == null ? null : waiter.getUser());
+            chain.setWaiterHost(waiter == null ? null : waiter.getHost());
+            chain.setWaiterDatabase(waiter == null ? null : waiter.getDatabaseName());
+            chain.setWaiterQuery(waiter == null ? null : waiter.getQuery());
+            chain.setWaiterSessionAvailable(waiter != null);
+            chain.setWaiterMetadataLockCount(metadataLockCount(waiter, edge.waiterThreadId(),
                     metadataLockCountsByThread));
-            chain.put("blockerTransactionId", edge.blockerTrx());
-            chain.put("blockerLockId", edge.blockerLockId());
-            chain.put("blockerThreadId", displayThreadId(blocker, edge.blockerThread()));
-            chain.put("blockerEngineThreadId", edge.blockerThread());
-            chain.put("blockerState", firstValue(blocker, "trx_state", "PROCESSLIST_STATE"));
-            chain.put("blockerUser", firstValue(blocker, "PROCESSLIST_USER", "USER"));
-            chain.put("blockerHost", firstValue(blocker, "PROCESSLIST_HOST", "HOST"));
-            chain.put("blockerDatabase", firstValue(blocker, "PROCESSLIST_DB", "DB"));
-            chain.put("blockerQuery", firstValue(blocker, "trx_query", "PROCESSLIST_INFO"));
-            chain.put("blockerSessionAvailable", blocker != null);
-            chain.put("blockerMetadataLockCount", metadataLockCount(blocker, edge.blockerThread(),
+            chain.setBlockerTransactionId(edge.blockerTransactionId());
+            chain.setBlockerLockId(edge.blockerLockId());
+            chain.setBlockerThreadId(displayThreadId(blocker, edge.blockerThreadId()));
+            chain.setBlockerEngineThreadId(edge.blockerThreadId());
+            chain.setBlockerState(blocker == null ? null : blocker.getState());
+            chain.setBlockerUser(blocker == null ? null : blocker.getUser());
+            chain.setBlockerHost(blocker == null ? null : blocker.getHost());
+            chain.setBlockerDatabase(blocker == null ? null : blocker.getDatabaseName());
+            chain.setBlockerQuery(blocker == null ? null : blocker.getQuery());
+            chain.setBlockerSessionAvailable(blocker != null);
+            chain.setBlockerMetadataLockCount(metadataLockCount(blocker, edge.blockerThreadId(),
                     metadataLockCountsByThread));
-            chain.put("rootBlocker", blockerIsRoot);
-            chain.put("cycle", cycle);
+            chain.setRootBlocker(!cycle && !outgoing.containsKey(edge.blockerKey()));
+            chain.setCycle(cycle);
             chains.add(chain);
         }
         return chains;
     }
 
-    private static WaitEdge waitEdge(Map<String, Object> wait, Map<String, Map<String, Object>> dataLocksById,
-            boolean ps) {
-        String waiterLockId = stringValue(wait, ps ? "REQUESTING_ENGINE_LOCK_ID" : "requested_lock_id");
-        String blockerLockId = stringValue(wait, ps ? "BLOCKING_ENGINE_LOCK_ID" : "blocking_lock_id");
-        Map<String, Object> waiterLock = dataLocksById.get(waiterLockId);
-        Map<String, Object> blockerLock = dataLocksById.get(blockerLockId);
-        String waiterTrx = firstStringValue(wait, ps ? "REQUESTING_ENGINE_TRANSACTION_ID" : "requesting_trx_id",
-                waiterLock, ps ? "ENGINE_TRANSACTION_ID" : "lock_trx_id");
-        String blockerTrx = firstStringValue(wait, ps ? "BLOCKING_ENGINE_TRANSACTION_ID" : "blocking_trx_id",
-                blockerLock, ps ? "ENGINE_TRANSACTION_ID" : "lock_trx_id");
-        String waiterThread = firstStringValue(wait, "REQUESTING_THREAD_ID", waiterLock, "THREAD_ID");
-        String blockerThread = firstStringValue(wait, "BLOCKING_THREAD_ID", blockerLock, "THREAD_ID");
-        String waiterKey = identityKey(waiterTrx, waiterThread, waiterLockId);
-        String blockerKey = identityKey(blockerTrx, blockerThread, blockerLockId);
+    private static WaitEdge waitEdge(LockWait wait, Map<String, DataLock> dataLocksById) {
+        DataLock waiterLock = dataLocksById.get(wait.getWaiterLockId());
+        DataLock blockerLock = dataLocksById.get(wait.getBlockerLockId());
+        String waiterTransactionId = first(wait.getWaiterTransactionId(),
+                waiterLock == null ? null : waiterLock.getTransactionId());
+        String blockerTransactionId = first(wait.getBlockerTransactionId(),
+                blockerLock == null ? null : blockerLock.getTransactionId());
+        String waiterThreadId = first(wait.getWaiterThreadId(),
+                waiterLock == null ? null : waiterLock.getEngineThreadId());
+        String blockerThreadId = first(wait.getBlockerThreadId(),
+                blockerLock == null ? null : blockerLock.getEngineThreadId());
+        String waiterKey = identityKey(waiterTransactionId, waiterThreadId, wait.getWaiterLockId());
+        String blockerKey = identityKey(blockerTransactionId, blockerThreadId, wait.getBlockerLockId());
         if (waiterKey == null || blockerKey == null) {
             return null;
         }
-        return new WaitEdge(waiterKey, blockerKey, waiterTrx, blockerTrx, waiterThread, blockerThread, waiterLockId,
-                blockerLockId);
+        return new WaitEdge(waiterKey, blockerKey, waiterTransactionId, blockerTransactionId,
+                waiterThreadId, blockerThreadId, wait.getWaiterLockId(), wait.getBlockerLockId());
     }
 
-    private static String identityKey(String trxId, String threadId, String lockId) {
-        if (trxId != null) {
-            return "trx:" + trxId;
-        }
-        if (threadId != null) {
-            return "thread:" + threadId;
-        }
-        if (lockId != null) {
-            return "lock:" + lockId;
-        }
-        return null;
-    }
-
-    private static Map<String, Map<String, Object>> indexBy(List<Map<String, Object>> rows, String key) {
-        Map<String, Map<String, Object>> index = new HashMap<>();
-        for (Map<String, Object> row : rows) {
-            String value = stringValue(row, key);
-            if (value != null) {
-                index.put(value, row);
+    private static Map<String, DataLock> indexDataLocks(List<DataLock> dataLocks) {
+        Map<String, DataLock> index = new HashMap<>();
+        for (DataLock lock : dataLocks) {
+            if (lock.getLockId() != null) {
+                index.put(lock.getLockId(), lock);
             }
         }
         return index;
     }
 
-    private static Map<String, Integer> metadataLockCountsByThread(List<Map<String, Object>> metaLocks) {
+    private static Map<String, Integer> metadataLockCountsByThread(List<MetadataLock> metadataLocks) {
         Map<String, Integer> counts = new HashMap<>();
-        for (Map<String, Object> metaLock : metaLocks) {
-            String threadId = stringValue(metaLock, "OWNER_THREAD_ID");
-            if (threadId != null) {
-                counts.merge(threadId, 1, Integer::sum);
+        for (MetadataLock lock : metadataLocks) {
+            if (lock.getOwnerThreadId() != null) {
+                counts.merge(lock.getOwnerThreadId(), 1, Integer::sum);
             }
         }
         return counts;
     }
 
-    private static int metadataLockCount(Map<String, Object> session, String fallbackThreadId,
+    private static int metadataLockCount(LockSession session, String fallbackThreadId,
             Map<String, Integer> metadataLockCountsByThread) {
-        String threadId = session == null ? fallbackThreadId : firstValue(session, "THREAD_ID", "OWNER_THREAD_ID");
-        if (threadId == null) {
-            return 0;
-        }
-        return metadataLockCountsByThread.getOrDefault(threadId, 0);
+        String threadId = session == null ? fallbackThreadId : first(session.getEngineThreadId(), fallbackThreadId);
+        return threadId == null ? 0 : metadataLockCountsByThread.getOrDefault(threadId, 0);
     }
 
-    private static List<Map<String, Object>> enrichMetadataLocks(List<Map<String, Object>> metaLocks,
-            List<Map<String, Object>> sessions) {
+    private static void enrichMetadataLocks(List<MetadataLock> metadataLocks, List<LockSession> sessions) {
         SessionIndex sessionIndex = new SessionIndex(sessions);
-        List<Map<String, Object>> enriched = new ArrayList<>();
-        for (Map<String, Object> metaLock : metaLocks) {
-            Map<String, Object> row = new LinkedHashMap<>(metaLock);
-            Map<String, Object> session = sessionIndex.find(null, stringValue(metaLock, "OWNER_THREAD_ID"));
-            row.put("OWNER_PROCESSLIST_ID", firstValue(session, "PROCESSLIST_ID", "trx_mysql_thread_id"));
-            row.put("OWNER_USER", firstValue(session, "PROCESSLIST_USER", "USER"));
-            row.put("OWNER_HOST", firstValue(session, "PROCESSLIST_HOST", "HOST"));
-            row.put("OWNER_DB", firstValue(session, "PROCESSLIST_DB", "DB"));
-            row.put("OWNER_STATE", firstValue(session, "trx_state", "PROCESSLIST_STATE"));
-            row.put("OWNER_QUERY", firstValue(session, "trx_query", "PROCESSLIST_INFO"));
-            row.put("OWNER_SESSION_AVAILABLE", session != null);
-            enriched.add(row);
+        for (MetadataLock lock : metadataLocks) {
+            LockSession session = sessionIndex.find(null, lock.getOwnerThreadId());
+            lock.setOwnerSessionAvailable(session != null);
+            if (session != null) {
+                lock.setOwnerSessionId(session.getSessionId());
+                lock.setOwnerUser(session.getUser());
+                lock.setOwnerHost(session.getHost());
+                lock.setOwnerDatabase(session.getDatabaseName());
+                lock.setOwnerState(session.getState());
+                lock.setOwnerQuery(session.getQuery());
+            }
         }
-        return enriched;
     }
 
     private static boolean reaches(String from, String target, Map<String, Set<String>> outgoing, Set<String> seen) {
@@ -383,17 +419,22 @@ public class DbLockServiceImpl implements IDbLockService {
         return false;
     }
 
-    private static String displayThreadId(Map<String, Object> session, String fallbackThreadId) {
-        String processlistId = firstValue(session, "PROCESSLIST_ID", "trx_mysql_thread_id");
-        return processlistId == null ? fallbackThreadId : processlistId;
+    private static String displayThreadId(LockSession session, String fallbackThreadId) {
+        return session == null ? fallbackThreadId : first(session.getSessionId(), fallbackThreadId);
     }
 
-    private static String firstValue(Map<String, Object> row, String... keys) {
-        if (row == null) {
-            return null;
+    private static String identityKey(String transactionId, String threadId, String lockId) {
+        if (transactionId != null) {
+            return "trx:" + transactionId;
         }
-        for (String key : keys) {
-            String value = stringValue(row, key);
+        if (threadId != null) {
+            return "thread:" + threadId;
+        }
+        return lockId == null ? null : "lock:" + lockId;
+    }
+
+    private static String first(String... values) {
+        for (String value : values) {
             if (value != null) {
                 return value;
             }
@@ -401,56 +442,74 @@ public class DbLockServiceImpl implements IDbLockService {
         return null;
     }
 
-    private static String firstStringValue(Map<String, Object> primaryRow, String primaryKey,
-            Map<String, Object> fallbackRow, String fallbackKey) {
-        String primary = stringValue(primaryRow, primaryKey);
-        return primary == null ? stringValue(fallbackRow, fallbackKey) : primary;
+    private static String value(ResultSet resultSet, String column) throws SQLException {
+        String value = resultSet.getString(column);
+        return value == null || value.isBlank() || "null".equalsIgnoreCase(value) ? null : value;
     }
 
-    private static String stringValue(Map<String, Object> row, String key) {
-        if (row == null) {
-            return null;
+    private static Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
         }
-        Object value = row.get(key);
-        if (value == null) {
-            return null;
-        }
-        String text = String.valueOf(value);
-        return text.isBlank() || "null".equalsIgnoreCase(text) ? null : text;
+        return current;
     }
 
-    private record WaitEdge(String waiterKey, String blockerKey, String waiterTrx, String blockerTrx,
-                            String waiterThread, String blockerThread, String waiterLockId, String blockerLockId) {
+    private static boolean isPrivilegeError(Throwable throwable) {
+        if (throwable instanceof SQLException sqlException) {
+            int errorCode = sqlException.getErrorCode();
+            String sqlState = sqlException.getSQLState();
+            if (errorCode == 1142 || errorCode == 1227 || "42000".equals(sqlState) || "28000".equals(sqlState)) {
+                return true;
+            }
+        }
+        String message = throwable.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("denied") || lower.contains("permission") || lower.contains("privilege");
+    }
+
+    @FunctionalInterface
+    private interface RowMapper<T> {
+        T map(ResultSet resultSet) throws SQLException;
+    }
+
+    private record LockSourceProbe(boolean performanceSchema, RuntimeException failure) {
+    }
+
+    private record WaitEdge(String waiterKey, String blockerKey, String waiterTransactionId,
+                            String blockerTransactionId, String waiterThreadId, String blockerThreadId,
+                            String waiterLockId, String blockerLockId) {
     }
 
     private static final class SessionIndex {
 
-        private final Map<String, Map<String, Object>> byTrx = new HashMap<>();
+        private final Map<String, LockSession> byTransaction = new HashMap<>();
+        private final Map<String, LockSession> byEngineThread = new HashMap<>();
+        private final Map<String, LockSession> bySession = new HashMap<>();
 
-        private final Map<String, Map<String, Object>> byThread = new HashMap<>();
-
-        private final Map<String, Map<String, Object>> byProcesslist = new HashMap<>();
-
-        private SessionIndex(List<Map<String, Object>> sessions) {
-            for (Map<String, Object> session : sessions) {
-                put(byTrx, firstValue(session, "trx_id"), session);
-                put(byThread, firstValue(session, "THREAD_ID"), session);
-                put(byProcesslist, firstValue(session, "PROCESSLIST_ID", "trx_mysql_thread_id"), session);
+        private SessionIndex(List<LockSession> sessions) {
+            for (LockSession session : sessions) {
+                put(byTransaction, session.getTransactionId(), session);
+                put(byEngineThread, session.getEngineThreadId(), session);
+                put(bySession, session.getSessionId(), session);
             }
         }
 
-        private Map<String, Object> find(String trxId, String threadId) {
-            Map<String, Object> session = trxId == null ? null : byTrx.get(trxId);
+        private LockSession find(String transactionId, String threadId) {
+            LockSession session = transactionId == null ? null : byTransaction.get(transactionId);
             if (session == null && threadId != null) {
-                session = byThread.get(threadId);
+                session = byEngineThread.get(threadId);
             }
             if (session == null && threadId != null) {
-                session = byProcesslist.get(threadId);
+                session = bySession.get(threadId);
             }
             return session;
         }
 
-        private static void put(Map<String, Map<String, Object>> index, String key, Map<String, Object> row) {
+        private static void put(Map<String, LockSession> index, String key, LockSession row) {
             if (key != null) {
                 index.put(key, row);
             }

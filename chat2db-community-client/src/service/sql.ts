@@ -430,15 +430,85 @@ export interface ICopyTableParams extends ITableParams {
 const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', { method: 'post' });
 
 
-/** Lock view (MYSQL-OPS-003). */
-export interface ILockView {
-  dataSourceId?: number;
-  source: 'performance_schema' | 'information_schema' | 'unavailable';
-  dataLocks: Record<string, string | null>[];
-  waits: Record<string, string | null>[];
-  metaLocks: Record<string, string | null | boolean | number>[];
-  sessions: Record<string, string | null>[];
-  waitChains: {
+export enum LockViewSource {
+  PERFORMANCE_SCHEMA = 'PERFORMANCE_SCHEMA',
+  INFORMATION_SCHEMA = 'INFORMATION_SCHEMA',
+  UNAVAILABLE = 'UNAVAILABLE',
+}
+
+export enum LockViewErrorCode {
+  PRIVILEGE_REQUIRED = 'PRIVILEGE_REQUIRED',
+  UNAVAILABLE = 'UNAVAILABLE',
+}
+
+export enum LockViewErrorSection {
+  DATA_LOCKS = 'DATA_LOCKS',
+  WAITS = 'WAITS',
+  METADATA_LOCKS = 'METADATA_LOCKS',
+  SESSIONS = 'SESSIONS',
+}
+
+export interface IDataLock {
+  lockId: string | null;
+  transactionId: string | null;
+  engineThreadId: string | null;
+  eventId: string | null;
+  objectSchema: string | null;
+  objectName: string | null;
+  indexName: string | null;
+  lockType: string | null;
+  lockMode: string | null;
+  lockStatus: string | null;
+  lockData: string | null;
+  spaceId: string | null;
+  pageId: string | null;
+  recordId: string | null;
+}
+
+export interface ILockWait {
+  waiterLockId: string | null;
+  waiterTransactionId: string | null;
+  waiterThreadId: string | null;
+  waiterEventId: string | null;
+  blockerLockId: string | null;
+  blockerTransactionId: string | null;
+  blockerThreadId: string | null;
+  blockerEventId: string | null;
+}
+
+export interface IMetadataLock {
+  objectType: string | null;
+  objectSchema: string | null;
+  objectName: string | null;
+  objectInstanceId: string | null;
+  lockType: string | null;
+  lockDuration: string | null;
+  lockStatus: string | null;
+  ownerThreadId: string | null;
+  ownerEventId: string | null;
+  ownerSessionId: string | null;
+  ownerUser: string | null;
+  ownerHost: string | null;
+  ownerDatabase: string | null;
+  ownerState: string | null;
+  ownerQuery: string | null;
+  ownerSessionAvailable: boolean;
+}
+
+export interface ILockSession {
+  engineThreadId: string | null;
+  sessionId: string | null;
+  user: string | null;
+  host: string | null;
+  databaseName: string | null;
+  command: string | null;
+  timeSeconds: string | null;
+  state: string | null;
+  query: string | null;
+  transactionId: string | null;
+}
+
+export interface ILockWaitChain {
     dataSourceId?: number;
     waiterTransactionId: string | null;
     waiterLockId: string | null;
@@ -463,12 +533,21 @@ export interface ILockView {
     blockerSessionAvailable: boolean;
     blockerMetadataLockCount: number;
     rootBlocker: boolean;
-    cycle?: boolean;
-  }[];
-  errors?: {
-    section: string;
-    code: 'privilege_required' | 'unavailable';
-    message?: string;
+    cycle: boolean;
+}
+
+/** Lock view (MYSQL-OPS-003). */
+export interface ILockView {
+  dataSourceId?: number;
+  source: LockViewSource;
+  dataLocks: IDataLock[];
+  waits: ILockWait[];
+  metaLocks: IMetadataLock[];
+  sessions: ILockSession[];
+  waitChains: ILockWaitChain[];
+  errors: {
+    section: LockViewErrorSection;
+    code: LockViewErrorCode;
   }[];
 }
 

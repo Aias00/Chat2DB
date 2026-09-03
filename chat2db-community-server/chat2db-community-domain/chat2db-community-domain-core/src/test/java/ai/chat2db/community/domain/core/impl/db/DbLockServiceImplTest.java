@@ -2,6 +2,14 @@ package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
+import ai.chat2db.community.domain.api.model.lock.LockView;
+import ai.chat2db.community.domain.api.model.lock.LockView.DataLock;
+import ai.chat2db.community.domain.api.model.lock.LockView.ErrorCode;
+import ai.chat2db.community.domain.api.model.lock.LockView.ErrorSection;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockWait;
+import ai.chat2db.community.domain.api.model.lock.LockView.MetadataLock;
+import ai.chat2db.community.domain.api.model.lock.LockView.Source;
+import ai.chat2db.community.domain.api.model.lock.LockView.WaitChain;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.DefaultDBManager;
 import ai.chat2db.spi.IDbManager;
@@ -16,13 +24,13 @@ import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -87,19 +95,18 @@ class DbLockServiceImplTest {
         );
         DbLockServiceImpl service = new DbLockServiceImpl();
 
-        Map<String, Object> view = service.lockView(21L);
+        LockView view = service.lockView(21L);
 
-        assertEquals(21L, view.get("dataSourceId"));
-        assertEquals("unavailable", view.get("source"));
-        assertEquals(List.of(), view.get("dataLocks"));
-        assertEquals(List.of(), view.get("waits"));
-        assertEquals(List.of(), view.get("metaLocks"));
-        assertEquals(List.of(), view.get("waitChains"));
-        List<Map<String, Object>> errors = errors(view);
-        assertEquals(List.of("dataLocks", "waits", "metaLocks", "sessions"),
-                errors.stream().map(error -> error.get("section")).toList());
-        assertTrue(errors.stream().allMatch(error -> "privilege_required".equals(error.get("code"))));
-        assertTrue(errors.stream().noneMatch(error -> String.valueOf(error.get("message")).contains("SELECT command")));
+        assertEquals(21L, view.getDataSourceId());
+        assertEquals(Source.UNAVAILABLE, view.getSource());
+        assertEquals(List.of(), view.getDataLocks());
+        assertEquals(List.of(), view.getWaits());
+        assertEquals(List.of(), view.getMetaLocks());
+        assertEquals(List.of(), view.getWaitChains());
+        assertEquals(List.of(ErrorSection.DATA_LOCKS, ErrorSection.WAITS,
+                        ErrorSection.METADATA_LOCKS, ErrorSection.SESSIONS),
+                view.getErrors().stream().map(LockView.ViewError::getSection).toList());
+        assertTrue(view.getErrors().stream().allMatch(error -> error.getCode() == ErrorCode.PRIVILEGE_REQUIRED));
     }
 
     @Test
@@ -115,13 +122,13 @@ class DbLockServiceImplTest {
         DbLockServiceImpl service = new DbLockServiceImpl();
         bindContext(31L);
 
-        Map<String, Object> first = service.lockView(31L);
+        LockView first = service.lockView(31L);
         Chat2DBContext.removeContext();
         bindContext(32L);
-        Map<String, Object> second = service.lockView(32L);
+        LockView second = service.lockView(32L);
 
-        assertEquals(31L, first.get("dataSourceId"));
-        assertEquals(32L, second.get("dataSourceId"));
+        assertEquals(31L, first.getDataSourceId());
+        assertEquals(32L, second.getDataSourceId());
         assertEquals(2, dbManager.connectionRequests);
     }
 
@@ -130,7 +137,10 @@ class DbLockServiceImplTest {
         bindContext(41L);
         dbManager.sqlRows = Map.of(
                 "performance_schema.data_locks", List.of(
-                        row("ENGINE_LOCK_ID", "l-100", "ENGINE_TRANSACTION_ID", "100", "THREAD_ID", "10"),
+                        row("ENGINE_LOCK_ID", "l-100", "ENGINE_TRANSACTION_ID", "100", "THREAD_ID", "10",
+                                "EVENT_ID", "1", "OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders",
+                                "INDEX_NAME", "PRIMARY", "LOCK_TYPE", "RECORD", "LOCK_MODE", "X",
+                                "LOCK_STATUS", "GRANTED", "LOCK_DATA", "1"),
                         row("ENGINE_LOCK_ID", "l-200", "ENGINE_TRANSACTION_ID", "200", "THREAD_ID", "20"),
                         row("ENGINE_LOCK_ID", "l-300", "ENGINE_TRANSACTION_ID", "300", "THREAD_ID", "30"),
                         row("ENGINE_LOCK_ID", "l-400", "ENGINE_TRANSACTION_ID", "400", "THREAD_ID", "40"),
@@ -141,8 +151,9 @@ class DbLockServiceImplTest {
                 ),
                 "performance_schema.data_lock_waits", List.of(
                         row("REQUESTING_ENGINE_LOCK_ID", "l-100", "REQUESTING_ENGINE_TRANSACTION_ID", "100",
-                                "REQUESTING_THREAD_ID", "10", "BLOCKING_ENGINE_LOCK_ID", "l-200",
-                                "BLOCKING_ENGINE_TRANSACTION_ID", "200", "BLOCKING_THREAD_ID", "20"),
+                                "REQUESTING_THREAD_ID", "10", "REQUESTING_EVENT_ID", "1",
+                                "BLOCKING_ENGINE_LOCK_ID", "l-200", "BLOCKING_ENGINE_TRANSACTION_ID", "200",
+                                "BLOCKING_THREAD_ID", "20", "BLOCKING_EVENT_ID", "2"),
                         row("REQUESTING_ENGINE_LOCK_ID", "l-100", "REQUESTING_ENGINE_TRANSACTION_ID", "100",
                                 "REQUESTING_THREAD_ID", "10", "BLOCKING_ENGINE_LOCK_ID", "l-300",
                                 "BLOCKING_ENGINE_TRANSACTION_ID", "300", "BLOCKING_THREAD_ID", "30"),
@@ -160,9 +171,11 @@ class DbLockServiceImplTest {
                                 "BLOCKING_ENGINE_TRANSACTION_ID", "900", "BLOCKING_THREAD_ID", "90")
                 ),
                 "performance_schema.metadata_locks", List.of(
-                        row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders", "LOCK_TYPE", "SHARED_READ",
+                        row("OBJECT_TYPE", "TABLE", "OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders",
+                                "OBJECT_INSTANCE_BEGIN", "1001", "LOCK_TYPE", "SHARED_READ",
                                 "LOCK_DURATION", "TRANSACTION", "LOCK_STATUS", "GRANTED", "OWNER_THREAD_ID", "30"),
-                        row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers", "LOCK_TYPE", "EXCLUSIVE",
+                        row("OBJECT_TYPE", "TABLE", "OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers",
+                                "OBJECT_INSTANCE_BEGIN", "1002", "LOCK_TYPE", "EXCLUSIVE",
                                 "LOCK_DURATION", "TRANSACTION", "LOCK_STATUS", "PENDING", "OWNER_THREAD_ID", "40")
                 ),
                 "performance_schema.threads", List.of(
@@ -177,34 +190,48 @@ class DbLockServiceImplTest {
         );
         DbLockServiceImpl service = new DbLockServiceImpl();
 
-        Map<String, Object> view = service.lockView(41L);
+        LockView view = service.lockView(41L);
 
-        assertEquals("performance_schema", view.get("source"));
-        assertEquals(8, rows(view, "dataLocks").size());
-        assertEquals(7, rows(view, "sessions").size());
-        List<Map<String, Object>> chains = rows(view, "waitChains");
+        assertEquals(Source.PERFORMANCE_SCHEMA, view.getSource());
+        assertEquals(8, view.getDataLocks().size());
+        assertEquals(7, view.getSessions().size());
+        DataLock dataLock = view.getDataLocks().get(0);
+        assertEquals("app", dataLock.getObjectSchema());
+        assertEquals("orders", dataLock.getObjectName());
+        assertEquals("PRIMARY", dataLock.getIndexName());
+        assertEquals("RECORD", dataLock.getLockType());
+        assertEquals("X", dataLock.getLockMode());
+        assertEquals("GRANTED", dataLock.getLockStatus());
+        assertEquals("1", dataLock.getLockData());
+        LockWait wait = view.getWaits().get(0);
+        assertEquals("1", wait.getWaiterEventId());
+        assertEquals("2", wait.getBlockerEventId());
+        List<WaitChain> chains = view.getWaitChains();
         assertEquals(6, chains.size());
-        Map<String, Object> firstHop = chain(chains, "100", "200");
+        WaitChain firstHop = chain(chains, "100", "200");
         assertNotNull(firstHop);
-        assertFalse((Boolean) firstHop.get("rootBlocker"));
-        assertFalse((Boolean) firstHop.get("cycle"));
-        assertEquals("102", firstHop.get("blockerThreadId"));
-        Map<String, Object> directRoot = chain(chains, "100", "300");
-        assertTrue((Boolean) directRoot.get("rootBlocker"));
-        assertEquals(1, directRoot.get("blockerMetadataLockCount"));
-        Map<String, Object> secondRoot = chain(chains, "200", "400");
-        assertTrue((Boolean) secondRoot.get("rootBlocker"));
-        assertEquals(1, secondRoot.get("blockerMetadataLockCount"));
-        assertEquals(List.of("GRANTED", "PENDING"), rows(view, "metaLocks").stream()
-                .map(row -> row.get("LOCK_STATUS"))
+        assertFalse(firstHop.isRootBlocker());
+        assertFalse(firstHop.isCycle());
+        assertEquals("102", firstHop.getBlockerThreadId());
+        WaitChain directRoot = chain(chains, "100", "300");
+        assertTrue(directRoot.isRootBlocker());
+        assertEquals(1, directRoot.getBlockerMetadataLockCount());
+        WaitChain secondRoot = chain(chains, "200", "400");
+        assertTrue(secondRoot.isRootBlocker());
+        assertEquals(1, secondRoot.getBlockerMetadataLockCount());
+        assertEquals(List.of("GRANTED", "PENDING"), view.getMetaLocks().stream()
+                .map(MetadataLock::getLockStatus)
                 .toList());
-        Map<String, Object> cycle = chain(chains, "500", "600");
-        assertTrue((Boolean) cycle.get("cycle"));
-        assertFalse((Boolean) cycle.get("rootBlocker"));
-        Map<String, Object> stale = chain(chains, "800", "900");
-        assertFalse((Boolean) stale.get("blockerSessionAvailable"));
-        assertEquals("90", stale.get("blockerThreadId"));
-        assertEquals(41L, stale.get("dataSourceId"));
+        assertEquals(List.of("1001", "1002"), view.getMetaLocks().stream()
+                .map(MetadataLock::getObjectInstanceId)
+                .toList());
+        WaitChain cycle = chain(chains, "500", "600");
+        assertTrue(cycle.isCycle());
+        assertFalse(cycle.isRootBlocker());
+        WaitChain stale = chain(chains, "800", "900");
+        assertFalse(stale.isBlockerSessionAvailable());
+        assertEquals("90", stale.getBlockerThreadId());
+        assertEquals(41L, stale.getDataSourceId());
     }
 
     @Test
@@ -213,7 +240,10 @@ class DbLockServiceImplTest {
         dbManager.sqlFailures = Map.of("SELECT 1 FROM performance_schema.data_locks", new SQLException("Unknown table"));
         dbManager.sqlRows = Map.of(
                 "information_schema.innodb_locks", List.of(
-                        row("lock_id", "legacy-waiter", "lock_trx_id", "trx-a"),
+                        row("lock_id", "legacy-waiter", "lock_trx_id", "trx-a", "lock_mode", "X",
+                                "lock_type", "RECORD", "lock_table", "`legacy`.`orders`",
+                                "lock_index", "PRIMARY", "lock_space", "7", "lock_page", "8",
+                                "lock_rec", "9", "lock_data", "1"),
                         row("lock_id", "legacy-blocker", "lock_trx_id", "trx-b")
                 ),
                 "information_schema.innodb_lock_waits", List.of(
@@ -231,32 +261,28 @@ class DbLockServiceImplTest {
         );
         DbLockServiceImpl service = new DbLockServiceImpl();
 
-        Map<String, Object> view = service.lockView(42L);
+        LockView view = service.lockView(42L);
 
-        assertEquals("information_schema", view.get("source"));
-        Map<String, Object> chain = rows(view, "waitChains").get(0);
-        assertEquals("701", chain.get("blockerThreadId"));
-        assertEquals("blocker", chain.get("blockerUser"));
-        assertEquals(1, chain.get("blockerMetadataLockCount"));
-        assertTrue((Boolean) chain.get("rootBlocker"));
-        assertTrue((Boolean) rows(view, "errors").isEmpty());
-        assertEquals("701", rows(view, "metaLocks").get(0).get("OWNER_PROCESSLIST_ID"));
+        assertEquals(Source.INFORMATION_SCHEMA, view.getSource());
+        DataLock dataLock = view.getDataLocks().get(0);
+        assertEquals("`legacy`.`orders`", dataLock.getObjectName());
+        assertEquals("PRIMARY", dataLock.getIndexName());
+        assertEquals("7", dataLock.getSpaceId());
+        assertEquals("8", dataLock.getPageId());
+        assertEquals("9", dataLock.getRecordId());
+        WaitChain chain = view.getWaitChains().get(0);
+        assertEquals("701", chain.getBlockerThreadId());
+        assertEquals("blocker", chain.getBlockerUser());
+        assertEquals(1, chain.getBlockerMetadataLockCount());
+        assertTrue(chain.isRootBlocker());
+        assertTrue(view.getErrors().isEmpty());
+        assertEquals("701", view.getMetaLocks().get(0).getOwnerSessionId());
     }
 
-    @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> errors(Map<String, Object> view) {
-        return (List<Map<String, Object>>) view.get("errors");
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> rows(Map<String, Object> view, String section) {
-        return (List<Map<String, Object>>) view.get(section);
-    }
-
-    private static Map<String, Object> chain(List<Map<String, Object>> chains, String waiterTrx, String blockerTrx) {
+    private static WaitChain chain(List<WaitChain> chains, String waiterTrx, String blockerTrx) {
         return chains.stream()
-                .filter(row -> waiterTrx.equals(row.get("waiterTransactionId"))
-                        && blockerTrx.equals(row.get("blockerTransactionId")))
+                .filter(row -> waiterTrx.equals(row.getWaiterTransactionId())
+                        && blockerTrx.equals(row.getBlockerTransactionId()))
                 .findFirst()
                 .orElse(null);
     }
@@ -352,12 +378,18 @@ class DbLockServiceImplTest {
             }
         }
         List<Map<String, Object>> rows = rowsForSql(sql, sqlRows);
-        List<String> columns = rows.isEmpty() ? List.of() : new ArrayList<>(rows.get(0).keySet());
+        Set<String> selectedColumns = selectedColumns(sql);
         int[] current = {-1};
         return proxy(ResultSet.class, (proxy, method, args) -> switch (method.getName()) {
             case "next" -> ++current[0] < rows.size();
-            case "getMetaData" -> resultSetMetaData(columns);
-            case "getObject" -> rows.get(current[0]).get(columns.get((Integer) args[0] - 1));
+            case "getString" -> {
+                String column = String.valueOf(args[0]);
+                if (!selectedColumns.contains(column)) {
+                    throw new SQLException("Column was not selected: " + column);
+                }
+                Object value = rows.get(current[0]).get(column);
+                yield value == null ? null : String.valueOf(value);
+            }
             case "close" -> null;
             default -> defaultValue(method.getReturnType());
         });
@@ -371,12 +403,23 @@ class DbLockServiceImplTest {
                 .orElse(List.of());
     }
 
-    private static ResultSetMetaData resultSetMetaData(List<String> columns) {
-        return proxy(ResultSetMetaData.class, (proxy, method, args) -> switch (method.getName()) {
-            case "getColumnCount" -> columns.size();
-            case "getColumnLabel" -> columns.get((Integer) args[0] - 1);
-            default -> defaultValue(method.getReturnType());
-        });
+    private static Set<String> selectedColumns(String sql) {
+        String upperSql = sql.toUpperCase();
+        int projectionStart = upperSql.indexOf("SELECT ") + "SELECT ".length();
+        int projectionEnd = upperSql.indexOf(" FROM ", projectionStart);
+        return Arrays.stream(sql.substring(projectionStart, projectionEnd).split(","))
+                .map(String::trim)
+                .map(DbLockServiceImplTest::columnLabel)
+                .collect(Collectors.toSet());
+    }
+
+    private static String columnLabel(String expression) {
+        int aliasIndex = expression.toUpperCase().lastIndexOf(" AS ");
+        if (aliasIndex >= 0) {
+            return expression.substring(aliasIndex + " AS ".length()).trim();
+        }
+        int qualifierIndex = expression.lastIndexOf('.');
+        return expression.substring(qualifierIndex + 1).trim();
     }
 
     @SuppressWarnings("unchecked")

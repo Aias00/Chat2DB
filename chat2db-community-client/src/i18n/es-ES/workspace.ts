@@ -344,6 +344,8 @@ export default {
   'workspace.ops.noLockWaits': 'Sin esperas de bloqueo activas',
   'workspace.ops.metadataLocksUnavailable': 'Instrumentación de bloqueos de metadatos no disponible',
   'workspace.ops.sessionsUnavailable': 'Filas de sesión no disponibles',
+  'workspace.ops.lockPrivilegeRequired': 'La cuenta de base de datos actual no puede leer los metadatos de bloqueo.',
+  'workspace.ops.lockMetadataUnavailable': 'Algunos metadatos de bloqueo no están disponibles en este servidor.',
   'workspace.routine.button.invoke': 'Invocar rutina',
   'workspace.routine.button.apply': 'Aplicar cambios',
   'workspace.routine.button.refresh': 'Volver a cargar DDL',

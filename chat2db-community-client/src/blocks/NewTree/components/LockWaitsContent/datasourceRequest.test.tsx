@@ -84,6 +84,8 @@ const i18nMessages: Record<string, string> = {
     'Current datasource snapshot only. Missing session details can mean the row was released, privileges are limited, or the MySQL version does not expose that source.',
   'workspace.ops.lockSource': 'Source: {1}',
   'workspace.ops.lockSourceUnavailable': 'lock sources unavailable',
+  'workspace.ops.lockPrivilegeRequired': 'The current database account cannot read lock metadata.',
+  'workspace.ops.lockMetadataUnavailable': 'Some lock metadata is unavailable for this database server.',
   'workspace.ops.lockStatus': 'Status',
   'workspace.ops.lockType': 'Type',
   'workspace.ops.metadataLockCount': '{1} metadata locks',
@@ -110,9 +112,19 @@ const i18nMessages: Record<string, string> = {
   'workspace.ops.waiterUser': 'Waiter User',
 };
 
+const lockViewSource = {
+  PERFORMANCE_SCHEMA: 'PERFORMANCE_SCHEMA',
+  INFORMATION_SCHEMA: 'INFORMATION_SCHEMA',
+  UNAVAILABLE: 'UNAVAILABLE',
+};
+const lockViewErrorCode = {
+  PRIVILEGE_REQUIRED: 'PRIVILEGE_REQUIRED',
+  UNAVAILABLE: 'UNAVAILABLE',
+};
+
 const mockSqlService = {
   getLockView: async (_params: unknown): Promise<any> => ({
-    source: 'performance_schema',
+    source: lockViewSource.PERFORMANCE_SCHEMA,
     dataLocks: [],
     waits: [],
     metaLocks: [],
@@ -134,6 +146,8 @@ const originalLoad = (Module as any)._load;
     return {
       __esModule: true,
       default: mockSqlService,
+      LockViewErrorCode: lockViewErrorCode,
+      LockViewSource: lockViewSource,
     };
   }
   return originalLoad.call(this, request, parent, isMain);
@@ -152,7 +166,7 @@ async function testLockViewRequestUsesRenderedDatasource() {
   mockSqlService.getLockView = async (params: any) => {
     capturedParams = params;
     return {
-      source: 'performance_schema',
+      source: lockViewSource.PERFORMANCE_SCHEMA,
       dataLocks: [],
       waits: [],
       metaLocks: [],
@@ -184,28 +198,41 @@ async function testLockSnapshotShowsDatasourceAndDegradedSessionState() {
   const originalGetLockView = mockSqlService.getLockView;
   mockSqlService.getLockView = async () => ({
     dataSourceId: 73,
-    source: 'performance_schema',
+    source: lockViewSource.PERFORMANCE_SCHEMA,
     dataLocks: [],
     waits: [],
     metaLocks: [
       {
-        OBJECT_SCHEMA: 'app',
-        OBJECT_NAME: 'orders',
-        LOCK_TYPE: 'EXCLUSIVE',
-        LOCK_DURATION: 'TRANSACTION',
-        LOCK_STATUS: 'PENDING',
-        OWNER_THREAD_ID: '52',
+        objectType: 'TABLE',
+        objectSchema: 'app',
+        objectName: 'orders',
+        objectInstanceId: '1001',
+        lockType: 'EXCLUSIVE',
+        lockDuration: 'TRANSACTION',
+        lockStatus: 'PENDING',
+        ownerThreadId: '52',
+        ownerEventId: '5',
+        ownerSessionId: null,
+        ownerUser: null,
+        ownerHost: null,
+        ownerDatabase: null,
+        ownerState: null,
+        ownerQuery: null,
+        ownerSessionAvailable: false,
       },
     ],
     sessions: [
       {
-        THREAD_ID: '55',
-        PROCESSLIST_ID: '155',
-        PROCESSLIST_USER: 'root-user',
-        PROCESSLIST_HOST: '127.0.0.1',
-        PROCESSLIST_DB: 'app',
-        PROCESSLIST_STATE: 'executing',
-        PROCESSLIST_INFO: 'update t set c = 1',
+        engineThreadId: '55',
+        sessionId: '155',
+        user: 'root-user',
+        host: '127.0.0.1',
+        databaseName: 'app',
+        command: 'Query',
+        timeSeconds: '1',
+        state: 'executing',
+        query: 'update t set c = 1',
+        transactionId: 'trx-session',
       },
     ],
     waitChains: [
@@ -306,7 +333,7 @@ function deferred<T>() {
 function emptyLockView(dataSourceId: number) {
   return {
     dataSourceId,
-    source: 'performance_schema',
+    source: lockViewSource.PERFORMANCE_SCHEMA,
     dataLocks: [],
     waits: [],
     metaLocks: [],
@@ -314,6 +341,54 @@ function emptyLockView(dataSourceId: number) {
     waitChains: [],
     errors: [],
   };
+}
+
+async function testErrorsAreLocalizedAndMetadataKeysAreStable() {
+  const { default: LockWaitsContent, lockObjectText, metadataLockRowKey } = await import('./index');
+  const originalGetLockView = mockSqlService.getLockView;
+  const baseMetadataLock = {
+    objectSchema: null,
+    objectName: null,
+    lockType: 'INTENTION_EXCLUSIVE',
+    lockDuration: 'STATEMENT',
+    lockStatus: 'GRANTED',
+    ownerThreadId: '52',
+    ownerEventId: '4',
+    ownerSessionId: '152',
+    ownerUser: 'root',
+    ownerHost: 'localhost',
+    ownerDatabase: null,
+    ownerState: 'executing',
+    ownerQuery: null,
+    ownerSessionAvailable: true,
+  };
+  const globalLock = { ...baseMetadataLock, objectType: 'GLOBAL', objectInstanceId: '1001' };
+  const backupLock = { ...baseMetadataLock, objectType: 'BACKUP LOCK', objectInstanceId: '1002' };
+
+  assert.equal(lockObjectText(null, null, globalLock.objectType), 'GLOBAL');
+  assert.notEqual(metadataLockRowKey(globalLock), metadataLockRowKey(backupLock));
+
+  mockSqlService.getLockView = async () => ({
+    ...emptyLockView(82),
+    source: lockViewSource.UNAVAILABLE,
+    errors: [{ section: 'DATA_LOCKS', code: lockViewErrorCode.PRIVILEGE_REQUIRED }],
+  });
+  const container = createTestContainer();
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(createElement(LockWaitsContent, { dataSourceId: 82 }));
+    });
+    assert.match(container.textContent || '', /cannot read lock metadata/);
+    assert.doesNotMatch(container.textContent || '', /DATA_LOCKS|PRIVILEGE_REQUIRED/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    mockSqlService.getLockView = originalGetLockView;
+  }
 }
 
 async function testLatestRefreshWins() {
@@ -363,6 +438,7 @@ Promise.resolve()
   .then(testLockViewRequestUsesRenderedDatasource)
   .then(testLockSnapshotShowsDatasourceAndDegradedSessionState)
   .then(testLatestRefreshWins)
+  .then(testErrorsAreLocalizedAndMetadataKeysAreStable)
   .catch((error) => {
   console.error(error);
   process.exitCode = 1;

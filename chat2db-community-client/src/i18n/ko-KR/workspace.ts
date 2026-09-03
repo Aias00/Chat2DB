@@ -340,6 +340,8 @@ export default {
   'workspace.ops.noLockWaits': '활성 잠금 대기가 없습니다',
   'workspace.ops.metadataLocksUnavailable': '메타데이터 잠금 계측을 사용할 수 없습니다',
   'workspace.ops.sessionsUnavailable': '세션 행을 사용할 수 없습니다',
+  'workspace.ops.lockPrivilegeRequired': '현재 데이터베이스 계정에는 잠금 메타데이터 조회 권한이 없습니다.',
+  'workspace.ops.lockMetadataUnavailable': '이 데이터베이스 서버에서 일부 잠금 메타데이터를 사용할 수 없습니다.',
   'workspace.routine.button.invoke': '루틴 호출',
   'workspace.routine.button.apply': '변경 사항 적용',
   'workspace.routine.button.refresh': 'DDL 다시 불러오기',

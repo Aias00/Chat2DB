@@ -1,7 +1,6 @@
 package ai.chat2db.community.domain.api.service.db;
 
-import java.util.List;
-import java.util.Map;
+import ai.chat2db.community.domain.api.model.lock.LockView;
 
 /**
  * Data and metadata lock inspection with blocking chains (MYSQL-OPS-003). Read-only;
@@ -14,9 +13,7 @@ public interface IDbLockService {
     /**
      * Returns the current lock snapshot for the requested datasource.
      *
-     * @return view with {@code dataLocks}, {@code waits}, {@code metaLocks}, and
-     *         {@code waitChains}; unavailable sources degrade to empty lists and
-     *         {@code errors} contains per-section status.
+     * @return typed view with lock rows, sessions, wait chains, and per-section errors.
      */
-    Map<String, Object> lockView(Long dataSourceId);
+    LockView lockView(Long dataSourceId);
 }
