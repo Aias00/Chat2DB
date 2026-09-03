@@ -11,6 +11,7 @@ import ai.chat2db.community.domain.core.cache.CacheManage;
 import ai.chat2db.community.domain.core.impl.db.extension.MetadataAccessPolicyManager;
 import ai.chat2db.community.domain.core.util.ListSorter;
 import ai.chat2db.spi.IDbMetaData;
+import ai.chat2db.spi.IDatabasePropertiesManager;
 import ai.chat2db.community.domain.api.model.metadata.Database;
 import ai.chat2db.community.domain.api.model.metadata.MetaSchema;
 import ai.chat2db.community.domain.api.model.metadata.Schema;
@@ -25,11 +26,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -146,64 +144,23 @@ public class DbDatabaseServiceImpl implements IDbDatabaseService {
                 param.getName());
     }
 
-    private static final String SQL_DATABASE_INFO =
-            "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
-                    + "FROM information_schema.schemata WHERE SCHEMA_NAME = ?";
-
     @Override
     public Map<String, String> databaseInfo(String databaseName) {
-        if (StringUtils.isBlank(databaseName)) {
-            throw new BusinessException("database.name.required");
-        }
-        Connection connection = Chat2DBContext.getConnection();
-        try (PreparedStatement statement = connection.prepareStatement(SQL_DATABASE_INFO)) {
-            statement.setString(1, databaseName);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    throw new BusinessException("database.notFound");
-                }
-                Map<String, String> info = new LinkedHashMap<>();
-                info.put("charset", resultSet.getString("DEFAULT_CHARACTER_SET_NAME"));
-                info.put("collation", resultSet.getString("DEFAULT_COLLATION_NAME"));
-                return info;
-            }
-        } catch (SQLException e) {
-            throw new BusinessException("database.infoFailed", new Object[]{e.getMessage()}, e);
-        }
+        return requireDatabasePropertiesManager().databaseInfo(Chat2DBContext.getConnection(), databaseName);
     }
 
     @Override
     public String previewAlterDatabaseSql(String databaseName, String charset, String collation) {
-        if (StringUtils.isBlank(databaseName)) {
-            throw new BusinessException("database.name.required");
+        return requireDatabasePropertiesManager().previewAlterDatabaseSql(
+                Chat2DBContext.getConnection(), databaseName, charset, collation);
+    }
+
+    private IDatabasePropertiesManager requireDatabasePropertiesManager() {
+        IDatabasePropertiesManager manager = Chat2DBContext.getDatabasePropertiesManager();
+        if (manager == null) {
+            throw new BusinessException("database.properties.unsupported");
         }
-        Map<String, String> current = databaseInfo(databaseName);
-        String currentCharset = current.get("charset");
-        String currentCollation = current.get("collation");
-        if (StringUtils.isBlank(charset) && StringUtils.isBlank(collation)) {
-            return null;
-        }
-        if (StringUtils.equalsIgnoreCase(charset, currentCharset)
-                && StringUtils.equalsIgnoreCase(collation, currentCollation)) {
-            return null;
-        }
-        // Charset/collation names are emitted unquoted; restrict to the safe charset so
-        // the generated DDL can never be injected through these fields.
-        if (StringUtils.isNotBlank(charset) && !charset.matches("[A-Za-z0-9_]+")) {
-            throw new BusinessException("database.invalidCharset");
-        }
-        if (StringUtils.isNotBlank(collation) && !collation.matches("[A-Za-z0-9_]+")) {
-            throw new BusinessException("database.invalidCollation");
-        }
-        StringBuilder sql = new StringBuilder("ALTER DATABASE ");
-        sql.append(Chat2DBContext.getDbMetaData().getMetaDataName(databaseName));
-        if (StringUtils.isNotBlank(charset)) {
-            sql.append(" DEFAULT CHARACTER SET ").append(charset);
-        }
-        if (StringUtils.isNotBlank(collation)) {
-            sql.append(" DEFAULT COLLATE ").append(collation);
-        }
-        return sql.toString();
+        return manager;
     }
 
     @Override

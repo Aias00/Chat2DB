@@ -4,8 +4,7 @@ import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.model.metadata.Schema;
 import ai.chat2db.community.tools.exception.BusinessException;
-import ai.chat2db.spi.DefaultMetaService;
-import ai.chat2db.spi.IDbMetaData;
+import ai.chat2db.spi.IDatabasePropertiesManager;
 import ai.chat2db.spi.IPlugin;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
@@ -19,38 +18,24 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DbDatabaseServiceImplTest {
 
-    private static final String TEST_DB_TYPE = "DATABASE_SERVICE_TEST";
+    private static final String DB_TYPE = "DATABASE_PROPERTIES_TEST";
 
     private Map<String, IPlugin> originalPlugins;
-    private RecordingJdbc jdbc;
-    private DbDatabaseServiceImpl service;
 
     @BeforeEach
     void setUp() {
         originalPlugins = Map.copyOf(Chat2DBContext.PLUGIN_MAP);
-        Chat2DBContext.PLUGIN_MAP.clear();
-        Chat2DBContext.PLUGIN_MAP.put(TEST_DB_TYPE, new TestPlugin());
-        jdbc = new RecordingJdbc();
-
-        ConnectInfo connectInfo = new ConnectInfo();
-        connectInfo.setDbType(TEST_DB_TYPE);
-        connectInfo.setConnection(jdbc.connection());
-        connectInfo.setDriverConfig(new DriverConfig());
-        Chat2DBContext.putContext(connectInfo);
-        service = new DbDatabaseServiceImpl();
     }
 
     @AfterEach
@@ -61,52 +46,29 @@ class DbDatabaseServiceImplTest {
     }
 
     @Test
-    void databaseInfoBindsDatabaseNameInsteadOfConcatenatingIt() {
-        Map<String, String> result = service.databaseInfo("app'; DROP DATABASE mysql; --");
+    void delegatesDatabasePropertiesOperationsToCurrentPlugin() {
+        RecordingDatabasePropertiesManager manager = new RecordingDatabasePropertiesManager();
+        bindContext(manager);
+        DbDatabaseServiceImpl service = new DbDatabaseServiceImpl();
 
-        assertEquals("utf8mb4", result.get("charset"));
-        assertEquals("utf8mb4_0900_ai_ci", result.get("collation"));
-        assertFalse(jdbc.preparedSql.contains("app'; DROP DATABASE mysql; --"));
-        assertEquals("app'; DROP DATABASE mysql; --", jdbc.boundDatabaseName);
+        assertEquals(Map.of("charset", "utf8mb4", "collation", "utf8mb4_bin"),
+                service.databaseInfo("app"));
+        assertEquals("ALTER DATABASE `app` DEFAULT COLLATE utf8mb4_bin",
+                service.previewAlterDatabaseSql("app", null, "utf8mb4_bin"));
+
+        assertNotNull(manager.connection);
+        assertEquals("app", manager.databaseName);
+        assertEquals("utf8mb4_bin", manager.collation);
     }
 
     @Test
-    void databaseInfoUsesVersionStableInformationSchemaReadback() {
-        service.databaseInfo("app");
+    void rejectsPluginWithoutDatabasePropertiesCapability() {
+        bindContext(null);
 
-        assertEquals("SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
-                + "FROM information_schema.schemata WHERE SCHEMA_NAME = ?", jdbc.preparedSql);
-        assertEquals("app", jdbc.boundDatabaseName);
-    }
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> new DbDatabaseServiceImpl().databaseInfo("app"));
 
-    @Test
-    void databaseInfoReportsPrivilegeFailure() {
-        jdbc.failQueries(new SQLException("SELECT command denied to user", "42000", 1142));
-
-        assertThrows(BusinessException.class, () -> service.databaseInfo("app"));
-    }
-
-    @Test
-    void previewAlterDatabaseReportsReadbackPrivilegeFailure() {
-        jdbc.failQueries(new SQLException("SELECT command denied to user", "42000", 1142));
-
-        assertThrows(BusinessException.class,
-                () -> service.previewAlterDatabaseSql("app", "utf8mb4", "utf8mb4_bin"));
-    }
-
-    @Test
-    void previewAlterDatabaseRejectsUnsafeCharsetAndCollationNames() {
-        assertThrows(BusinessException.class,
-                () -> service.previewAlterDatabaseSql("app", "utf8mb4;DROP DATABASE mysql", null));
-        assertThrows(BusinessException.class,
-                () -> service.previewAlterDatabaseSql("app", "utf8mb4", "utf8mb4_0900_ai_ci;DROP"));
-    }
-
-    @Test
-    void previewAlterDatabaseQuotesDatabaseNameAndKeepsSafeOptions() {
-        String sql = service.previewAlterDatabaseSql("app-db", "utf8mb4", "utf8mb4_bin");
-
-        assertEquals("ALTER DATABASE `app-db` DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_bin", sql);
+        assertEquals("database.properties.unsupported", exception.getCode());
     }
 
     @Test
@@ -118,6 +80,34 @@ class DbDatabaseServiceImplTest {
         invokeSortSchema(new DbDatabaseServiceImpl(), schemas, connectionWithoutUrl());
 
         assertEquals(List.of("analytics", "default"), schemas.stream().map(Schema::getName).toList());
+    }
+
+    private static void bindContext(IDatabasePropertiesManager manager) {
+        Chat2DBContext.PLUGIN_MAP.put(DB_TYPE, new IPlugin() {
+            @Override
+            public DBConfig getDBConfig() {
+                DBConfig config = new DBConfig();
+                config.setDbType(DB_TYPE);
+                config.setDefaultDriverConfig(new DriverConfig());
+                return config;
+            }
+
+            @Override
+            public IDatabasePropertiesManager getDatabasePropertiesManager() {
+                return manager;
+            }
+        });
+        Connection connection = proxy(Connection.class, (proxy, method, args) -> {
+            if ("isClosed".equals(method.getName())) {
+                return false;
+            }
+            return defaultValue(method.getReturnType());
+        });
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setDbType(DB_TYPE);
+        connectInfo.setConnection(connection);
+        connectInfo.setDriverConfig(new DriverConfig());
+        Chat2DBContext.putContext(connectInfo);
     }
 
     private static void invokeSortSchema(DbDatabaseServiceImpl service, List<Schema> schemas,
@@ -161,107 +151,29 @@ class DbDatabaseServiceImplTest {
         if (type == char.class) {
             return '\0';
         }
-        if (type == byte.class) {
-            return (byte) 0;
-        }
-        if (type == short.class) {
-            return (short) 0;
-        }
-        if (type == int.class) {
-            return 0;
-        }
-        if (type == long.class) {
-            return 0L;
-        }
-        if (type == float.class) {
-            return 0F;
-        }
-        return 0D;
+        return 0;
     }
 
-    private static final class RecordingJdbc {
+    private static final class RecordingDatabasePropertiesManager implements IDatabasePropertiesManager {
 
-        private String preparedSql;
-        private String boundDatabaseName;
-        private SQLException executeQueryFailure;
+        private Connection connection;
+        private String databaseName;
+        private String collation;
 
-        private void failQueries(SQLException failure) {
-            executeQueryFailure = failure;
-        }
-
-        private Connection connection() {
-            return (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class[]{Connection.class},
-                    (proxy, method, args) -> switch (method.getName()) {
-                        case "prepareStatement" -> {
-                            preparedSql = (String) args[0];
-                            yield preparedStatement();
-                        }
-                        case "isClosed" -> false;
-                        case "close" -> null;
-                        case "toString" -> "recording-connection";
-                        default -> null;
-                    });
-        }
-
-        private PreparedStatement preparedStatement() {
-            return (PreparedStatement) Proxy.newProxyInstance(getClass().getClassLoader(),
-                    new Class[]{PreparedStatement.class}, (proxy, method, args) -> switch (method.getName()) {
-                        case "setString" -> {
-                            boundDatabaseName = (String) args[1];
-                            yield null;
-                        }
-                        case "executeQuery" -> {
-                            if (executeQueryFailure != null) {
-                                throw executeQueryFailure;
-                            }
-                            yield resultSet();
-                        }
-                        case "close" -> null;
-                        default -> null;
-                    });
-        }
-
-        private ResultSet resultSet() {
-            return (ResultSet) Proxy.newProxyInstance(getClass().getClassLoader(), new Class[]{ResultSet.class},
-                    (proxy, method, args) -> switch (method.getName()) {
-                        case "next" -> true;
-                        case "getString" -> "DEFAULT_CHARACTER_SET_NAME".equals(args[0])
-                                ? "utf8mb4" : "utf8mb4_0900_ai_ci";
-                        case "close" -> null;
-                        default -> null;
-                    });
-        }
-    }
-
-    private static final class TestPlugin implements IPlugin {
-
-        private final DBConfig dbConfig = new DBConfig();
-        private final IDbMetaData metaData = new MysqlLikeMetaData();
-
-        private TestPlugin() {
-            dbConfig.setDbType(TEST_DB_TYPE);
+        @Override
+        public Map<String, String> databaseInfo(Connection connection, String databaseName) {
+            this.connection = connection;
+            this.databaseName = databaseName;
+            return Map.of("charset", "utf8mb4", "collation", "utf8mb4_bin");
         }
 
         @Override
-        public DBConfig getDBConfig() {
-            return dbConfig;
-        }
-
-        @Override
-        public IDbMetaData getDbMetaData() {
-            return metaData;
-        }
-    }
-
-    private static final class MysqlLikeMetaData extends DefaultMetaService {
-
-        @Override
-        public String getMetaDataName(String... names) {
-            return java.util.Arrays.stream(names)
-                    .filter(name -> name != null && !name.isBlank())
-                    .map(name -> "`" + name.replace("`", "``") + "`")
-                    .reduce((first, second) -> first + "." + second)
-                    .orElse("");
+        public String previewAlterDatabaseSql(Connection connection, String databaseName, String charset,
+                                              String collation) {
+            this.connection = connection;
+            this.databaseName = databaseName;
+            this.collation = collation;
+            return "ALTER DATABASE `app` DEFAULT COLLATE utf8mb4_bin";
         }
     }
 }
