@@ -1,11 +1,20 @@
 import { staticMessage, staticModal } from '@chat2db/ui';
 import { Button } from 'antd';
-import { createElement, Fragment } from 'react';
+import { createElement } from 'react';
 import i18n from '@/i18n';
 import transactionServer from '@/service/transaction';
 import { useWorkspaceStore } from '@/store/workspace';
 import type { IWorkspaceTab } from '@/typings';
 import { releaseTransactionConsoles, type CloseAction, type TxConsole } from './transactionSessionCore';
+
+const transactionDialogFooterStyle = {
+  display: 'flex',
+  flexWrap: 'wrap' as const,
+  justifyContent: 'flex-end',
+  gap: 8,
+  width: '100%',
+  marginTop: 24,
+};
 
 /**
  * For each console being closed that has an open (uncommitted) transaction, prompt the user
@@ -77,21 +86,36 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
       okButtonProps: { style: { display: 'none' } },
       cancelButtonProps: { style: { display: 'none' } },
       footer: createElement(
-        Fragment,
-        null,
+        'div',
+        { style: transactionDialogFooterStyle },
         createElement(
           Button,
-          { key: 'cancel', onClick: () => !settling && finish(false) },
+          {
+            key: 'cancel',
+            color: 'default',
+            variant: 'outlined',
+            onClick: () => !settling && finish(false),
+          },
           i18n('workspace.transaction.cancel'),
         ),
         createElement(
           Button,
-          { key: 'rollback', danger: true, onClick: () => void releaseAll('rollback') },
+          {
+            key: 'rollback',
+            color: 'red',
+            variant: 'outlined',
+            onClick: () => void releaseAll('rollback'),
+          },
           i18n('workspace.transaction.rollback'),
         ),
         createElement(
           Button,
-          { key: 'commit', type: 'primary', onClick: () => void releaseAll('commit') },
+          {
+            key: 'commit',
+            color: 'green',
+            variant: 'solid',
+            onClick: () => void releaseAll('commit'),
+          },
           i18n('workspace.transaction.commit'),
         ),
       ),

@@ -252,6 +252,22 @@ async function run() {
     3,
     'all close-dialog actions share the same horizontal alignment',
   );
+  const transactionSource = readFileSync('src/utils/transactionSession.ts', 'utf8');
+  assert.match(
+    transactionSource,
+    /const transactionDialogFooterStyle = \{[\s\S]*?justifyContent: 'flex-end',[\s\S]*?gap: 8,/,
+    'the transaction dialog must render an explicit right-aligned footer',
+  );
+  assert.match(
+    transactionSource,
+    /color: 'red',[\s\S]*?variant: 'outlined'/,
+    'rollback must use the red outlined action style',
+  );
+  assert.match(
+    transactionSource,
+    /color: 'green',[\s\S]*?variant: 'solid'/,
+    'commit must use the green solid action style',
+  );
   assert.match(
     confirmationSource,
     /const handleSave = \(\) => \{[\s\S]*?onDecision\('save'\)/,
