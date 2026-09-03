@@ -249,7 +249,6 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
     }),
   );
   const [resultDataList, setResultDataList] = useState<IManageResultData[]>([]);
-  const resultPageSizeRef = useRef<number>();
   const pendingRowsRef = useRef<PendingSqlExecutionRows>(new Map());
   const pendingRowsFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closedSqlExecutionResultsRef = useRef<ClosedSqlExecutionResults>(new Map());
@@ -913,9 +912,6 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
 
     const executeSqlParams = {
       ...requestParams,
-      ...(requestParams.pageSize === undefined && resultPageSizeRef.current !== undefined
-        ? { pageSize: resultPageSizeRef.current }
-        : {}),
       consoleId: executionSnapshot.consoleId,
       databaseType: executionSnapshot.databaseType,
       dataSourceId: executionSnapshot.dataSourceId,
@@ -1076,14 +1072,6 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
       });
   };
 
-  const handleResultPagingChange = useCallback(
-    (_resultData: IManageResultData, executeSqlParams: IExecuteSqlParams) => {
-      resultPageSizeRef.current = executeSqlParams.pageSize;
-      return handleExecuteSQL(executeSqlParams);
-    },
-    [handleExecuteSQL],
-  );
-
   const stopExecuteSql = () => {
     stopExecuteSQL();
   };
@@ -1152,7 +1140,6 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
                 onKeepExecutionLogHistoryChange={handleKeepExecutionLogHistoryChange}
                 onKeepResultHistoryChange={handleKeepResultHistoryChange}
                 onResultDataListChange={handleResultDataListChange}
-                onResultPagingChange={handleResultPagingChange}
               />
             )}
             {executing && (

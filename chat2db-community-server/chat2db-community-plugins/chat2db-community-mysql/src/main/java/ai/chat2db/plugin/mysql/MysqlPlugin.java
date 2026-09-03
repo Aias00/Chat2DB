@@ -4,6 +4,7 @@ import ai.chat2db.plugin.mysql.account.MysqlAccountManager;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.result.ResultSetEditorMetadata;
 import ai.chat2db.spi.IAccountManager;
+import ai.chat2db.spi.IActiveTransactionManager;
 import ai.chat2db.spi.IDbManager;
 import ai.chat2db.spi.IDbMetaData;
 import ai.chat2db.spi.IPlugin;
@@ -60,6 +61,11 @@ public class MysqlPlugin extends MysqlSyntaxPlugin implements IPlugin {
     @Override
     public void beforeExecute(SqlExecutionPlan plan) {
         TRANSACTION_POLICY.beforeExecute(plan);
+    }
+
+    @Override
+    public IActiveTransactionManager getActiveTransactionManager() {
+        return new MysqlActiveTransactionManager();
     }
 
     private static final class NativeMysqlMetaData extends MysqlMetaData {
