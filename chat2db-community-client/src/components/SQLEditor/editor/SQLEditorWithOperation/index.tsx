@@ -10,7 +10,7 @@ import { EditorSetValueType, EditorType, SQLOptType } from '../../type';
 import { staticMessage } from '@chat2db/ui';
 import { Modal } from 'antd';
 import { IConsoleReturnExecuteSql, IBoundInfo, TreeNodeData } from '@/typings';
-import { saveFileToDesktop, updateFileContent } from '@/utils/file';
+import { saveFileToDesktop, saveLocalFileContent, waitForLocalFileSave } from '@/utils/file';
 import i18n from '@/i18n';
 import { useSaveEditorData } from '@/components/SQLEditor/hooks/useSaveEditorData';
 import { formatSql } from '../../helper/utils';
@@ -26,10 +26,16 @@ import sqlService, {
   type IExplainResult,
   type IRoutineMigrationParams,
 } from '@/service/sql';
-import { isRoutineOperationSupportedDatabaseType, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
+import {
+  DatabaseCapability,
+  OperationColumn,
+  TreeNodeType,
+  WorkspaceTabType,
+} from '@/constants';
 import { EditorTableIdentifier } from '../../helper/tableIdentifier';
 import { useTreeStore } from '@/store/tree';
 import { isTemporaryId } from '@/utils';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import { readClipboard } from '@/utils/clipboard';
 import executeSql from '@/service/executeSql';
 import { parseClipboardTextToSqlInTokens } from '@/utils/sqlInClipboard';
@@ -76,7 +82,7 @@ interface ISQLEditorWithOperationProps {
   active: boolean;
   defaultSQL?: string;
   dbInfo: IBoundInfo;
-  setDBInfo: (dbInfo: IBoundInfo) => void;
+  setDBInfo: (dbInfo: Partial<IBoundInfo>) => void;
 
   sqlFileName?: string;
   workspaceTabsTitle?: string;
@@ -154,9 +160,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
   } = props;
   const isReadOnly = !!dbInfo.readOnly;
   const isSupportedRoutineEditor =
-    isRoutineOperationSupportedDatabaseType(dbInfo.databaseType) &&
+    isDatabaseCapabilitySupported(dbInfo.databaseType, DatabaseCapability.ROUTINE_OPERATION) &&
     [WorkspaceTabType.FUNCTION, WorkspaceTabType.PROCEDURE].includes(type as WorkspaceTabType);
-  const { styles } = useStyles();
+  const { styles, theme } = useStyles();
   const [modal, modalContextHolder] = Modal.useModal();
   const [contextMenuInfo, setContextMenuInfo] = useState<IContextMenuInfo>(contextMenuDefaultConfig);
   const [contextTableIdentifier, setContextTableIdentifier] = useState<EditorTableIdentifier | null>(null);
@@ -236,6 +242,10 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     executeSQL: handleExecuteSQL,
     hasUnsavedChangesBeforeClose,
     saveBeforeClose,
+    waitForPendingSave:
+      type === WorkspaceTabType.LocalSQLFile && dbInfo.filePath
+        ? () => waitForLocalFileSave(dbInfo.filePath!)
+        : undefined,
     persistBeforeApplicationExit: type === WorkspaceTabType.CONSOLE ? flushAutoSave : undefined,
   }));
 
@@ -1091,7 +1101,10 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       }
       return;
     }
-    void saveConsole(getValue(), { mode: 'manual' });
+    void saveConsole(getValue(), { mode: 'manual' }).catch((error) => {
+      console.error('save saved-console error', error);
+      staticMessage.error(i18n('common.text.failure'));
+    });
   }, [
     dbInfo.consoleId,
     dbInfo.databaseName,
@@ -1134,8 +1147,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
 
   const handleSaveFile = async () => {
     const fileContent = sqlEditorRef.current?.getValue() ?? '';
+    let result: Awaited<ReturnType<typeof saveLocalFileContent>>;
     try {
-      await updateFileContent({
+      result = await saveLocalFileContent({
         filePath: dbInfo.filePath!,
         fileContent,
         charset: dbInfo.fileCharset,
@@ -1147,10 +1161,11 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       return false;
     }
     try {
-      sqlEditorRef.current?.resetContentDiffBaseline(fileContent);
+      sqlEditorRef.current?.resetContentDiffBaseline(result.fileContent);
     } catch {
       // Content diff is only a hint and must not affect file saving.
     }
+    setDBInfo({ ddl: result.fileContent });
     staticMessage.success(i18n('workspace.text.changeFileSuccess'));
     return true;
   };
@@ -1179,7 +1194,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       try {
         await saveConsole(getValue(), { mode: 'manual' });
         return true;
-      } catch {
+      } catch (error) {
+        console.error('save saved-console before close error', error);
+        staticMessage.error(i18n('common.text.failure'));
         return false;
       }
     }
@@ -1334,7 +1351,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     isConsole && type === WorkspaceTabType.CONSOLE && dbInfo.dataSourceId
       ? getDataSourceWatermarkContent(dbInfo, dataSourceState)
       : undefined;
-  const watermarkColor = identityColor ? withIdentityColorAlpha(identityColor, 0.4) : undefined;
+  const watermarkColor = withIdentityColorAlpha(identityColor || theme.colorPrimary, 0.4);
   const watermarkLayout = getDataSourceWatermarkLayout(editorViewportSize?.width, editorViewportSize?.height);
 
   return (
