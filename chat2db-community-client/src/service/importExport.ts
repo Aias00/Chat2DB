@@ -72,6 +72,10 @@ export interface ImportTaskParams extends IDatabaseBaseInfo {
 
 const submitExport = createRequest<ExportTaskParams, TaskSubmissionResponse>('/api/tasks/export', { method: 'post' });
 const submitImport = createRequest<ImportTaskParams, TaskSubmissionResponse>('/api/tasks/import', { method: 'post' });
+const stageImportFile = createRequest<{ file: File }, string>('/api/tasks/import/stage', {
+  method: 'post',
+  contentType: 'formData',
+});
 
 const getTaskList = createRequest<TaskListParams, IPageResponse<ImportExportTaskDetails>>('/api/tasks/list', {
   method: 'get',
@@ -105,6 +109,7 @@ const generateJavaClass = createRequest<GenerateJavaClassParams, number>('/api/r
 export default {
   submitExport,
   submitImport,
+  stageImportFile,
   getTaskList,
   getTaskDetails,
   getTaskEvents,

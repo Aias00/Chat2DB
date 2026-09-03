@@ -9,7 +9,6 @@ import {
   buildCsvOptionsForTaskSubmit,
   csvOptionsToPreviewParam,
   DEFAULT_CSV_OPTIONS,
-  inferImportFileFormat,
 } from '@/blocks/ImportAndExport/utils/csvOptions';
 
 interface IProps {
@@ -18,6 +17,7 @@ interface IProps {
   schemaName?: string;
   tableName: string;
   filePath: string;
+  fileFormat: ImportExportFileType;
   onSubmitted: (taskId: number) => void;
 }
 
@@ -29,7 +29,15 @@ const SKIP = '__skip__';
  * unmapped target columns are filled (DEFAULT or NULL), executes the import, and reports
  * row-level errors. Preview and execution share the backend parser.
  */
-const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableName, filePath, onSubmitted }: IProps) => {
+const ImportMappingContent = ({
+  dataSourceId,
+  databaseName,
+  schemaName,
+  tableName,
+  filePath,
+  fileFormat,
+  onSubmitted,
+}: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,9 +45,6 @@ const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableNam
   const [unmappedTarget, setUnmappedTarget] = useState<'DEFAULT' | 'NULL'>('DEFAULT');
   const [executing, setExecuting] = useState(false);
   const [csvOptions, setCsvOptions] = useState<ICsvOptions>(DEFAULT_CSV_OPTIONS);
-  const fileFormat = useMemo(() => {
-    return inferImportFileFormat(filePath);
-  }, [filePath]);
   const isCsv = fileFormat === ImportExportFileType.CSV;
 
   const load = useCallback(() => {
@@ -106,13 +111,21 @@ const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableNam
     );
   }, [preview, mapping, unmappedTarget]);
 
-  const columns: ColumnsType<{ name: string; sampleValues: string[] }> = [
+  const columns: ColumnsType<{ name: string; sampleValues: { value: string; type: string }[] }> = [
     { title: i18n('workspace.importExport.sourceField'), dataIndex: 'name', width: 180 },
     {
       title: i18n('workspace.importExport.sampleValues'),
       dataIndex: 'sampleValues',
-      render: (values: string[]) => (
-        <span style={{ color: 'var(--text-color-secondary)' }}>{values.slice(0, 3).join(', ')}</span>
+      render: (values: { value: string; type: string }[]) => (
+        <span style={{ color: 'var(--text-color-secondary)' }}>
+          {values.slice(0, 3).map((value, index) => (
+            <span key={index}>
+              {index > 0 && ', '}
+              {value.value}
+              {value.type !== 'string' && value.type !== 'empty' && ` [${value.type}]`}
+            </span>
+          ))}
+        </span>
       ),
     },
     {
@@ -172,7 +185,7 @@ const ImportMappingContent = ({ dataSourceId, databaseName, schemaName, tableNam
   return (
     <div>
       {error && <div style={{ color: 'var(--text-color-danger)', marginBottom: 8 }}>{error}</div>}
-      {preview && isCsv && (
+      {isCsv && (
         <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
             style={{ width: 140 }}

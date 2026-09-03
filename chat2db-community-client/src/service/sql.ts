@@ -473,7 +473,7 @@ const getImportPreview = createRequest<
     csvOptions?: string;
   },
   IImportPreview
->('/api/rdb/import_preview/preview', { method: 'post' });
+>('/api/rdb/import_preview/preview', { method: 'post', requestBody: true });
 
 const executeImportWithMapping = createRequest<
   {
@@ -487,7 +487,7 @@ const executeImportWithMapping = createRequest<
     csvOptions?: ICsvOptions;
   },
   IImportExecuteResult
->('/api/rdb/import_preview/execute', { method: 'post' });
+>('/api/rdb/import_preview/execute', { method: 'post', requestBody: true });
 const checkIsSelectSQL = createRequest<{ sql: string; dbType: DatabaseTypeCode }, boolean>('/api/sql/valid_select');
 
 const getDataSourceList = createRequest<IPageParams, IPageResponse<IConnectionDetails>>(

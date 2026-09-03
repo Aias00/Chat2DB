@@ -8,6 +8,7 @@ import { customRequestOSS } from '@/utils/file';
 import { UploadTypeEnum } from '@/typings/upload';
 import { isDesktop } from '@/utils/env';
 import jcefApi from '@/jcef';
+import importExportServices from '@/service/importExport';
 
 type FileType = Parameters<GetProp<UploadProps, 'beforeUpload'>>[0];
 
@@ -90,9 +91,19 @@ const UploadLocalFile = forwardRef((props: IProps, ref: ForwardedRef<UploadLocal
   const isWebOssUpload = webOssUpload && !isDesktop;
   const isWebLocalUpload = !isDesktop && !isWebOssUpload;
 
-  const fileUploadOnChange = ({ file }) => {
+  const fileUploadOnChange = async ({ file }) => {
     if (isWebLocalUpload) {
       const selectedFile = file.originFileObj || file;
+      if (stageLocalFile) {
+        try {
+          const filePath = await importExportServices.stageImportFile({ file: selectedFile });
+          const selection = { file: selectedFile, filePath, fileName: file.name };
+          setFileList((current) => (multiple ? [...current, selection] : [selection]));
+        } catch (error) {
+          staticMessage.error(error instanceof Error ? error.message : i18n('common.text.failure'));
+        }
+        return;
+      }
       const selection = {
         file: selectedFile,
         filePath: selectedFile?.path,

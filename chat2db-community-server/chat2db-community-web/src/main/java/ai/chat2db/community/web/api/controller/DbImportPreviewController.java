@@ -30,7 +30,7 @@ public class DbImportPreviewController {
     private IDbImportPreviewService importPreviewService;
 
     @PostMapping("/preview")
-    public DataResult<Map<String, Object>> preview(@Valid ImportPreviewRequest request) {
+    public DataResult<Map<String, Object>> preview(@Valid @RequestBody ImportPreviewRequest request) {
         return DataResult.of(importPreviewService.preview(request.getDataSourceId(), request.getDatabaseName(),
                 request.getSchemaName(), request.getTableName(), request.getFilePath(),
                 parseCsvOptions(request.getCsvOptions())));

@@ -159,6 +159,7 @@ export default memo<IProps>((_props) => {
           schemaName={importMappingTarget.schemaName}
           tableName={importMappingTarget.tableName}
           filePath={importFilePath}
+          fileFormat={importFileFormat!}
           onSubmitted={(submittedTaskId) => {
             setTaskId(submittedTaskId);
             getTaskList();
