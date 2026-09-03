@@ -5,6 +5,8 @@ export enum TreeNodeType {
   ALL_DATA = 'allData', // All data dedicated to redis
   DATA_SOURCES = 'dataSources',
   DATA_SOURCE = 'dataSource',
+  MONITOR = 'monitor',
+  ACTIVE_TRANSACTIONS = 'activeTransactions',
   DATABASE_ACCOUNTS = 'databaseAccounts',
   DATABASE_ACCOUNT = 'databaseAccount',
   DATABASE = 'database',
@@ -51,6 +53,7 @@ export enum OperationColumn {
   DeleteTreeNode = 'deleteTreeNode', // delete tree node
   Refresh = 'refresh', // Refresh menus at all levels
   VariablesStatus = 'variablesStatus', // Variables and status (MYSQL-OPS-004)
+  ActiveTransactions = 'activeTransactions', // Active InnoDB transactions (MYSQL-OPS-002)
   CreateConsole = 'createConsole', // Create a new console
   Rename = 'rename', // Rename
 
