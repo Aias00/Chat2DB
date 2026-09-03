@@ -108,6 +108,11 @@ public interface IPlugin {
         return null;
     }
 
+    /** Returns SQL-file execution policy when the database plugin provides one. */
+    default ISqlFileImportManager getSqlFileImportManager() {
+        return null;
+    }
+
     /**
      * Returns all database configurations supported by this plugin instance.
      *

@@ -1,4 +1,4 @@
-package ai.chat2db.community.domain.core.impl.task.imports;
+package ai.chat2db.plugin.mysql.imports;
 
 import ai.chat2db.community.domain.api.model.parser.statement.Statement;
 import ai.chat2db.community.domain.api.model.task.ImportTaskSpec;
@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Executes SQL import statements with explicit error and commit policies. */
-public final class SqlFileOptionsHandler implements ISqlBatchHandler {
+public final class MysqlSqlFileOptionsHandler implements ISqlBatchHandler {
 
     public static final String MODE_SCRIPT = "SCRIPT";
     public static final String MODE_BATCH = "BATCH";
@@ -59,29 +59,29 @@ public final class SqlFileOptionsHandler implements ISqlBatchHandler {
                 || POLICY_CONTINUE.equals(normalize(StringUtils.defaultIfBlank(spec.getErrorPolicy(), POLICY_STOP)));
     }
 
-    public SqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context) {
+    public MysqlSqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context) {
         this(spec, context, Chat2DBContext.getConnection(), 0, false);
     }
 
-    SqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, Connection connection) {
+    MysqlSqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, Connection connection) {
         this(spec, context, connection, 0, false);
     }
 
-    public SqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, int totalStatements) {
+    public MysqlSqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, int totalStatements) {
         this(spec, context, Chat2DBContext.getConnection(), totalStatements, false);
     }
 
-    public SqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, int totalStatements,
+    public MysqlSqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, int totalStatements,
                                  boolean preflightDmlEngines) {
         this(spec, context, Chat2DBContext.getConnection(), totalStatements, preflightDmlEngines);
     }
 
-    SqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, Connection connection,
+    MysqlSqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, Connection connection,
                           int totalStatements) {
         this(spec, context, connection, totalStatements, false);
     }
 
-    SqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, Connection connection,
+    MysqlSqlFileOptionsHandler(ImportTaskSpec spec, TaskExecutionContext context, Connection connection,
                           int totalStatements, boolean preflightDmlEngines) {
         this.context = context;
         this.connection = connection;

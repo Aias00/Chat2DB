@@ -1,4 +1,4 @@
-package ai.chat2db.community.domain.core.impl.task.imports;
+package ai.chat2db.plugin.mysql.imports;
 
 import ai.chat2db.community.domain.api.model.parser.statement.Statement;
 import ai.chat2db.community.domain.api.model.task.ArtifactDraft;
@@ -8,6 +8,7 @@ import ai.chat2db.community.domain.api.model.task.TaskExecutionException;
 import ai.chat2db.community.domain.api.service.task.TaskCancelable;
 import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
 import ai.chat2db.community.domain.api.service.db.ISqlBatchHandler;
+import ai.chat2db.plugin.mysql.MysqlPlugin;
 import org.antlr.v4.runtime.CommonToken;
 import org.junit.jupiter.api.Test;
 
@@ -28,14 +29,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class SqlFileOptionsHandlerTest {
+class MysqlSqlFileOptionsHandlerTest {
+
+    @Test
+    void mysqlPluginExposesSqlFileImportPolicy() {
+        assertTrue(new MysqlPlugin().getSqlFileImportManager() instanceof MysqlSqlFileImportManager);
+    }
 
     @Test
     void commitsConfiguredBatchesAndRestoresAutoCommit() {
         AtomicInteger commits = new AtomicInteger();
         AtomicInteger rollbacks = new AtomicInteger();
         Connection connection = connection(commits, rollbacks);
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "STOP", 2), context(), connection);
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "STOP", 2), context(), connection);
 
         handler.handle(new Statement("INSERT INTO test VALUES (1)"));
         handler.handle(new Statement("INSERT INTO test VALUES (2)"));
@@ -49,7 +55,7 @@ class SqlFileOptionsHandlerTest {
     @Test
     void rejectsTransactionControlInTransactionModes() {
         Connection connection = connection(new AtomicInteger(), new AtomicInteger());
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("SINGLE_TRANSACTION", "STOP", 1),
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("SINGLE_TRANSACTION", "STOP", 1),
                 context(), connection);
 
         assertThrows(TaskExecutionException.class, () -> handler.handle(new Statement("COMMIT")));
@@ -62,7 +68,7 @@ class SqlFileOptionsHandlerTest {
         List<Boolean> autoCommitChanges = new ArrayList<>();
         Connection connection = connection(commits, rollbacks, new AtomicInteger(), autoCommitChanges, false);
         RecordingContext context = new RecordingContext();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("SINGLE_TRANSACTION", "STOP", 10),
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("SINGLE_TRANSACTION", "STOP", 10),
                 context, connection);
 
         handler.handle(new Statement("INSERT INTO test VALUES (1)"));
@@ -77,7 +83,7 @@ class SqlFileOptionsHandlerTest {
     @Test
     void summaryCountsStatementsOnlyAfterCommitSucceeds() {
         RecordingContext context = new RecordingContext();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "STOP", 2), context,
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "STOP", 2), context,
                 connection(new AtomicInteger(), new AtomicInteger()));
 
         handler.handle(new Statement("INSERT INTO test VALUES (1)"));
@@ -94,7 +100,7 @@ class SqlFileOptionsHandlerTest {
     @Test
     void leadingCommentsCannotBypassImplicitCommitValidation() {
         AtomicInteger executeCalls = new AtomicInteger();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "STOP", 10), context(),
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "STOP", 10), context(),
                 connection(new AtomicInteger(), new AtomicInteger(), executeCalls, new ArrayList<>(), false));
 
         assertThrows(TaskExecutionException.class,
@@ -105,7 +111,7 @@ class SqlFileOptionsHandlerTest {
     @Test
     void failedStatementLogOmitsSqlSecretsAndIncludesLineRange() {
         RecordingContext context = new RecordingContext();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("SCRIPT", "CONTINUE", 10), context,
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("SCRIPT", "CONTINUE", 10), context,
                 connection(new AtomicInteger(), new AtomicInteger(), new AtomicInteger(), new ArrayList<>(), true));
         Statement statement = new Statement("INSERT INTO users(password) VALUES ('secret-value')");
         CommonToken first = new CommonToken(0);
@@ -125,7 +131,7 @@ class SqlFileOptionsHandlerTest {
     @Test
     void batchStopSummaryReportsRollbackAndUnexecutedRange() {
         RecordingContext context = new RecordingContext();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "STOP", 5), context,
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "STOP", 5), context,
                 connection(new AtomicInteger(), new AtomicInteger(), new AtomicInteger(), new ArrayList<>(),
                         Set.of(3)), 5);
 
@@ -148,7 +154,7 @@ class SqlFileOptionsHandlerTest {
     void batchContinueCommitsOnlySuccessfulStatements() {
         RecordingContext context = new RecordingContext();
         AtomicInteger commits = new AtomicInteger();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "CONTINUE", 2), context,
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "CONTINUE", 2), context,
                 connection(commits, new AtomicInteger(), new AtomicInteger(), new ArrayList<>(), Set.of(2)), 3);
 
         handler.handle(new Statement("INSERT INTO test VALUES (1)"));
@@ -167,7 +173,7 @@ class SqlFileOptionsHandlerTest {
     @Test
     void singleTransactionContinueOptionStopsAndRollsBack() {
         RecordingContext context = new RecordingContext();
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("SINGLE_TRANSACTION", "CONTINUE", 10),
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("SINGLE_TRANSACTION", "CONTINUE", 10),
                 context, connection(new AtomicInteger(), new AtomicInteger(), new AtomicInteger(), new ArrayList<>(),
                 Set.of(2)), 3);
 
@@ -183,7 +189,7 @@ class SqlFileOptionsHandlerTest {
 
     @Test
     void preflightRejectsExecutableCommentTransactionControl() {
-        ISqlBatchHandler preflight = SqlFileOptionsHandler.preflightHandler(spec("BATCH", "STOP", 10), context());
+        ISqlBatchHandler preflight = MysqlSqlFileOptionsHandler.preflightHandler(spec("BATCH", "STOP", 10), context());
 
         assertThrows(TaskExecutionException.class,
                 () -> preflight.handle(new Statement("/*!40101 SET autocommit=0 */")));
@@ -197,7 +203,7 @@ class SqlFileOptionsHandlerTest {
         RecordingContext context = new RecordingContext();
         Connection connection = connection(new AtomicInteger(), rollbacks, executeCalls, autoCommitChanges,
                 Set.of(1), () -> {}, new SQLException("statement cancelled"));
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "STOP", 10), context,
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "STOP", 10), context,
                 connection, 2);
 
         assertThrows(TaskCancelledException.class,
@@ -215,7 +221,7 @@ class SqlFileOptionsHandlerTest {
         List<Boolean> autoCommitChanges = new ArrayList<>();
         RecordingContext context = new RecordingContext();
         context.cancelInfoLogs = true;
-        SqlFileOptionsHandler handler = new SqlFileOptionsHandler(spec("BATCH", "STOP", 10), context,
+        MysqlSqlFileOptionsHandler handler = new MysqlSqlFileOptionsHandler(spec("BATCH", "STOP", 10), context,
                 connection(new AtomicInteger(), rollbacks, new AtomicInteger(), autoCommitChanges, Set.of(1)), 2);
 
         assertThrows(TaskExecutionException.class,
@@ -229,7 +235,7 @@ class SqlFileOptionsHandlerTest {
     void mysqlPreflightChecksInformationSchemaAndAllowsTransactionalTarget() {
         RecordingContext context = new RecordingContext();
         AtomicInteger metadataQueries = new AtomicInteger();
-        ISqlBatchHandler preflight = SqlFileOptionsHandler.mysqlPreflightHandler(
+        ISqlBatchHandler preflight = MysqlSqlFileOptionsHandler.mysqlPreflightHandler(
                 targetSpec("BATCH", "STOP", 10, "app"), context,
                 mysqlMetadataConnection(Map.of("app.orders", "InnoDB"), metadataQueries, false));
 
@@ -242,7 +248,7 @@ class SqlFileOptionsHandlerTest {
 
     @Test
     void mysqlPreflightRejectsNonTransactionalTargetBeforeExecution() {
-        ISqlBatchHandler preflight = SqlFileOptionsHandler.mysqlPreflightHandler(
+        ISqlBatchHandler preflight = MysqlSqlFileOptionsHandler.mysqlPreflightHandler(
                 targetSpec("BATCH", "STOP", 10, "app"), context(),
                 mysqlMetadataConnection(Map.of("app.audit_log", "MyISAM"), new AtomicInteger(), false));
 
@@ -254,7 +260,7 @@ class SqlFileOptionsHandlerTest {
 
     @Test
     void mysqlPreflightRejectsUnknownUnresolvableTargetBeforeExecution() {
-        ISqlBatchHandler preflight = SqlFileOptionsHandler.mysqlPreflightHandler(
+        ISqlBatchHandler preflight = MysqlSqlFileOptionsHandler.mysqlPreflightHandler(
                 targetSpec("SINGLE_TRANSACTION", "STOP", 10, "app"), context(),
                 mysqlMetadataConnection(Map.of(), new AtomicInteger(), false));
 
@@ -266,7 +272,7 @@ class SqlFileOptionsHandlerTest {
 
     @Test
     void mysqlPreflightRejectsTargetsWhenMetadataPermissionFails() {
-        ISqlBatchHandler preflight = SqlFileOptionsHandler.mysqlPreflightHandler(
+        ISqlBatchHandler preflight = MysqlSqlFileOptionsHandler.mysqlPreflightHandler(
                 targetSpec("BATCH", "STOP", 10, "app"), context(),
                 mysqlMetadataConnection(Map.of("app.orders", "InnoDB"), new AtomicInteger(), true));
 

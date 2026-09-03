@@ -2,6 +2,7 @@ package ai.chat2db.community.domain.core.impl.task.imports.sql;
 
 import ai.chat2db.spi.DefaultSqlSyntaxHandler;
 import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
+import ai.chat2db.spi.ISqlFileImportManager;
 import ai.chat2db.community.domain.api.model.task.ImportTaskSpec;
 import ai.chat2db.community.domain.api.model.task.TaskCancelledException;
 import ai.chat2db.community.domain.api.model.task.TaskErrorCode;
@@ -52,12 +53,14 @@ public class SQLImporter implements IImportStrategy {
                     DatabaseTypeEnum.SQLSERVER.name(), DatabaseTypeEnum.POSTGRESQL.name())) {
                 ConsoleTaskProgressListener consoleProgressListener =
                         new ConsoleTaskProgressListener(context, sourceFile);
-                boolean useSqlFileOptions = shouldUseSqlFileOptions(databaseType, spec);
+                ISqlFileImportManager sqlFileImportManager = Chat2DBContext.getSqlFileImportManager();
+                boolean useSqlFileOptions = shouldUseSqlFileOptions(sqlFileImportManager, spec);
                 Connection connection = useSqlFileOptions ? Chat2DBContext.getConnection() : null;
                 int totalStatements = useSqlFileOptions
-                        ? preflightSqlFile(spec, context, sourceFile, databaseType, charset, connection) : 0;
+                        ? preflightSqlFile(spec, context, sourceFile, databaseType, charset, connection,
+                                sqlFileImportManager) : 0;
                 ISqlBatchHandler sqlBatchHandler = useSqlFileOptions
-                        ? new SqlFileOptionsHandler(spec, context, totalStatements)
+                        ? sqlFileImportManager.executionHandler(spec, context, totalStatements)
                         : new SyncSqlBatchHandler(context, sqlExecutor);
                 if (!useSqlFileOptions) {
                     context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Reading SQL import file");
@@ -148,17 +151,17 @@ public class SQLImporter implements IImportStrategy {
         }
     }
 
-    static boolean shouldUseSqlFileOptions(String databaseType, ImportTaskSpec spec) {
-        return StringUtils.equalsIgnoreCase(databaseType, DatabaseTypeEnum.MYSQL.name())
-                && SqlFileOptionsHandler.supportsOptions(spec);
+    static boolean shouldUseSqlFileOptions(ISqlFileImportManager manager, ImportTaskSpec spec) {
+        return manager != null && manager.supportsOptions(spec);
     }
 
     private int preflightSqlFile(ImportTaskSpec spec, TaskExecutionContext context, File sourceFile,
-                                 String databaseType, Charset charset, Connection connection) {
+                                 String databaseType, Charset charset, Connection connection,
+                                 ISqlFileImportManager sqlFileImportManager) {
         context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Preflighting SQL import file");
         int statementCount = DefaultSqlSyntaxHandler.parserSqlScript(sourceFile, databaseType,
                 (bytesRead, statementsParsed) -> context.checkCancelled(),
-                SqlFileOptionsHandler.mysqlPreflightHandler(spec, context, connection), charset);
+                sqlFileImportManager.preflightHandler(spec, context, connection), charset);
         context.logInfo(TaskEventCode.FILE_READ_COMPLETED.name(), "SQL import preflight completed",
                 Map.of("statementCount", statementCount));
         context.logInfo(TaskEventCode.FILE_READ_STARTED.name(), "Reading SQL import file");
