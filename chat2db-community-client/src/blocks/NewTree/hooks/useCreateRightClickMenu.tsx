@@ -20,6 +20,7 @@ import { canImportExport } from '@/utils/env';
 
 // ----- store -----
 import { useGlobalStore } from '@/store/global';
+import { useAIStore } from '@/store/ai';
 import { useImportExportStore } from '@/store/importExport';
 import { useTreeStore } from '@/store/tree';
 import { useWorkspaceStore } from '@/store/workspace';
@@ -711,6 +712,7 @@ export const useCreateRightClickMenu = () => {
             },
           });
           setCurrentWorkspaceExtend('info');
+          useAIStore.getState().setShowPanel(false);
         },
         discard: !hasPermission || databaseType !== DatabaseTypeCode.MYSQL,
       },
