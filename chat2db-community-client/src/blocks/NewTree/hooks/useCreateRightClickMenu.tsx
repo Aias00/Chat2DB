@@ -298,7 +298,7 @@ export const useCreateRightClickMenu = () => {
             content: <pre style={{ whiteSpace: 'pre-wrap' }}>{sql}</pre>,
             onOk: () => {
               return sqlService.executeDDL({ dataSourceId: dsId, sql }).then(() => {
-                staticMessage.success(i18n('common.text.successfullySaved'));
+                staticMessage.success(i18n('common.text.successfulExecution'));
                 refresh();
               });
             },
