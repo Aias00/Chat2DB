@@ -19,6 +19,8 @@ assert.equal(createEventTreeNodeDescription('ENABLED', false, 'Scheduler off'), 
 assert.equal(createEventTreeNodeDescription(null, false, 'Scheduler off'), 'Scheduler off');
 
 const menuSource = readFileSync('src/blocks/NewTree/hooks/useCreateRightClickMenu.tsx', 'utf8');
+const openAsyncSqlSource = readFileSync('src/blocks/NewTree/functions/openAsyncSql.ts', 'utf8');
+const workspaceTabsSource = readFileSync('src/pages/main/workspace/components/WorkspaceTabs/index.tsx', 'utf8');
 const dropEventSource = menuSource.slice(
   menuSource.indexOf('[OperationColumn.DropEvent]'),
   menuSource.indexOf('[OperationColumn.CreateAccount]'),
@@ -26,5 +28,16 @@ const dropEventSource = menuSource.slice(
 assert.ok(dropEventSource.indexOf('.getEventDropSql') < dropEventSource.indexOf('openUnifiedConfirmationModal'));
 assert.match(dropEventSource, /content:\s*<pre[^>]*>\{sql\}<\/pre>/);
 assert.ok(dropEventSource.indexOf('executeDDL') > dropEventSource.indexOf('onOk'));
+
+const createEventSource = openAsyncSqlSource.slice(
+  openAsyncSqlSource.indexOf('export const openCreateEvent'),
+  openAsyncSqlSource.indexOf('export const openEvent'),
+);
+assert.match(createEventSource, /isNewObject:\s*true/);
+
+const rebuiltEventStart = workspaceTabsSource.indexOf('if (item.type === WorkspaceTabType.EVENT)');
+const newObjectGuard = workspaceTabsSource.indexOf('uniqueData.isNewObject', rebuiltEventStart);
+const eventDetailLoad = workspaceTabsSource.indexOf('getEventDetail', rebuiltEventStart);
+assert.ok(rebuiltEventStart >= 0 && newObjectGuard > rebuiltEventStart && newObjectGuard < eventDetailLoad);
 
 console.log('Event tree config tests passed');

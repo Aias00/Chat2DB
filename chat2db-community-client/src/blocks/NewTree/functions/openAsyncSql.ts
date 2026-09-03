@@ -174,6 +174,7 @@ export const openCreateEvent = (props: { treeNodeData: any; addWorkspaceTab: any
     uniqueData: {
       ...extraParams,
       eventName,
+      isNewObject: true,
       ddl: `CREATE EVENT \`new_event\`
 ON SCHEDULE EVERY 1 DAY
 STARTS CURRENT_TIMESTAMP

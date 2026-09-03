@@ -37,13 +37,13 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_CREATE
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_CREATE_VIEW_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_PROCEDURE_STATUS;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SHOW_TRIGGERS;
+import static ai.chat2db.plugin.mysql.constant.MysqlEventConstants.EVENT_EXPORT_TITLE;
+import static ai.chat2db.plugin.mysql.constant.MysqlEventConstants.RESULT_CREATE_EVENT;
+import static ai.chat2db.plugin.mysql.constant.MysqlEventConstants.SQL_DROP_EVENT;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlDBManagerConstants.*;
 @Slf4j
 public class MysqlDBManager extends DefaultDBManager implements IDbManager {
-
-    private static final String EVENT_TITLE = DIVIDING_LINE + SQLConstants.LINE_SEPARATOR
-            + "-- Event structure for event %s" + SQLConstants.LINE_SEPARATOR + DIVIDING_LINE;
 
     @Override
     public void exportDatabase(Connection connection, String databaseName, String schemaName, boolean containData,
@@ -198,7 +198,7 @@ public class MysqlDBManager extends DefaultDBManager implements IDbManager {
         }
     }
 
-    private void exportEvent(Connection connection, String databaseName, String eventName, TaskExecutionContext context)
+    void exportEvent(Connection connection, String databaseName, String eventName, TaskExecutionContext context)
             throws SQLException {
         String qualifiedName = StringUtils.isEmpty(databaseName)
                 ? format(eventName)
@@ -207,12 +207,12 @@ public class MysqlDBManager extends DefaultDBManager implements IDbManager {
         try (PreparedStatement preparedStatement = connection.prepareStatement(sql);
              ResultSet resultSet = preparedStatement.executeQuery()) {
             if (resultSet.next()) {
-                context.write(String.format(EVENT_TITLE, formatExportTitleValue(eventName)));
+                context.write(String.format(EVENT_EXPORT_TITLE, formatExportTitleValue(eventName)));
                 StringBuilder sqlBuilder = new StringBuilder();
-                sqlBuilder.append("DROP EVENT IF EXISTS ").append(qualifiedName)
+                sqlBuilder.append(String.format(SQL_DROP_EVENT, qualifiedName))
                         .append(SQLConstants.SEMICOLON).append(SQLConstants.LINE_SEPARATOR)
                         .append(DELIMITER_BLOCK_START).append(SQLConstants.LINE_SEPARATOR)
-                        .append(resultSet.getString(CREATE_EVENT_COLUMN))
+                        .append(resultSet.getString(RESULT_CREATE_EVENT))
                         .append(ROUTINE_DELIMITER)
                         .append(SQLConstants.LINE_SEPARATOR).append(DELIMITER_BLOCK_END)
                         .append(SQLConstants.DOUBLE_LINE_SEPARATOR);

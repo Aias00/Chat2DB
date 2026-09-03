@@ -15,6 +15,7 @@ class DbEventControllerDatasourceContextTest {
     void eventLifecycleEndpointsAcceptDatasourceAwareRequests() {
         assertDatasourceAwareRequest("list");
         assertDatasourceAwareRequest("schedulerStatus");
+        assertDatasourceAwareRequest("detail");
         assertDatasourceAwareRequest("dropSql");
         assertDatasourceAwareRequest("enabledSql");
     }

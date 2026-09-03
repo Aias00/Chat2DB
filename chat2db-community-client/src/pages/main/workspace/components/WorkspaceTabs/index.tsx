@@ -385,6 +385,9 @@ function rebuildSqlExecuteTabData(item: IWorkspaceTab) {
 
   if (item.type === WorkspaceTabType.EVENT) {
     const eventName = uniqueData.eventName || item.title?.replace(/\[.*\]$/, '');
+    if (uniqueData.isNewObject) {
+      return uniqueData;
+    }
     return {
       ...uniqueData,
       eventName,

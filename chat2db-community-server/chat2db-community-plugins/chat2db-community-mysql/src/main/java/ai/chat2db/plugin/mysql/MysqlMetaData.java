@@ -51,14 +51,11 @@ import static ai.chat2db.plugin.mysql.constant.MysqlRoutineManageConstants.PROCE
 import static ai.chat2db.spi.util.SortUtils.sortDatabase;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlMetaDataConstants.*;
+import static ai.chat2db.plugin.mysql.constant.MysqlEventConstants.*;
 @Slf4j
 public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
 
     public static final ISQLIdentifierProcessor MYSQL_IDENTIFIER_PROCESSOR = MysqlIdentifierProcessor.INSTANCE;
-    private static final String SQL_EVENTS =
-            "SELECT EVENT_SCHEMA, EVENT_NAME, DEFINER, TIME_ZONE, EVENT_TYPE, EXECUTE_AT, INTERVAL_VALUE, "
-                    + "INTERVAL_FIELD, STARTS, ENDS, STATUS, ON_COMPLETION, EVENT_COMMENT, EVENT_DEFINITION "
-                    + "FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME";
 
     @Override
     public List<Database> databases(Connection connection) {
@@ -205,21 +202,21 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
                 List<Event> events = new ArrayList<>();
                 while (resultSet.next()) {
                     Event event = new Event();
-                    event.setDatabaseName(resultSet.getString("EVENT_SCHEMA"));
+                    event.setDatabaseName(resultSet.getString(RESULT_EVENT_SCHEMA));
                     event.setSchemaName(schemaName);
-                    event.setEventName(resultSet.getString("EVENT_NAME"));
-                    event.setDefiner(resultSet.getString("DEFINER"));
-                    event.setTimeZone(resultSet.getString("TIME_ZONE"));
-                    event.setEventType(resultSet.getString("EVENT_TYPE"));
-                    event.setExecuteAt(resultSet.getTimestamp("EXECUTE_AT"));
-                    event.setIntervalValue(resultSet.getString("INTERVAL_VALUE"));
-                    event.setIntervalField(resultSet.getString("INTERVAL_FIELD"));
-                    event.setStarts(resultSet.getTimestamp("STARTS"));
-                    event.setEnds(resultSet.getTimestamp("ENDS"));
-                    event.setStatus(resultSet.getString("STATUS"));
-                    event.setOnCompletion(resultSet.getString("ON_COMPLETION"));
-                    event.setComment(resultSet.getString("EVENT_COMMENT"));
-                    event.setDefinition(resultSet.getString("EVENT_DEFINITION"));
+                    event.setEventName(resultSet.getString(RESULT_EVENT_NAME));
+                    event.setDefiner(resultSet.getString(RESULT_DEFINER));
+                    event.setTimeZone(resultSet.getString(RESULT_TIME_ZONE));
+                    event.setEventType(resultSet.getString(RESULT_EVENT_TYPE));
+                    event.setExecuteAt(resultSet.getTimestamp(RESULT_EXECUTE_AT));
+                    event.setIntervalValue(resultSet.getString(RESULT_INTERVAL_VALUE));
+                    event.setIntervalField(resultSet.getString(RESULT_INTERVAL_FIELD));
+                    event.setStarts(resultSet.getTimestamp(RESULT_STARTS));
+                    event.setEnds(resultSet.getTimestamp(RESULT_ENDS));
+                    event.setStatus(resultSet.getString(RESULT_STATUS));
+                    event.setOnCompletion(resultSet.getString(RESULT_ON_COMPLETION));
+                    event.setComment(resultSet.getString(RESULT_EVENT_COMMENT));
+                    event.setDefinition(resultSet.getString(RESULT_EVENT_DEFINITION));
                     events.add(event);
                 }
                 return events;
@@ -240,7 +237,7 @@ public class MysqlMetaData extends DefaultMetaService implements IDbMetaData {
             event.setSchemaName(eventMetadataRequest.getSchemaName());
             event.setEventName(eventName);
             if (resultSet.next()) {
-                event.setEventBody(resultSet.getString("Create Event"));
+                event.setEventBody(resultSet.getString(RESULT_CREATE_EVENT));
             }
             return event;
         });

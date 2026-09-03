@@ -108,6 +108,7 @@ export interface IBoundInfo {
   popoverContent?: string;
   ddl?: string;
   loadSQL?: any;
+  isNewObject?: boolean;
   readOnly?: boolean;
   diffOriginalText?: string;
   diffModifiedText?: string;

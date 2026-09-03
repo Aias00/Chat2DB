@@ -1,27 +1,24 @@
 package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.config.DBConfig;
-import ai.chat2db.community.domain.api.config.DriverConfig;
-import ai.chat2db.spi.DefaultMetaService;
-import ai.chat2db.spi.IDbMetaData;
+import ai.chat2db.community.domain.api.model.metadata.Event;
+import ai.chat2db.community.tools.exception.BusinessException;
+import ai.chat2db.spi.IEventManager;
 import ai.chat2db.spi.IPlugin;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DbEventServiceImplTest {
 
@@ -29,34 +26,49 @@ class DbEventServiceImplTest {
 
     @AfterEach
     void tearDown() {
-        Chat2DBContext.close();
+        Chat2DBContext.removeContext();
         Chat2DBContext.PLUGIN_MAP.remove(TEST_DB_TYPE);
     }
 
     @Test
-    void schedulerStatusCountsEventsForSelectedDatabase() throws Exception {
-        RecordingJdbc jdbc = new RecordingJdbc();
-        Chat2DBContext.PLUGIN_MAP.put(TEST_DB_TYPE, plugin());
+    void delegatesEveryOperationToCurrentDatabasePlugin() {
+        RecordingEventManager manager = new RecordingEventManager();
+        bindContext(manager);
+        DbEventServiceImpl service = new DbEventServiceImpl();
 
-        ConnectInfo connectInfo = new ConnectInfo();
-        connectInfo.setDbType(TEST_DB_TYPE);
-        connectInfo.setDriverConfig(new DriverConfig());
-        connectInfo.setConnection(jdbc.connection());
-        Chat2DBContext.putContext(connectInfo);
-
-        Map<String, Object> status = new DbEventServiceImpl().schedulerStatus("analytics");
-
-        assertEquals(Boolean.TRUE, status.get("schedulerEnabled"));
-        assertEquals(3L, status.get("eventCount"));
-        assertTrue(jdbc.sql().contains("SHOW VARIABLES LIKE 'event_scheduler'"));
-        assertTrue(jdbc.sql().stream().anyMatch(sql ->
-                sql.equals("SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA = 'analytics'")));
+        assertEquals(List.of(Map.of("eventName", "daily_rollup")), service.list("analytics"));
+        assertEquals("daily_rollup", service.detail("analytics", null, "daily_rollup").getEventName());
+        assertEquals(Map.of("schedulerEnabled", true, "eventCount", 1L), service.schedulerStatus("analytics"));
+        assertEquals("DROP", service.dropEventSql("analytics", "daily_rollup"));
+        assertEquals("ALTER", service.setEventEnabledSql("analytics", "daily_rollup", false));
+        assertEquals(5, manager.calls.get());
     }
 
-    private static IPlugin plugin() {
-        return new IPlugin() {
-            private final IDbMetaData metaData = new DefaultMetaService();
+    @Test
+    void rejectsPluginWithoutEventCapability() {
+        bindContext(null);
 
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> new DbEventServiceImpl().list("analytics"));
+
+        assertEquals("event.management.unsupported", exception.getCode());
+    }
+
+    @Test
+    void validatesNamesBeforeDelegating() {
+        bindContext(new RecordingEventManager());
+        DbEventServiceImpl service = new DbEventServiceImpl();
+
+        assertEquals("database.name.required",
+                assertThrows(BusinessException.class, () -> service.list(" ")).getCode());
+        assertEquals("event.name.required",
+                assertThrows(BusinessException.class, () -> service.detail("analytics", null, " ")).getCode());
+        assertEquals("event.name.required",
+                assertThrows(BusinessException.class, () -> service.dropEventSql("analytics", " ")).getCode());
+    }
+
+    private static void bindContext(IEventManager manager) {
+        Chat2DBContext.PLUGIN_MAP.put(TEST_DB_TYPE, new IPlugin() {
             @Override
             public DBConfig getDBConfig() {
                 DBConfig config = new DBConfig();
@@ -65,89 +77,60 @@ class DbEventServiceImplTest {
             }
 
             @Override
-            public IDbMetaData getDbMetaData() {
-                return metaData;
+            public IEventManager getEventManager() {
+                return manager;
             }
-        };
+        });
+        Connection connection = (Connection) Proxy.newProxyInstance(
+                DbEventServiceImplTest.class.getClassLoader(),
+                new Class<?>[] {Connection.class},
+                (proxy, method, args) -> {
+                    if ("isClosed".equals(method.getName())) {
+                        return false;
+                    }
+                    if ("close".equals(method.getName())) {
+                        return null;
+                    }
+                    return method.getReturnType() == boolean.class ? false : null;
+                });
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setDbType(TEST_DB_TYPE);
+        connectInfo.setConnection(connection);
+        Chat2DBContext.putContext(connectInfo);
     }
 
-    private static Object defaultValue(Class<?> returnType) {
-        if (returnType == boolean.class) {
-            return false;
-        }
-        if (returnType == int.class || returnType == long.class || returnType == short.class
-                || returnType == byte.class) {
-            return 0;
-        }
-        if (returnType == float.class || returnType == double.class) {
-            return 0.0;
-        }
-        return null;
-    }
+    private static final class RecordingEventManager implements IEventManager {
+        private final AtomicInteger calls = new AtomicInteger();
 
-    private static final class RecordingJdbc {
-        private final List<String> sql = new ArrayList<>();
-
-        private Connection connection() {
-            return proxy(Connection.class, (target, method, args) -> switch (method.getName()) {
-                case "prepareStatement" -> {
-                    String statementSql = (String) args[0];
-                    sql.add(statementSql);
-                    yield preparedStatement(statementSql);
-                }
-                default -> defaultValue(method.getReturnType());
-            });
-        }
-
-        private List<String> sql() {
-            return sql;
-        }
-
-        private PreparedStatement preparedStatement(String statementSql) {
-            return proxy(PreparedStatement.class, (target, method, args) -> switch (method.getName()) {
-                case "execute" -> true;
-                case "getResultSet" -> resultSet(statementSql);
-                default -> defaultValue(method.getReturnType());
-            });
-        }
-
-        private ResultSet resultSet(String statementSql) {
-            List<Object[]> rows = new ArrayList<>();
-            rows.add(statementSql.startsWith("SHOW VARIABLES")
-                    ? new Object[] {"event_scheduler", "ON"}
-                    : new Object[] {3L});
-            return proxy(ResultSet.class, new ResultSetHandler(rows));
-        }
-    }
-
-    private static final class ResultSetHandler implements InvocationHandler {
-        private final List<Object[]> rows;
-        private int index = -1;
-
-        private ResultSetHandler(List<Object[]> rows) {
-            this.rows = rows;
+        @Override
+        public List<Map<String, Object>> list(Connection connection, String databaseName) {
+            assertNotNull(connection);
+            calls.incrementAndGet();
+            return List.of(Map.of("eventName", "daily_rollup"));
         }
 
         @Override
-        public Object invoke(Object target, Method method, Object[] args) {
-            return switch (method.getName()) {
-                case "next" -> ++index < rows.size();
-                case "getString" -> String.valueOf(value(args[0]));
-                case "getLong" -> ((Number) value(args[0])).longValue();
-                default -> defaultValue(method.getReturnType());
-            };
+        public Event detail(Connection connection, String databaseName, String schemaName, String eventName) {
+            calls.incrementAndGet();
+            return Event.builder().eventName(eventName).build();
         }
 
-        private Object value(Object column) {
-            if (column instanceof Integer columnIndex) {
-                return rows.get(index)[columnIndex - 1];
-            }
-            throw new UnsupportedOperationException(String.valueOf(column));
+        @Override
+        public Map<String, Object> schedulerStatus(Connection connection, String databaseName) {
+            calls.incrementAndGet();
+            return Map.of("schedulerEnabled", true, "eventCount", 1L);
         }
-    }
 
-    @SuppressWarnings("unchecked")
-    private static <T> T proxy(Class<T> type, InvocationHandler handler) {
-        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, handler);
+        @Override
+        public String buildDropEvent(String databaseName, String eventName) {
+            calls.incrementAndGet();
+            return "DROP";
+        }
+
+        @Override
+        public String buildAlterEventEnabled(String databaseName, String eventName, boolean enabled) {
+            calls.incrementAndGet();
+            return "ALTER";
+        }
     }
 }
