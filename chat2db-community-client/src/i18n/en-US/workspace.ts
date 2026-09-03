@@ -288,7 +288,10 @@ export default {
   'workspace.transaction.switchConnectionTitle': 'Uncommitted transaction',
   'workspace.transaction.switchConnectionContent':
     'Switching the connection will roll back the current uncommitted transaction. Continue?',
-  'workspace.transaction.releaseFailed': 'Commit/Rollback failed. The transaction is still open; the console was not closed.',
+  'workspace.transaction.releaseFailed':
+    'The transaction result could not be confirmed. The console remains open so you can recover safely.',
+  'workspace.transaction.implicitCommitBlocked':
+    'Commit or roll back the current transaction before executing MySQL statements that implicitly commit.',
   'workspace.localSqlFileTree.revealFailed': 'Failed to reveal file',
   'workspace.databaseAccount.title': 'Users',
   'workspace.databaseAccount.open': 'Open Users',

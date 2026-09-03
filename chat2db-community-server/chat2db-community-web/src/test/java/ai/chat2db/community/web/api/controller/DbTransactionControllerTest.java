@@ -26,6 +26,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.support.StaticMessageSource;
 import org.mapstruct.factory.Mappers;
 import org.springframework.web.bind.annotation.PostMapping;
+import jakarta.validation.constraints.NotNull;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -37,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -153,6 +155,11 @@ class DbTransactionControllerTest {
         assertOnlyPost("rollback", ConsoleCloseRequest.class);
         assertOnlyPost("state", ConsoleCloseRequest.class);
         assertOnlyPost("release", ConsoleCloseRequest.class);
+    }
+
+    @Test
+    void transactionRequestsRequireConsoleId() throws Exception {
+        assertNotNull(ConsoleCloseRequest.class.getDeclaredField("consoleId").getAnnotation(NotNull.class));
     }
 
     private static DbTransactionController controller(IDbConnectionContextService service) throws Exception {

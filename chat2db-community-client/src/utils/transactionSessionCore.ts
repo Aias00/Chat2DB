@@ -43,7 +43,7 @@ export async function releaseTransactionConsoles(
         if (result.outcome === TransactionOutcome.UNKNOWN) {
           dependencies.onUnknownOutcome?.();
           dependencies.store.setTransactionState(console.consoleId, {
-            inTransaction: true,
+            inTransaction: false,
             lastOutcome: result.outcome,
             lastError: result.lastError,
           });
@@ -53,7 +53,8 @@ export async function releaseTransactionConsoles(
         return true;
       } catch (error) {
         dependencies.store.setTransactionState(console.consoleId, {
-          inTransaction: true,
+          inTransaction: false,
+          lastOutcome: TransactionOutcome.UNKNOWN,
           lastError: String(error),
         });
         return false;

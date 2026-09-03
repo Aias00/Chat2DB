@@ -10,6 +10,42 @@ export interface TransactionStateAccess {
 
 export type BeginTransaction = (request: ITransactionBeginRequest) => Promise<ITransactionStateResponse>;
 
+const pendingTransactionBegins = new Map<number, Promise<ITransactionStateResponse>>();
+
+export async function waitForPendingTransactionBegins(consoleIds: number[]): Promise<void> {
+  const pending = [...new Set(consoleIds)]
+    .map((consoleId) => pendingTransactionBegins.get(consoleId))
+    .filter((promise): promise is Promise<ITransactionStateResponse> => Boolean(promise));
+  if (pending.length) {
+    await Promise.allSettled(pending);
+  }
+}
+
+export function reconcileTransactionState(
+  current: TransactionState | undefined,
+  result: ITransactionStateResponse,
+): Partial<TransactionState> {
+  const supportedIsolationLevels = result.supportedIsolationLevels ?? [];
+  let isolationLevel = result.inTransaction
+    ? result.isolationLevel ?? TransactionIsolationLevel.DEFAULT
+    : current?.isolationLevel ?? result.isolationLevel ?? TransactionIsolationLevel.DEFAULT;
+  if (
+    supportedIsolationLevels.length > 0 &&
+    !supportedIsolationLevels.includes(isolationLevel)
+  ) {
+    isolationLevel = TransactionIsolationLevel.DEFAULT;
+  }
+  return {
+    mode: result.inTransaction ? TransactionMode.MANUAL : current?.mode ?? result.mode,
+    inTransaction: result.inTransaction,
+    opening: false,
+    isolationLevel,
+    supportedIsolationLevels,
+    lastOutcome: result.outcome,
+    lastError: result.lastError,
+  };
+}
+
 export async function ensureManualTransactionStarted(
   params: IExecuteSqlParams,
   stateAccess: TransactionStateAccess,
@@ -24,30 +60,48 @@ export async function ensureManualTransactionStarted(
     return;
   }
 
-  try {
-    const result = await beginTransaction({
-      dataSourceId,
-      databaseName: params.databaseName,
-      schemaName: params.schemaName,
-      consoleId,
-      isolationLevel: state.isolationLevel ?? TransactionIsolationLevel.DEFAULT,
-    });
-    if (!result?.inTransaction) {
-      throw new Error(result?.lastError || 'Failed to start the manual transaction');
-    }
-    stateAccess.setTransactionState(consoleId, {
-      mode: result.mode,
-      inTransaction: true,
-      isolationLevel: result.isolationLevel ?? state.isolationLevel ?? TransactionIsolationLevel.DEFAULT,
-      supportedIsolationLevels: result.supportedIsolationLevels ?? state.supportedIsolationLevels,
-      lastError: result.lastError,
-    });
-    return result;
-  } catch (error) {
-    stateAccess.setTransactionState(consoleId, {
-      inTransaction: false,
-      lastError: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+  const pending = pendingTransactionBegins.get(consoleId);
+  if (pending) {
+    return pending;
   }
+
+  stateAccess.setTransactionState(consoleId, { opening: true, lastError: undefined });
+  const begin = Promise.resolve()
+    .then(async () => {
+      try {
+        const result = await beginTransaction({
+          dataSourceId,
+          databaseName: params.databaseName,
+          schemaName: params.schemaName,
+          consoleId,
+          isolationLevel: state.isolationLevel ?? TransactionIsolationLevel.DEFAULT,
+        });
+        if (!result?.inTransaction) {
+          throw new Error(result?.lastError || 'Failed to start the manual transaction');
+        }
+        stateAccess.setTransactionState(consoleId, {
+          mode: TransactionMode.MANUAL,
+          inTransaction: true,
+          opening: false,
+          isolationLevel: result.isolationLevel ?? state.isolationLevel ?? TransactionIsolationLevel.DEFAULT,
+          supportedIsolationLevels: result.supportedIsolationLevels ?? state.supportedIsolationLevels,
+          lastError: result.lastError,
+        });
+        return result;
+      } catch (error) {
+        stateAccess.setTransactionState(consoleId, {
+          inTransaction: false,
+          opening: false,
+          lastError: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    })
+    .finally(() => {
+      if (pendingTransactionBegins.get(consoleId) === begin) {
+        pendingTransactionBegins.delete(consoleId);
+      }
+    });
+  pendingTransactionBegins.set(consoleId, begin);
+  return begin;
 }

@@ -281,7 +281,10 @@ export default {
   'workspace.transaction.switchModeContent': '자동 모드로 전환하면 현재 커밋되지 않은 트랜잭션이 롤백됩니다. 계속하시겠습니까?',
   'workspace.transaction.switchConnectionTitle': '커밋되지 않은 트랜잭션',
   'workspace.transaction.switchConnectionContent': '연결을 전환하면 현재 커밋되지 않은 트랜잭션이 롤백됩니다. 계속하시겠습니까?',
-  'workspace.transaction.releaseFailed': '커밋/롤백에 실패했습니다. 트랜잭션이 아직 열려 있어 콘솔을 닫지 않았습니다.',
+  'workspace.transaction.releaseFailed':
+    '트랜잭션 결과를 확인할 수 없습니다. 안전하게 복구할 수 있도록 콘솔을 열린 상태로 유지합니다.',
+  'workspace.transaction.implicitCommitBlocked':
+    '암시적 커밋을 수행하는 MySQL 문을 실행하기 전에 현재 트랜잭션을 커밋하거나 롤백하세요.',
   'workspace.localSqlFileTree.revealFailed': '파일 위치를 표시하지 못했습니다',
   'workspace.databaseAccount.title': '사용자',
   'workspace.databaseAccount.open': '사용자 열기',

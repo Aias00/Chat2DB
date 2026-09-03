@@ -283,7 +283,10 @@ export default {
   'workspace.transaction.switchModeContent': 'Cambiar al modo automático revertirá la transacción no confirmada actual. ¿Continuar?',
   'workspace.transaction.switchConnectionTitle': 'Transacción no confirmada',
   'workspace.transaction.switchConnectionContent': 'Cambiar la conexión revertirá la transacción no confirmada actual. ¿Continuar?',
-  'workspace.transaction.releaseFailed': 'Error al confirmar/revertir. La transacción sigue abierta; la consola no se cerró.',
+  'workspace.transaction.releaseFailed':
+    'No se pudo confirmar el resultado de la transacción. La consola permanecerá abierta para permitir una recuperación segura.',
+  'workspace.transaction.implicitCommitBlocked':
+    'Confirme o revierta la transacción actual antes de ejecutar sentencias MySQL que realizan una confirmación implícita.',
   'workspace.localSqlFileTree.revealFailed': 'No se pudo mostrar el archivo',
   'workspace.databaseAccount.title': 'Usuarios',
   'workspace.databaseAccount.open': 'Abrir usuarios',

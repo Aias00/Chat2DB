@@ -9,6 +9,7 @@ import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.community.domain.api.model.runtime.TransactionMode;
 import ai.chat2db.community.domain.api.model.storage.WorkspaceDataSource;
 import ai.chat2db.community.domain.api.service.db.IDbWorkspaceDataSourceService;
+import ai.chat2db.community.domain.api.service.ops.IOpsOperationSavedService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
@@ -24,6 +25,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -202,10 +206,42 @@ class DbConnectionContextServiceImplTransactionTest {
         ), calls);
     }
 
+    @Test
+    void beginWaitsForOtherOperationsOnTheSameConsole() throws Exception {
+        long consoleId = 9008L;
+        registerBound(consoleId, 10L, proxyConnection(new AtomicInteger(), new AtomicInteger()));
+        DbConnectionContextServiceImpl service = service(Set.of(10L));
+        CountDownLatch lockEntered = new CountDownLatch(1);
+        CountDownLatch releaseLock = new CountDownLatch(1);
+        FutureTask<Void> holder = new FutureTask<>(() -> ConnectionPool.withConsoleLock(consoleId, () -> {
+            lockEntered.countDown();
+            assertTrue(releaseLock.await(2, TimeUnit.SECONDS));
+            return null;
+        }));
+        new Thread(holder, "transaction-lock-holder").start();
+        assertTrue(lockEntered.await(2, TimeUnit.SECONDS));
+
+        FutureTask<Boolean> begin = new FutureTask<>(() ->
+                service.beginManualTransaction(request(consoleId, 10L)).isInTransaction());
+        new Thread(begin, "transaction-begin").start();
+
+        Thread.sleep(100L);
+        assertFalse(begin.isDone());
+        releaseLock.countDown();
+
+        holder.get(2, TimeUnit.SECONDS);
+        assertTrue(begin.get(2, TimeUnit.SECONDS));
+    }
+
     private static DbConnectionContextServiceImpl service(Set<Long> visibleDatasourceIds) {
         DbConnectionContextServiceImpl service = new DbConnectionContextServiceImpl();
         setField(service, "workspaceDataSourceService",
                 new VisibleWorkspaceDataSourceService(visibleDatasourceIds));
+        setField(service, "operationSavedService", Proxy.newProxyInstance(
+                DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
+                new Class<?>[]{IOpsOperationSavedService.class},
+                (proxy, method, args) -> null
+        ));
         return service;
     }
 

@@ -19,4 +19,7 @@ public interface ISqlExecutionStatementListener {
      */
     void onStatementClosed(Statement statement);
 
+    default void onImplicitCommitWarning(String sql) {
+    }
+
 }

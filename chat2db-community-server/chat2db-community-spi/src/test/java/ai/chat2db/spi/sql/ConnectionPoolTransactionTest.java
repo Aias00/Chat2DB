@@ -141,6 +141,19 @@ class ConnectionPoolTransactionTest {
         assertEquals(1, closes.get());
     }
 
+    @Test
+    void idleEvictionRechecksActivityAfterTakingTheConsoleLock() {
+        long consoleId = 9105L;
+        registerBound(consoleId, countingConnection(new AtomicInteger(), new AtomicInteger()));
+        ConnectionPool.BoundTransaction candidate = ConnectionPool.getBoundTransaction(consoleId);
+        candidate.touch(0L);
+
+        candidate.touch();
+
+        assertFalse(ConnectionPool.evictIdleCandidate(consoleId, candidate));
+        assertTrue(ConnectionPool.isInTransaction(consoleId));
+    }
+
     private static void registerBound(long consoleId, Connection connection) {
         ConnectInfo connectInfo = new ConnectInfo();
         connectInfo.setConsoleId(consoleId);

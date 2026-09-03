@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import type { TransactionState } from '@/store/workspace/slices/console/initialState';
-import { ensureManualTransactionStarted, type TransactionStateAccess } from './transactionExecution';
+import {
+  ensureManualTransactionStarted,
+  reconcileTransactionState,
+  waitForPendingTransactionBegins,
+  type TransactionStateAccess,
+} from './transactionExecution';
 import { TransactionIsolationLevel, TransactionMode } from '@/constants/transaction';
 
 function stateAccess(initial?: TransactionState) {
@@ -133,6 +138,67 @@ async function run() {
   );
   assert.equal(state.current()?.inTransaction, false);
   assert.equal(state.current()?.lastError, 'server refused manual mode');
+}
+
+{
+  const state = stateAccess({
+    mode: TransactionMode.MANUAL,
+    inTransaction: false,
+    isolationLevel: TransactionIsolationLevel.DEFAULT,
+    supportedIsolationLevels: [TransactionIsolationLevel.DEFAULT],
+  });
+  let resolveBegin!: (value: any) => void;
+  let beginCalls = 0;
+  const deferred = new Promise<any>((resolve) => {
+    resolveBegin = resolve;
+  });
+  const first = ensureManualTransactionStarted(params, state.access, async () => {
+    beginCalls += 1;
+    return deferred;
+  });
+  const second = ensureManualTransactionStarted(params, state.access, async () => {
+    beginCalls += 1;
+    return deferred;
+  });
+
+  assert.equal(state.current()?.opening, true, 'begin must be visible to close/exit guards immediately');
+  assert.equal(beginCalls, 0, 'the deferred begin starts after its promise is registered');
+  let waitFinished = false;
+  const wait = waitForPendingTransactionBegins([42]).then(() => {
+    waitFinished = true;
+  });
+  await Promise.resolve();
+  assert.equal(beginCalls, 1, 'concurrent executions share one begin request');
+  assert.equal(waitFinished, false, 'close/exit waits while begin is pending');
+
+  resolveBegin({
+    inTransaction: true,
+    mode: TransactionMode.MANUAL,
+    isolationLevel: TransactionIsolationLevel.DEFAULT,
+    supportedIsolationLevels: [TransactionIsolationLevel.DEFAULT],
+  });
+  await Promise.all([first, second, wait]);
+  assert.equal(state.current()?.opening, false);
+  assert.equal(state.current()?.inTransaction, true);
+}
+
+{
+  const patch = reconcileTransactionState(
+    {
+      mode: TransactionMode.MANUAL,
+      inTransaction: false,
+      isolationLevel: TransactionIsolationLevel.READ_COMMITTED,
+      supportedIsolationLevels: [TransactionIsolationLevel.DEFAULT, TransactionIsolationLevel.READ_COMMITTED],
+    },
+    {
+      mode: TransactionMode.AUTO,
+      inTransaction: false,
+      isolationLevel: TransactionIsolationLevel.DEFAULT,
+      supportedIsolationLevels: [TransactionIsolationLevel.DEFAULT, TransactionIsolationLevel.READ_COMMITTED],
+    },
+  );
+  assert.equal(patch.mode, TransactionMode.MANUAL, 'server state sync must preserve the user mode preference');
+  assert.equal(patch.isolationLevel, TransactionIsolationLevel.READ_COMMITTED);
 }
 
   console.log('Transaction execution tests passed');

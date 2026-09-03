@@ -10,6 +10,7 @@ import ai.chat2db.spi.DefaultSQLExecutor;
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionPlan;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -122,6 +123,22 @@ public class Chat2DBContext {
         }
         IPlugin plugin = PLUGIN_MAP.get(connectInfo.getDbType());
         return plugin == null ? null : plugin.getRoutineManager();
+    }
+
+    public static boolean supportsManualTransactions() {
+        return getPlugin(getConnectInfo().getDbType()).supportsManualTransactions();
+    }
+
+    public static boolean isImplicitCommitStatement(String sqlType, String sql) {
+        return getPlugin(getConnectInfo().getDbType()).isImplicitCommitStatement(sqlType, sql);
+    }
+
+    public static void beforeExecute(SqlExecutionPlan plan) {
+        ConnectInfo connectInfo = getConnectInfo();
+        if (connectInfo == null || StringUtils.isBlank(connectInfo.getDbType())) {
+            return;
+        }
+        getPlugin(connectInfo.getDbType()).beforeExecute(plan);
     }
 
     public static Connection getConnection() {

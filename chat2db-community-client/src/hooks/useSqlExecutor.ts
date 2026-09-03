@@ -117,9 +117,34 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
     if (params.dataSourceId == null) {
       return Promise.reject(new Error('dataSourceId is required'));
     }
-    // In manual transaction mode, ensure a server-side transaction is open before executing so
-    // this execution reuses the console's bound connection. begin is idempotent on the server.
-    await ensureManualTransaction(params);
+    const executionRequestTracker = executionRequestTrackerRef.current!;
+    const requestSequence = beginSqlExecutionRequest(executionRequestTracker);
+    if (requestSequence === undefined) {
+      return Promise.reject(new SqlExecutionBusyError());
+    }
+    const desktopExecution = isDesktop && Boolean(onExecutionEvent);
+    setExecuting(true);
+    try {
+      if (desktopExecution) {
+        onExecutionRequestStart?.(requestSequence);
+      }
+      // In manual transaction mode, ensure a server-side transaction is open before executing so
+      // this execution reuses the console's bound connection. begin is idempotent on the server.
+      await ensureManualTransaction(params);
+    } catch (error) {
+      let rejection = error;
+      if (finishSqlExecutionRequest(executionRequestTracker, requestSequence)) {
+        setExecuting(false);
+        if (desktopExecution) {
+          try {
+            onExecutionRequestStartError?.(error, requestSequence, params);
+          } catch (callbackError) {
+            rejection = callbackError;
+          }
+        }
+      }
+      return Promise.reject(rejection);
+    }
     const executeSqlParams: ISqlEditorExecuteRequest = {
       dataSourceId: params.dataSourceId,
       databaseName: params.databaseName,
@@ -134,14 +159,8 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
       errorContinue: params.errorContinue,
       explain: params.explain,
     };
-    const executionRequestTracker = executionRequestTrackerRef.current!;
-    const requestSequence = beginSqlExecutionRequest(executionRequestTracker);
-    if (requestSequence === undefined) {
-      return Promise.reject(new SqlExecutionBusyError());
-    }
     if (isDesktop && onExecutionEvent) {
       const requestUuid = uuidv4();
-      setExecuting(true);
       return new Promise((resolve, reject) => {
         const subscription: { unsubscribe?: () => void } = {};
         const control: DesktopExecutionControl = { requestSequence, resolve };
@@ -166,7 +185,6 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
           reject(rejection);
         };
         try {
-          onExecutionRequestStart?.(requestSequence);
           subscription.unsubscribe = onSqlExecutionEvent(requestUuid, (event) => {
             const terminalEvent =
               event.eventType === 'finished' ||
@@ -225,7 +243,6 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
           });
       });
     }
-    setExecuting(true);
     const request = Promise.resolve()
       .then(() =>
         executeSqlServer.executeSql(executeSqlParams, {

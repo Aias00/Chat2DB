@@ -43,11 +43,34 @@ async function run() {
   assert.equal(unknownOutcomes, 1);
   assert.deepEqual(patches, [
     {
-      inTransaction: true,
+      inTransaction: false,
       lastOutcome: TransactionOutcome.UNKNOWN,
       lastError: 'rollback outcome unknown',
     },
   ]);
+}
+
+{
+  const patches: Partial<TransactionState>[] = [];
+  const success = await releaseTransactionConsoles(
+    [{ consoleId: 44, dataSourceId: 8 }],
+    'commit',
+    {
+      store: {
+        setTransactionState: (_consoleId, patch) => patches.push(patch),
+      },
+      commitTransaction: async () => {
+        throw new Error('network lost');
+      },
+      releaseTransaction: async () => {
+        throw new Error('release must not be called for commit close');
+      },
+    },
+  );
+
+  assert.equal(success, false);
+  assert.equal(patches[0]?.inTransaction, false, 'the next execution must reconcile through idempotent begin');
+  assert.equal(patches[0]?.lastOutcome, TransactionOutcome.UNKNOWN);
 }
 
 {

@@ -63,6 +63,11 @@ import {
   TransactionMode,
   TransactionOutcome,
 } from '@/constants/transaction';
+import {
+  reconcileTransactionState,
+  waitForPendingTransactionBegins,
+} from '@/utils/transactionExecution';
+import { resolveResponseErrorMessage } from '@/service/interceptorsResponse';
 
 export interface SQLExecutionInvocation extends IConsoleReturnExecuteSql {
   executionTarget: DataSourceExecutionSnapshot;
@@ -119,6 +124,12 @@ const BASIC_EDITOR_ACTIONS = new Set<SQLOptType>([
   SQLOptType.COMMIT_TRANSACTION,
   SQLOptType.ROLLBACK_TRANSACTION,
 ]);
+
+const resolveSqlExecutionErrorMessage = (error: any) => {
+  const errorCode = error?.errorCode || error?.message?.errorCode;
+  const message = typeof error?.message === 'string' ? error.message : error?.message?.message;
+  return resolveResponseErrorMessage(errorCode, error?.errorMessage || message);
+};
 
 const READONLY_ALLOWED_ACTIONS = new Set<SQLOptType>([
   SQLOptType.EXECUTE_ROUTINE,
@@ -373,12 +384,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
             return;
           }
           useWorkspaceStore.getState().setTransactionState(consoleIdForTx, {
-            mode: result.mode,
-            inTransaction: result.inTransaction,
-            isolationLevel: result.isolationLevel ?? TransactionIsolationLevel.DEFAULT,
-            supportedIsolationLevels: result.supportedIsolationLevels ?? [],
-            lastOutcome: result.outcome,
-            lastError: result.lastError,
+            ...reconcileTransactionState(stateAtRequestStart, result),
           });
         })
         .catch(() => undefined);
@@ -510,6 +516,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       return;
     }
     const store = useWorkspaceStore.getState();
+    await waitForPendingTransactionBegins([consoleId]);
     const current = store.getTransactionState(consoleId);
     const nextMode =
       current?.mode === TransactionMode.MANUAL ? TransactionMode.AUTO : TransactionMode.MANUAL;
@@ -573,8 +580,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         // An unknown outcome means the server could not prove that the bound
         // transaction ended. Keep the console in manual mode until it is
         // explicitly resolved instead of hiding the recovery controls.
-        inTransaction:
-          result?.outcome === TransactionOutcome.UNKNOWN ? true : Boolean(result?.inTransaction),
+        inTransaction: Boolean(result?.inTransaction),
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
@@ -582,6 +588,11 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
       }
     } catch (error) {
+      useWorkspaceStore.getState().setTransactionState(consoleId, {
+        inTransaction: false,
+        lastOutcome: TransactionOutcome.UNKNOWN,
+        lastError: String(error),
+      });
       staticMessage.error(String(error));
     }
   };
@@ -594,8 +605,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     try {
       const result = await transactionServer.rollbackTransaction(transactionRequest(consoleId));
       useWorkspaceStore.getState().setTransactionState(consoleId, {
-        inTransaction:
-          result?.outcome === TransactionOutcome.UNKNOWN ? true : Boolean(result?.inTransaction),
+        inTransaction: Boolean(result?.inTransaction),
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
@@ -603,6 +613,11 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
       }
     } catch (error) {
+      useWorkspaceStore.getState().setTransactionState(consoleId, {
+        inTransaction: false,
+        lastOutcome: TransactionOutcome.UNKNOWN,
+        lastError: String(error),
+      });
       staticMessage.error(String(error));
     }
   };
@@ -635,7 +650,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         sql: previewSql,
       });
     } catch (error: any) {
-      setErrorMessage(error?.errorMessage || error?.message || '');
+      setErrorMessage(resolveSqlExecutionErrorMessage(error));
     }
   };
 
@@ -662,7 +677,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         loading: false,
       });
     } catch (error: any) {
-      setErrorMessage(error?.errorMessage || error?.message || '');
+      setErrorMessage(resolveSqlExecutionErrorMessage(error));
     }
   };
 
@@ -683,7 +698,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         setErrorMessage(null);
       })
       .catch((error) => {
-        setErrorMessage(error.errorMessage || '');
+        setErrorMessage(resolveSqlExecutionErrorMessage(error));
       });
   };
 
@@ -761,7 +776,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         staticMessage.success(i18n('workspace.routine.tips.refreshSuccess'));
       }
     } catch (error: any) {
-      setErrorMessage(error?.errorMessage || error?.message || '');
+      setErrorMessage(resolveSqlExecutionErrorMessage(error));
     }
   };
 
@@ -1047,7 +1062,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         setErrorMessage(null);
       })
       .catch((error) => {
-        setErrorMessage(error.errorMessage || '');
+        setErrorMessage(resolveSqlExecutionErrorMessage(error));
       });
   };
 
@@ -1074,7 +1089,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         setErrorMessage(null);
       })
       .catch((error) => {
-        setErrorMessage(error.errorMessage || '');
+        setErrorMessage(resolveSqlExecutionErrorMessage(error));
       });
   };
 
@@ -1108,7 +1123,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         setErrorMessage(null);
       })
       .catch((error) => {
-        setErrorMessage(error.errorMessage || '');
+        setErrorMessage(resolveSqlExecutionErrorMessage(error));
       });
   }, [props?.onExecuteSQL, dbInfo, dataSourceState]);
 
@@ -1368,7 +1383,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
           action={handleAction}
           transactionState={transactionState}
           showTransactionControls={showTransactionControls}
-          transactionActionsDisabled={sqlExecuting}
+          transactionActionsDisabled={sqlExecuting || transactionState?.opening}
         />
       )}
       <div ref={editorViewportRef} style={{ position: 'relative', flex: 1, height: '0px', width: '100%' }}>

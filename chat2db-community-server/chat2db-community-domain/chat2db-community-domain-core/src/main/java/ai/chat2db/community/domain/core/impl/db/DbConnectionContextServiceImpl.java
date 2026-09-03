@@ -130,6 +130,17 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse beginManualTransaction(DbConnectionContextRequest param) {
+        Long consoleId = requireConsoleId(param);
+        try {
+            return ConnectionPool.withConsoleLock(consoleId, () -> beginManualTransactionLocked(param));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("connection error", null, e);
+        }
+    }
+
+    private TransactionStateResponse beginManualTransactionLocked(DbConnectionContextRequest param) {
         try {
             DbConnectionContextRequest trustedParam = resolveTransactionBeginContext(param);
             bind(trustedParam);
@@ -140,6 +151,9 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             // If a transaction is already open for this console, this is idempotent.
             if (ConnectionPool.isInTransaction(trustedParam.getConsoleId())) {
                 return manualTransactionState(trustedParam.getConsoleId());
+            }
+            if (!Chat2DBContext.supportsManualTransactions()) {
+                throw new BusinessException("transaction.unsupported");
             }
             TransactionIsolationLevel isolationLevel = Objects.requireNonNullElse(
                     trustedParam.getTransactionIsolationLevel(),
@@ -193,11 +207,12 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse commitTransaction(DbConnectionContextRequest param) {
+        Long consoleId = requireConsoleId(param);
         try {
-            return ConnectionPool.withConsoleLock(param.getConsoleId(), () -> {
+            return ConnectionPool.withConsoleLock(consoleId, () -> {
                 validateTransactionRequest(param);
                 ConnectionPool.TransactionOutcome outcome =
-                        ConnectionPool.commit(param.getConsoleId());
+                        ConnectionPool.commit(consoleId);
                 TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
                 response.setOutcome(outcome.name());
                 return response;
@@ -211,11 +226,12 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse rollbackTransaction(DbConnectionContextRequest param) {
+        Long consoleId = requireConsoleId(param);
         try {
-            return ConnectionPool.withConsoleLock(param.getConsoleId(), () -> {
+            return ConnectionPool.withConsoleLock(consoleId, () -> {
                 validateTransactionRequest(param);
                 ConnectionPool.TransactionOutcome outcome =
-                        ConnectionPool.rollback(param.getConsoleId());
+                        ConnectionPool.rollback(consoleId);
                 TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
                 response.setOutcome(outcome.name());
                 return response;
@@ -229,10 +245,21 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse getTransactionState(DbConnectionContextRequest param) {
+        Long consoleId = requireConsoleId(param);
+        try {
+            return ConnectionPool.withConsoleLock(consoleId, () -> getTransactionStateLocked(param, consoleId));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("connection error", null, e);
+        }
+    }
+
+    private TransactionStateResponse getTransactionStateLocked(DbConnectionContextRequest param, Long consoleId) {
         validateTransactionRequest(param);
-        boolean inTransaction = ConnectionPool.isInTransaction(param.getConsoleId());
+        boolean inTransaction = ConnectionPool.isInTransaction(consoleId);
         if (inTransaction) {
-            return manualTransactionState(param.getConsoleId());
+            return manualTransactionState(consoleId);
         }
         try {
             DbConnectionContextRequest trustedParam = resolveTransactionBeginContext(param);
@@ -254,11 +281,12 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest param) {
+        Long consoleId = requireConsoleId(param);
         try {
             ConnectionPool.TransactionOutcome outcome =
-                    ConnectionPool.withConsoleLock(param.getConsoleId(), () -> {
+                    ConnectionPool.withConsoleLock(consoleId, () -> {
                         validateTransactionRequest(param);
-                        return ConnectionPool.release(param.getConsoleId(), true);
+                        return ConnectionPool.release(consoleId, true);
                     });
             TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
             response.setOutcome(outcome.name());
@@ -480,6 +508,13 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
         if (boundDataSourceId != null && !Objects.equals(boundDataSourceId, param.getDataSourceId())) {
             throw new BusinessException("transaction.datasource.mismatch");
         }
+    }
+
+    private static Long requireConsoleId(DbConnectionContextRequest param) {
+        if (param == null || param.getConsoleId() == null) {
+            throw new BusinessException("transaction.console.required");
+        }
+        return param.getConsoleId();
     }
 
     private ConnectInfo buildMcpConnectInfo(McpConnectionContextRequest param) {

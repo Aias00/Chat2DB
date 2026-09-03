@@ -12,6 +12,8 @@ export interface TransactionState {
   mode: TransactionMode;
   /** Whether an uncommitted transaction is currently open on the server. */
   inTransaction: boolean;
+  /** Whether the server-side begin request is still pending. */
+  opening?: boolean;
   /** Isolation level selected for the next or current manual transaction. */
   isolationLevel: TransactionIsolationLevel;
   /** Isolation levels reported by the current datasource's JDBC driver. */
@@ -25,6 +27,7 @@ export interface TransactionState {
 export const createInitialTransactionState = (): TransactionState => ({
   mode: TransactionMode.AUTO,
   inTransaction: false,
+  opening: false,
   isolationLevel: TransactionIsolationLevel.DEFAULT,
   supportedIsolationLevels: [],
 });

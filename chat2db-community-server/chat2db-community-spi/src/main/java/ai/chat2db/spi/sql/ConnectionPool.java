@@ -121,6 +121,10 @@ public class ConnectionPool {
             lastUsedMillis = System.currentTimeMillis();
         }
 
+        void touch(long timestamp) {
+            lastUsedMillis = timestamp;
+        }
+
         long lastUsedMillis() {
             return lastUsedMillis;
         }
@@ -508,27 +512,46 @@ public class ConnectionPool {
         return bound.getConnectInfo();
     }
 
+    static BoundTransaction getBoundTransaction(Long consoleId) {
+        return consoleId == null ? null : CONSOLE_TRANSACTIONS.get(consoleId);
+    }
+
     public static boolean isInTransaction(Long consoleId) {
+        if (consoleId == null) {
+            return false;
+        }
         BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
         return bound != null && bound.getState() == TransactionState.IN_TRANSACTION;
     }
 
     public static TransactionState getState(Long consoleId) {
+        if (consoleId == null) {
+            return null;
+        }
         BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
         return bound == null ? null : bound.getState();
     }
 
     public static Long getBoundDataSourceId(Long consoleId) {
+        if (consoleId == null) {
+            return null;
+        }
         BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
         return bound == null ? null : bound.getConnectInfo().getDataSourceId();
     }
 
     public static TransactionIsolationLevel getIsolationLevel(Long consoleId) {
+        if (consoleId == null) {
+            return TransactionIsolationLevel.DEFAULT;
+        }
         BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
         return bound == null ? TransactionIsolationLevel.DEFAULT : bound.getIsolationLevel();
     }
 
     public static List<TransactionIsolationLevel> getSupportedIsolationLevels(Long consoleId) {
+        if (consoleId == null) {
+            return List.of();
+        }
         BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
         return bound == null ? List.of() : bound.getSupportedIsolationLevels();
     }
@@ -543,6 +566,9 @@ public class ConnectionPool {
     }
 
     public static TransactionOutcome commit(Long consoleId) {
+        if (consoleId == null) {
+            return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+        }
         synchronized (lockFor(consoleId)) {
             BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
             if (bound == null) {
@@ -573,6 +599,9 @@ public class ConnectionPool {
     }
 
     public static TransactionOutcome rollback(Long consoleId) {
+        if (consoleId == null) {
+            return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+        }
         synchronized (lockFor(consoleId)) {
             BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
             if (bound == null) {
@@ -603,6 +632,9 @@ public class ConnectionPool {
     }
 
     public static TransactionOutcome release(Long consoleId, boolean rollbackIfInTransaction) {
+        if (consoleId == null) {
+            return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+        }
         synchronized (lockFor(consoleId)) {
             BoundTransaction bound = CONSOLE_TRANSACTIONS.remove(consoleId);
             if (bound == null) {
@@ -700,22 +732,39 @@ public class ConnectionPool {
 
     static void evictIdleConsoleTransactions() {
         long now = System.currentTimeMillis();
-        List<Long> toEvict = new ArrayList<>();
+        List<Map.Entry<Long, BoundTransaction>> toEvict = new ArrayList<>();
         for (Map.Entry<Long, BoundTransaction> entry : CONSOLE_TRANSACTIONS.entrySet()) {
             BoundTransaction bound = entry.getValue();
-            long idle = now - bound.lastUsedMillis();
-            if (bound.getState() == TransactionState.IN_TRANSACTION) {
-                if (idle > CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS) {
-                    toEvict.add(entry.getKey());
-                }
-            } else if (idle > CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS * 2) {
-                toEvict.add(entry.getKey());
+            if (isIdleForEviction(bound, now)) {
+                toEvict.add(Map.entry(entry.getKey(), bound));
             }
         }
-        for (Long consoleId : toEvict) {
+        for (Map.Entry<Long, BoundTransaction> candidate : toEvict) {
+            evictIdleCandidate(candidate.getKey(), candidate.getValue());
+        }
+    }
+
+    static boolean evictIdleCandidate(Long consoleId, BoundTransaction expected) {
+        if (consoleId == null || expected == null) {
+            return false;
+        }
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction current = CONSOLE_TRANSACTIONS.get(consoleId);
+            if (current != expected || !isIdleForEviction(current, System.currentTimeMillis())) {
+                return false;
+            }
             log.warn("Evicting idle console transaction for consoleId={}", consoleId);
             release(consoleId, true);
+            return true;
         }
+    }
+
+    private static boolean isIdleForEviction(BoundTransaction bound, long now) {
+        long idle = now - bound.lastUsedMillis();
+        long timeout = bound.getState() == TransactionState.IN_TRANSACTION
+                ? CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS
+                : CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS * 2;
+        return idle > timeout;
     }
 
     private static Object lockFor(Long consoleId) {

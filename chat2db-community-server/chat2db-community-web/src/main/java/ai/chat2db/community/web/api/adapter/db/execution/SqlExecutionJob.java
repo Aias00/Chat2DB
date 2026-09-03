@@ -10,6 +10,7 @@ import ai.chat2db.community.domain.api.service.db.IDbExecuteResultEnhanceService
 import ai.chat2db.community.tools.http.LocalCookie;
 import ai.chat2db.community.tools.model.Context;
 import ai.chat2db.community.tools.util.ContextUtils;
+import ai.chat2db.community.tools.util.I18nUtils;
 import ai.chat2db.community.web.api.config.console.ConsoleHelper;
 import ai.chat2db.community.domain.api.model.operation.SqlOperationLogRecord;
 import ai.chat2db.community.domain.api.service.ops.IOpsSqlOperationLogService;
@@ -228,6 +229,17 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
         if (currentStatement == statement) {
             pollMessages();
             currentStatement = null;
+        }
+    }
+
+    @Override
+    public void onImplicitCommitWarning(String sql) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("level", "WARN");
+        message.put("message", I18nUtils.getMessage("transaction.implicitCommit.warning"));
+        message.put("source", "transaction");
+        synchronized (eventContext) {
+            sink.send("message", message, eventContext.currentIdentity());
         }
     }
 

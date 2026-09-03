@@ -6,6 +6,7 @@ import transactionServer from '@/service/transaction';
 import { useWorkspaceStore } from '@/store/workspace';
 import type { IWorkspaceTab } from '@/typings';
 import { releaseTransactionConsoles, type CloseAction, type TxConsole } from './transactionSessionCore';
+import { waitForPendingTransactionBegins } from './transactionExecution';
 
 const transactionDialogFooterStyle = {
   display: 'flex',
@@ -23,6 +24,11 @@ const transactionDialogFooterStyle = {
  * connection is released on the server and the console's transaction state is cleared.
  */
 export async function confirmAndReleaseTransaction(tabs: IWorkspaceTab[]): Promise<boolean> {
+  await waitForPendingTransactionBegins(
+    tabs
+      .map((tab) => tab.uniqueData?.consoleId)
+      .filter((consoleId): consoleId is number => typeof consoleId === 'number'),
+  );
   const store = useWorkspaceStore.getState();
   const txConsoles: TxConsole[] = [];
   for (const tab of tabs) {

@@ -7,6 +7,7 @@
 # Usage:
 #   ./script/test/start-test-databases.sh          # start everything
 #   ./script/test/start-test-databases.sh firebird # start one database
+#   ./script/test/start-test-databases.sh mysql57 mysql80
 #   ./script/test/stop-test-databases.sh           # tear everything down
 #
 # The integration tests guard themselves with socket probes and skip cleanly
@@ -74,6 +75,19 @@ want "greenplum" "${targets[@]}" && start c2d-test-greenplum \
 want "trino" "${targets[@]}" && start c2d-test-trino \
   --publish 127.0.0.1:8085:8080 \
   trinodb/trino:475
+
+want "mysql57" "${targets[@]}" && start c2d-test-mysql57 \
+  --platform linux/amd64 \
+  --publish 127.0.0.1:3357:3306 \
+  --env MYSQL_ROOT_PASSWORD=chat2db \
+  --env MYSQL_DATABASE=c2d_tx_test \
+  mysql:5.7
+
+want "mysql80" "${targets[@]}" && start c2d-test-mysql80 \
+  --publish 127.0.0.1:3380:3306 \
+  --env MYSQL_ROOT_PASSWORD=chat2db \
+  --env MYSQL_DATABASE=c2d_tx_test \
+  mysql:8.0
 
 echo "Run the suite with tests enabled, e.g.:"
 echo "  mvn -f chat2db-community-server/pom.xml -pl :chat2db-community-generic -am \\"

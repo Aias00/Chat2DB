@@ -282,7 +282,10 @@ export default {
   'workspace.transaction.switchModeContent': '自動モードに切り替えると、現在の未コミットのトランザクションがロールバックされます。続行しますか?',
   'workspace.transaction.switchConnectionTitle': '未コミットのトランザクション',
   'workspace.transaction.switchConnectionContent': '接続を切り替えると、現在の未コミットのトランザクションがロールバックされます。続行しますか?',
-  'workspace.transaction.releaseFailed': 'コミット/ロールバックに失敗しました。トランザクションは開いたままです。コンソールは閉じられませんでした。',
+  'workspace.transaction.releaseFailed':
+    'トランザクションの結果を確認できませんでした。安全に復旧できるよう、コンソールは開いたままになります。',
+  'workspace.transaction.implicitCommitBlocked':
+    '暗黙的にコミットする MySQL ステートメントを実行する前に、現在のトランザクションをコミットまたはロールバックしてください。',
   'workspace.localSqlFileTree.revealFailed': 'ファイルを表示できませんでした',
   'workspace.databaseAccount.title': 'ユーザー',
   'workspace.databaseAccount.open': 'ユーザーを開く',

@@ -17,6 +17,7 @@ import type { TransactionState } from '@/store/workspace/slices/console/initialS
 import { Button, Dropdown, Tooltip, type MenuProps } from 'antd';
 import { Check, ChevronDown, Undo2 } from 'lucide-react';
 import { TransactionIsolationLevel, TransactionMode, TransactionOutcome } from '@/constants/transaction';
+import { waitForPendingTransactionBegins } from '@/utils/transactionExecution';
 import {
   getTransactionModeLabelKey,
   isTransactionIsolationLevel,
@@ -118,9 +119,16 @@ const OperationLine = ({
   }, [type]);
 
   const handleChangeDBInfo = async (_dbInfo: IDBInfo) => {
+    if (typeof dbInfo.consoleId === 'number') {
+      await waitForPendingTransactionBegins([dbInfo.consoleId]);
+    }
+    const currentTransactionState =
+      typeof dbInfo.consoleId === 'number'
+        ? useWorkspaceStore.getState().getTransactionState(dbInfo.consoleId)
+        : transactionState;
     // Switching the connection changes the catalog; an open transaction cannot survive it, so
     // confirm and roll back first when a transaction is in progress.
-    if (transactionState?.inTransaction && typeof dbInfo.consoleId === 'number') {
+    if (currentTransactionState?.inTransaction && typeof dbInfo.consoleId === 'number') {
       const confirmed = await new Promise<boolean>((resolve) => {
         staticModal.confirm({
           title: i18n('workspace.transaction.switchConnectionTitle'),

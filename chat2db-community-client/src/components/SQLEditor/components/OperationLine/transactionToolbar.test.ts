@@ -60,10 +60,10 @@ assert.equal(
 );
 assert.equal(
   editorSource.match(
-    /result\?\.outcome\s*=== TransactionOutcome\.UNKNOWN \? true : Boolean\(result\?\.inTransaction\)/g,
+    /inTransaction: Boolean\(result\?\.inTransaction\)/g,
   )?.length,
   2,
-  'commit and rollback must preserve an open transaction when the outcome is unknown',
+  'commit and rollback must follow the server session state even when the outcome is unknown',
 );
 assert.match(
   operationLineSource,
