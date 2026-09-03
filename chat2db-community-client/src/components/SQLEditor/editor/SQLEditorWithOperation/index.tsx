@@ -988,7 +988,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         content: i18n('common.explain.analyzeWarning'),
         okText: i18n('common.button.execute'),
         cancelText: i18n('common.button.cancel'),
-        onOk: runExplain,
+        onOk: () => {
+          void runExplain();
+        },
       });
       return;
     }
