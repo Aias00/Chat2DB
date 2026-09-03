@@ -4,10 +4,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Data and metadata lock inspection with blocking chains (MYSQL-OPS-003). Read-only;
- * uses {@code performance_schema.data_locks/data_lock_waits} on MySQL 8.0 and
- * {@code information_schema.innodb_locks/innodb_lock_waits} on 5.7. The feature never
- * terminates sessions; manual termination is delegated to the session flow (MYSQL-OPS-001).
+ * Read-only data and metadata lock inspection with blocking chains. Dialect-specific
+ * query and parsing behavior is provided by the current database plugin.
  */
 public interface IDbLockService {
 

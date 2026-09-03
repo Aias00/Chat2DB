@@ -6,7 +6,6 @@ import { v4 as uuid } from 'uuid';
 
 import {
   ConsoleOpenedStatus,
-  DatabaseTypeCode,
   DatabaseCapability,
   OperationColumn,
   TreeNodeType,
@@ -433,7 +432,8 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.LockWaits]: {
         text: i18n('workspace.ops.lockWaits'),
         icon: 'icon-lock',
-        discard: databaseType !== DatabaseTypeCode.MYSQL || !hasPermission,
+        discard:
+          !hasPermission || !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.LOCK_INSPECTION),
         requiredOperations: ['SELECT'],
         handle: () => {
           const modal = staticModal.confirm({
