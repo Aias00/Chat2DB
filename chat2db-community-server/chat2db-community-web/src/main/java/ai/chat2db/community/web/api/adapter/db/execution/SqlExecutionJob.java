@@ -75,23 +75,32 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
 
     @Override
     public void run() {
-        Long consoleId = request.getConnectionContext() == null ? null : request.getConnectionContext().getConsoleId();
-        if (consoleId != null && connectionContextService.isInTransaction(consoleId)) {
-            try {
-                connectionContextService.withConsoleTransactionLock(consoleId, () -> {
-                    runInternal();
-                    return null;
-                });
-            } catch (Exception e) {
-                throw e instanceof RuntimeException runtimeException ? runtimeException : new RuntimeException(e);
-            }
+        workerThread = Thread.currentThread();
+        Long consoleId = consoleId();
+        if (consoleId == null) {
+            runIfNotCanceled();
+            return;
+        }
+        try {
+            connectionContextService.withConsoleTransactionLock(consoleId, () -> {
+                runIfNotCanceled();
+                return null;
+            });
+        } catch (Exception e) {
+            throw e instanceof RuntimeException runtimeException ? runtimeException : new RuntimeException(e);
+        }
+    }
+
+    private void runIfNotCanceled() {
+        if (canceled.get()) {
+            sendCancelled();
+            finishCallback.accept(this);
             return;
         }
         runInternal();
     }
 
     private void runInternal() {
-        workerThread = Thread.currentThread();
         ConsoleHelper.setHeaders(request.getConsoleMessage());
         restoreLocalHeaders();
         SqlExecutionLogConsumer logConsumer = null;
@@ -150,10 +159,18 @@ public class SqlExecutionJob implements Runnable, ISqlExecutionStatementListener
         if (message != null) {
             payload.put("message", message);
         }
-        Long consoleId = request.getSqlEditorRequest() == null ? null : request.getSqlEditorRequest().getConsoleId();
+        Long consoleId = consoleId();
         payload.put("inTransaction", consoleId != null
                 && connectionContextService.isInTransaction(consoleId));
         return payload;
+    }
+
+    private Long consoleId() {
+        DbConnectionContextRequest connectionContext = request.getConnectionContext();
+        if (connectionContext != null && connectionContext.getConsoleId() != null) {
+            return connectionContext.getConsoleId();
+        }
+        return request.getSqlEditorRequest() == null ? null : request.getSqlEditorRequest().getConsoleId();
     }
 
     public void cancel() {
