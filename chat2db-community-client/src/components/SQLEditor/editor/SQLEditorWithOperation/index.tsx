@@ -20,10 +20,11 @@ import { ChatSourceType, QuestionType } from '@/constants/chat';
 import { useWorkspaceStore } from '@/store/workspace';
 import { useAIStore } from '@/store/ai';
 import sqlService, { type IRoutineMigrationParams } from '@/service/sql';
-import { isRoutineOperationSupportedDatabaseType, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
+import { DatabaseCapability, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
 import { EditorTableIdentifier } from '../../helper/tableIdentifier';
 import { useTreeStore } from '@/store/tree';
 import { isTemporaryId } from '@/utils';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import { readClipboard } from '@/utils/clipboard';
 import executeSql from '@/service/executeSql';
 import { parseClipboardTextToSqlInTokens } from '@/utils/sqlInClipboard';
@@ -139,9 +140,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
   } = props;
   const isReadOnly = !!dbInfo.readOnly;
   const isSupportedRoutineEditor =
-    isRoutineOperationSupportedDatabaseType(dbInfo.databaseType) &&
+    isDatabaseCapabilitySupported(dbInfo.databaseType, DatabaseCapability.ROUTINE_OPERATION) &&
     [WorkspaceTabType.FUNCTION, WorkspaceTabType.PROCEDURE].includes(type as WorkspaceTabType);
-  const { styles } = useStyles();
+  const { styles, theme } = useStyles();
   const [modal, modalContextHolder] = Modal.useModal();
   const [contextMenuInfo, setContextMenuInfo] = useState<IContextMenuInfo>(contextMenuDefaultConfig);
   const [contextTableIdentifier, setContextTableIdentifier] = useState<EditorTableIdentifier | null>(null);
@@ -1163,7 +1164,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     isConsole && type === WorkspaceTabType.CONSOLE && dbInfo.dataSourceId
       ? getDataSourceWatermarkContent(dbInfo, dataSourceState)
       : undefined;
-  const watermarkColor = identityColor ? withIdentityColorAlpha(identityColor, 0.4) : undefined;
+  const watermarkColor = withIdentityColorAlpha(identityColor || theme.colorPrimary, 0.4);
   const watermarkLayout = getDataSourceWatermarkLayout(editorViewportSize?.width, editorViewportSize?.height);
 
   return (

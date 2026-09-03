@@ -6,6 +6,7 @@ import ai.chat2db.community.domain.api.enums.plugin.EditStatusEnum;
 import ai.chat2db.community.domain.api.model.metadata.IndexType;
 import ai.chat2db.community.domain.api.model.metadata.TableIndex;
 import ai.chat2db.community.domain.api.model.metadata.TableIndexColumn;
+import ai.chat2db.spi.constant.SQLConstants;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Arrays;
@@ -14,6 +15,9 @@ import java.util.Locale;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_COMMENT_SPACE_SINGLE_QUOTE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_PRIMARY_KEY;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_INVISIBLE;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ALTER_INDEX;
+import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_VISIBLE;
 
 public enum MysqlIndexTypeEnum {
 
@@ -88,6 +92,11 @@ public enum MysqlIndexTypeEnum {
             script.append(" ").append(indexComment);
         }
 
+        if (tableIndex.getVisible() != null && !tableIndex.getVisible()
+                && !PRIMARY_KEY.equals(this)) {
+            script.append(SQLConstants.SPACE).append(SQL_INVISIBLE);
+        }
+
         return script.toString();
     }
 
@@ -117,6 +126,9 @@ public enum MysqlIndexTypeEnum {
         for (TableIndexColumn column : tableIndex.getColumnList()) {
             if(StringUtils.isNotBlank(column.getColumnName())) {
                 script.append(MysqlIdentifierProcessor.INSTANCE.quoteIdentifierAlways(column.getColumnName()));
+                if (column.getSubPart() != null && column.getSubPart() > 0) {
+                    script.append("(").append(column.getSubPart()).append(")");
+                }
                 if (!StringUtils.isBlank(column.getAscOrDesc()) && !PRIMARY_KEY.equals(this)) {
                     script.append(" ").append(MysqlSqlGuards.requireAscOrDesc(column.getAscOrDesc()));
                 }
@@ -147,6 +159,13 @@ public enum MysqlIndexTypeEnum {
             return StringUtils.join("ADD ", buildIndexScript(tableIndex));
         }
         return "";
+    }
+
+    public String buildAlterIndexVisibility(TableIndex tableIndex) {
+        String visibility = Boolean.FALSE.equals(tableIndex.getVisible()) ? SQL_INVISIBLE : SQL_VISIBLE;
+        return StringUtils.join(SQL_ALTER_INDEX,
+                MysqlIdentifierProcessor.INSTANCE.quoteIdentifierAlways(tableIndex.getName()),
+                SQLConstants.SPACE, visibility);
     }
 
     private String buildDropIndex(TableIndex tableIndex) {
