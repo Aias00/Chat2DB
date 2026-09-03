@@ -62,4 +62,14 @@ assert.deepEqual(splitGroups(dropMenuConfig.DEFAULT[TreeNodeType.SAVE_CONSOLE]),
   [OperationColumn.RemoveConsole],
 ]);
 
+assert.equal(
+  dropMenuConfig[DatabaseTypeCode.ORACLE][TreeNodeType.DATA_SOURCE].includes(OperationColumn.ActiveTransactions),
+  false,
+);
+assert.equal(
+  dropMenuConfig.DEFAULT[TreeNodeType.DATA_SOURCE].includes(OperationColumn.ActiveTransactions),
+  false,
+);
+assert.deepEqual(dropMenuConfig.DEFAULT[TreeNodeType.ACTIVE_TRANSACTIONS], [OperationColumn.ActiveTransactions]);
+
 console.log('Tree menu grouping tests passed');
