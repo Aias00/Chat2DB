@@ -3,12 +3,14 @@ package ai.chat2db.plugin.mysql.account;
 import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
 import ai.chat2db.community.domain.api.enums.plugin.PrivilegeScopeEnum;
 import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
+import ai.chat2db.community.tools.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MysqlAccountSqlBuilderTest {
 
@@ -111,6 +113,36 @@ class MysqlAccountSqlBuilderTest {
         assertEquals(
                 "REVOKE SELECT (`customer_id`), REFERENCES (`customer_id`) "
                         + "ON `app`.`orders` FROM 'alice''s'@'10.0.%'",
+                MysqlAccountSqlBuilder.buildSql(command)
+        );
+    }
+
+    @Test
+    void rejectsColumnScopeWhenEveryColumnIsBlank() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.GRANT_PRIVILEGE);
+        command.setScope(PrivilegeScopeEnum.COLUMN.name());
+        command.setDatabaseName("app");
+        command.setTableName("orders");
+        command.setPrivileges(List.of("SELECT"));
+        command.setColumnList(List.of("", " "));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> MysqlAccountSqlBuilder.buildSql(command));
+
+        assertEquals("mysql.account.columnsRequired", exception.getCode());
+    }
+
+    @Test
+    void ignoresDuplicateColumnNamesInGeneratedGrant() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.GRANT_PRIVILEGE);
+        command.setScope(PrivilegeScopeEnum.COLUMN.name());
+        command.setDatabaseName("app");
+        command.setTableName("orders");
+        command.setPrivileges(List.of("SELECT"));
+        command.setColumnList(List.of("status", "status"));
+
+        assertEquals(
+                "GRANT SELECT (`status`) ON `app`.`orders` TO 'alice''s'@'10.0.%'",
                 MysqlAccountSqlBuilder.buildSql(command)
         );
     }

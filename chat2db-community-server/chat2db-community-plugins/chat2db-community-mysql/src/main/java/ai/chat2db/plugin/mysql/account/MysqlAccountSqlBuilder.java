@@ -14,7 +14,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.ALL_DATABASE_ALL_TABLE_SCOPE;
@@ -165,12 +164,12 @@ class MysqlAccountSqlBuilder {
         if (!PrivilegeScopeEnum.COLUMN.name().equalsIgnoreCase(command.getScope())) {
             return;
         }
-        if (command.getColumnList() == null || command.getColumnList().isEmpty()) {
+        if (command.getColumnList() == null
+                || command.getColumnList().stream().noneMatch(StringUtils::isNotBlank)) {
             throw new BusinessException(ERROR_KEY_ACCOUNT_COLUMNS_REQUIRED);
         }
-        Set<String> allowed = Set.of("SELECT", "INSERT", "UPDATE", "REFERENCES");
         for (String privilege : command.getPrivileges()) {
-            if (!allowed.contains(StringUtils.upperCase(privilege))) {
+            if (!COLUMN_SCOPE_PRIVILEGES.contains(StringUtils.upperCase(privilege))) {
                 throw new BusinessException(ERROR_KEY_ACCOUNT_COLUMN_PRIVILEGE_UNSUPPORTED);
             }
         }
@@ -180,10 +179,11 @@ class MysqlAccountSqlBuilder {
         if (!PrivilegeScopeEnum.COLUMN.name().equalsIgnoreCase(command.getScope())) {
             return SQLConstants.EMPTY;
         }
-        return " (" + command.getColumnList().stream()
+        return COLUMN_LIST_PREFIX + command.getColumnList().stream()
                 .filter(StringUtils::isNotBlank)
+                .distinct()
                 .map(MysqlAccountSqlBuilder::identifier)
-                .collect(Collectors.joining(SQLConstants.COMMA_SPACE)) + ")";
+                .collect(Collectors.joining(SQLConstants.COMMA_SPACE)) + COLUMN_LIST_SUFFIX;
     }
 
     private static String privilegeClause(AccountOperationRequest command) {
