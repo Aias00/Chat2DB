@@ -1,141 +1,150 @@
 package ai.chat2db.community.domain.core.impl.db;
 
-import ai.chat2db.community.domain.api.service.db.IDbVariableService;
+import ai.chat2db.community.domain.api.config.DBConfig;
+import ai.chat2db.community.domain.api.service.db.IDbVariableService.EditMeta;
 import ai.chat2db.community.tools.exception.BusinessException;
+import ai.chat2db.spi.IPlugin;
+import ai.chat2db.spi.IVariableManager;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.sql.Chat2DBContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DbVariableServiceImplTest {
 
-    private final DbVariableServiceImpl service = new DbVariableServiceImpl();
+    private static final String DB_TYPE = "VARIABLE_TEST";
+    private static final String DB_VERSION = "8.0.36";
 
-    @Test
-    void sessionOnlyVariableNeverAdvertisesOrAcceptsPersistScopes() {
-        var metadata = service.editable("autocommit");
-
-        assertEquals(List.of("SESSION"), metadata.dynamicScopes());
-        assertEquals(List.of(), metadata.persistScopes());
-        assertThrows(BusinessException.class,
-                () -> service.previewSetVariableSql("autocommit", "1", "PERSIST"));
+    @AfterEach
+    void tearDown() {
+        Chat2DBContext.removeContext();
+        Chat2DBContext.PLUGIN_MAP.remove(DB_TYPE);
     }
 
     @Test
-    void persistScopesRequireMysqlEightAndVariableCapability() {
-        assertFalse(DbVariableServiceImpl.mysqlSupportsPersistVersion("5.7.44"));
-        assertTrue(DbVariableServiceImpl.mysqlSupportsPersistVersion("8.0.36"));
-        assertFalse(DbVariableServiceImpl.mysqlSupportsPersist("POSTGRESQL", "16.0"));
-        assertTrue(DbVariableServiceImpl.mysqlSupportsPersist("MYSQL", "8.0.36"));
-        assertEquals(List.of(), DbVariableServiceImpl.persistScopes(EditableVariable.SQL_MODE, false));
-        assertThrows(BusinessException.class,
-                () -> service.previewSetVariableSql("sql_mode", "STRICT_TRANS_TABLES", "PERSIST"));
+    void delegatesOperationsToCurrentDatabasePlugin() {
+        RecordingVariableManager manager = new RecordingVariableManager();
+        bindContext(manager);
+        DbVariableServiceImpl service = new DbVariableServiceImpl();
 
-        assertEquals(List.of("PERSIST", "PERSIST_ONLY"),
-                DbVariableServiceImpl.persistScopes(EditableVariable.SQL_MODE, true));
+        assertEquals(List.of(Map.of("name", "autocommit", "value", "ON")),
+                service.variables("SESSION", "VARIABLES"));
+        assertEquals(new EditMeta("autocommit", "ONOFF", List.of("SESSION"), List.of(),
+                false, null, null, null, null), service.editable("autocommit"));
+        assertEquals("SET SESSION autocommit = OFF",
+                service.previewSetVariableSql("autocommit", "OFF", "SESSION"));
+
+        assertNotNull(manager.connection);
+        assertEquals(DB_VERSION, manager.dbVersion);
+        assertEquals("SESSION", manager.scope);
+        assertEquals("VARIABLES", manager.kind);
+        assertEquals("autocommit", manager.variableName);
+        assertEquals("OFF", manager.value);
     }
 
     @Test
-    void mysqlEightVariablesIncludePerformanceSchemaSourceAndPath() {
-        TestableDbVariableService mysqlEight = new TestableDbVariableService("MYSQL", "8.0.36",
-                List.of(row("sql_mode", "STRICT_TRANS_TABLES")),
-                Map.of("sql_mode", new DbVariableServiceImpl.VariableInfo(
-                        "sql_mode", "EXPLICIT", "/etc/my.cnf", null, null, null, null, null)));
+    void rejectsPluginWithoutVariableCapability() {
+        bindContext(null);
 
-        List<Map<String, Object>> variables = mysqlEight.variables("GLOBAL", "VARIABLES");
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> new DbVariableServiceImpl().variables("GLOBAL", "STATUS"));
 
-        assertEquals("sql_mode", variables.get(0).get("name"));
-        assertEquals("STRICT_TRANS_TABLES", variables.get(0).get("value"));
-        assertEquals("EXPLICIT", variables.get(0).get("source"));
-        assertEquals("/etc/my.cnf", variables.get(0).get("path"));
+        assertEquals("mysql.variables.unsupported", exception.getCode());
     }
 
-    @Test
-    void mysqlFiveSevenVariablesDegradeWithoutInventingMetadata() {
-        TestableDbVariableService mysqlFiveSeven = new TestableDbVariableService("MYSQL", "5.7.44",
-                List.of(row("sql_mode", "STRICT_TRANS_TABLES")),
-                Map.of("sql_mode", new DbVariableServiceImpl.VariableInfo(
-                        "sql_mode", "EXPLICIT", "/ignored", null, null, null, null, null)));
+    private static void bindContext(IVariableManager manager) {
+        Chat2DBContext.PLUGIN_MAP.put(DB_TYPE, new IPlugin() {
+            @Override
+            public DBConfig getDBConfig() {
+                DBConfig config = new DBConfig();
+                config.setDbType(DB_TYPE);
+                return config;
+            }
 
-        List<Map<String, Object>> variables = mysqlFiveSeven.variables("GLOBAL", "VARIABLES");
-        IDbVariableService.EditMeta metadata = mysqlFiveSeven.editable("sql_mode");
-
-        assertFalse(variables.get(0).containsKey("source"));
-        assertFalse(variables.get(0).containsKey("path"));
-        assertNull(metadata.source());
-        assertNull(metadata.path());
-        assertEquals(List.of(), metadata.persistScopes());
+            @Override
+            public IVariableManager getVariableManager() {
+                return manager;
+            }
+        });
+        Connection connection = (Connection) Proxy.newProxyInstance(
+                DbVariableServiceImplTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    if ("isClosed".equals(method.getName())) {
+                        return false;
+                    }
+                    if ("getMetaData".equals(method.getName())) {
+                        return Proxy.newProxyInstance(
+                                DbVariableServiceImplTest.class.getClassLoader(),
+                                new Class<?>[]{DatabaseMetaData.class},
+                                (metadata, metadataMethod, metadataArgs) ->
+                                        "getDatabaseProductVersion".equals(metadataMethod.getName())
+                                                ? DB_VERSION : null);
+                    }
+                    if (method.getReturnType() == boolean.class) {
+                        return false;
+                    }
+                    return null;
+                });
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setDataSourceId(43L);
+        connectInfo.setDbType(DB_TYPE);
+        connectInfo.setConnection(connection);
+        Chat2DBContext.putContext(connectInfo);
     }
 
-    @Test
-    void mysqlEightDoesNotAllowWritesWhenMetadataDoesNotExposeVariable() {
-        TestableDbVariableService mysqlEight = new TestableDbVariableService("MYSQL", "8.0.36",
-                List.of(row("unknown_to_metadata", "1")),
-                Map.of());
+    private static final class RecordingVariableManager implements IVariableManager {
 
-        assertNull(mysqlEight.editable("sql_mode"));
-        assertThrows(BusinessException.class,
-                () -> mysqlEight.previewSetVariableSql("sql_mode", "STRICT_TRANS_TABLES", "GLOBAL"));
-    }
+        private Connection connection;
+        private String dbVersion;
+        private String scope;
+        private String kind;
+        private String variableName;
+        private String value;
 
-    @Test
-    void officialVariableInfoMetadataDoesNotInventScopeCapabilities() {
-        TestableDbVariableService mysqlEight = new TestableDbVariableService("MYSQL", "8.0.36",
-                List.of(row("sql_mode", "STRICT_TRANS_TABLES")),
-                Map.of("sql_mode", new DbVariableServiceImpl.VariableInfo(
-                        "sql_mode", "DYNAMIC", null, null, null, null, null, null)));
-
-        IDbVariableService.EditMeta metadata = mysqlEight.editable("sql_mode");
-
-        assertEquals(List.of("SESSION", "GLOBAL"), metadata.dynamicScopes());
-        assertEquals(List.of("PERSIST", "PERSIST_ONLY"), metadata.persistScopes());
-        assertEquals("SET GLOBAL sql_mode = 'STRICT_TRANS_TABLES'",
-                mysqlEight.previewSetVariableSql("sql_mode", "STRICT_TRANS_TABLES", "GLOBAL"));
-    }
-
-    private static Map<String, Object> row(String name, String value) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("name", name);
-        row.put("value", value);
-        return row;
-    }
-
-    private static final class TestableDbVariableService extends DbVariableServiceImpl {
-
-        private final ConnectInfo connectInfo;
-        private final List<Map<String, Object>> rows;
-        private final Map<String, VariableInfo> variableInfo;
-
-        private TestableDbVariableService(String dbType, String version, List<Map<String, Object>> rows,
-                                          Map<String, VariableInfo> variableInfo) {
-            this.connectInfo = new ConnectInfo();
-            this.connectInfo.setDbType(dbType);
-            this.connectInfo.setDbVersion(version);
-            this.rows = rows;
-            this.variableInfo = variableInfo;
+        @Override
+        public List<Map<String, Object>> variables(Connection connection, String dbVersion, String scope, String kind) {
+            recordContext(connection, dbVersion);
+            this.scope = scope;
+            this.kind = kind;
+            return List.of(Map.of("name", "autocommit", "value", "ON"));
         }
 
         @Override
-        protected List<Map<String, Object>> queryNameValueRows(String sql) {
-            return rows;
+        public EditMeta editable(Connection connection, String dbVersion, String variableName) {
+            recordContext(connection, dbVersion);
+            this.variableName = variableName;
+            return new EditMeta(variableName, "ONOFF", List.of("SESSION"), List.of(),
+                    false, null, null, null, null);
         }
 
         @Override
-        protected Map<String, VariableInfo> queryVariableInfo() {
-            return variableInfo;
+        public String previewSetVariableSql(Connection connection, String dbVersion, String variableName, String value,
+                                            String scope) {
+            recordContext(connection, dbVersion);
+            this.variableName = variableName;
+            this.value = value;
+            assertEquals("SESSION", scope);
+            return "SET SESSION autocommit = OFF";
         }
 
-        @Override
-        protected ConnectInfo currentConnectInfo() {
-            return connectInfo;
+        private void recordContext(Connection connection, String dbVersion) {
+            if (this.connection != null) {
+                assertSame(this.connection, connection);
+            }
+            this.connection = connection;
+            this.dbVersion = dbVersion;
         }
     }
 }

@@ -1,15 +1,9 @@
-package ai.chat2db.community.domain.core.impl.db;
+package ai.chat2db.plugin.mysql.variable;
 
 /**
- * Registry of MySQL variables that may be edited through the Variables view
- * (MYSQL-OPS-004). Anything not registered here stays read-only; values are validated
- * against the declared type before a SET statement is generated.
- *
- * <p>Only well-known, documented variables with stable semantics across MySQL 5.7 and
- * 8.0 are listed. Risk level controls the confirmation UX: {@link Risk#HIGH} variables
- * require typing the variable name before the change is previewed.
+ * Allowlist of MySQL variables that may be edited through the variables view.
  */
-public enum EditableVariable {
+enum MysqlEditableVariable {
 
     SQL_MODE("sql_mode", Type.STRING, Scope.BOTH, PersistCapability.MYSQL_80, Risk.NORMAL),
     TIME_ZONE("time_zone", Type.STRING, Scope.BOTH, PersistCapability.MYSQL_80, Risk.NORMAL),
@@ -56,7 +50,7 @@ public enum EditableVariable {
     private final PersistCapability persistCapability;
     private final Risk risk;
 
-    EditableVariable(String name, Type type, Scope scope, PersistCapability persistCapability, Risk risk) {
+    MysqlEditableVariable(String name, Type type, Scope scope, PersistCapability persistCapability, Risk risk) {
         this.name = name;
         this.type = type;
         this.scope = scope;
@@ -64,31 +58,31 @@ public enum EditableVariable {
         this.risk = risk;
     }
 
-    public String getName() {
+    String getName() {
         return name;
     }
 
-    public Type getType() {
+    Type getType() {
         return type;
     }
 
-    public Scope getScope() {
+    Scope getScope() {
         return scope;
     }
 
-    public PersistCapability getPersistCapability() {
+    PersistCapability getPersistCapability() {
         return persistCapability;
     }
 
-    public Risk getRisk() {
+    Risk getRisk() {
         return risk;
     }
 
-    public static EditableVariable byName(String name) {
+    static MysqlEditableVariable byName(String name) {
         if (name == null) {
             return null;
         }
-        for (EditableVariable variable : values()) {
+        for (MysqlEditableVariable variable : values()) {
             if (variable.name.equalsIgnoreCase(name.trim())) {
                 return variable;
             }
@@ -96,27 +90,24 @@ public enum EditableVariable {
         return null;
     }
 
-    public enum Type {
+    enum Type {
         STRING,
         NUMBER,
         ONOFF
     }
 
-    public enum Scope {
-        /** SET SESSION only. */
+    enum Scope {
         SESSION,
-        /** SET GLOBAL only. */
         GLOBAL_ONLY,
-        /** Both SET SESSION and SET GLOBAL. */
         BOTH
     }
 
-    public enum PersistCapability {
+    enum PersistCapability {
         NONE,
         MYSQL_80
     }
 
-    public enum Risk {
+    enum Risk {
         NORMAL,
         HIGH
     }
