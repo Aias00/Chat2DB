@@ -1,4 +1,4 @@
-package ai.chat2db.community.domain.core.impl.db;
+package ai.chat2db.plugin.mysql.diagnostics;
 
 import ai.chat2db.community.domain.api.model.db.diagnostics.InnodbDeadlockSummary;
 import ai.chat2db.community.domain.api.model.db.diagnostics.InnodbDeadlockTransaction;
