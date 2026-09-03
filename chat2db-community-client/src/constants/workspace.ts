@@ -34,6 +34,7 @@ export enum WorkspaceTabType {
   ViewERModal = 'viewERModal',
   RedisAllData = 'redisAllData',
   AccountPrivileges = 'accountPrivileges',
+  ActiveTransactions = 'activeTransactions',
   ContentDiff = 'contentDiff',
   Terminal = 'terminal',
 }
@@ -91,6 +92,9 @@ export const workspaceTabConfig: {
   },
   [WorkspaceTabType.AccountPrivileges]: {
     icon: 'icon-users',
+  },
+  [WorkspaceTabType.ActiveTransactions]: {
+    icon: 'icon-file-text',
   },
   [WorkspaceTabType.ContentDiff]: {
     icon: 'icon-switch-horizontal',
