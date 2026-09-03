@@ -265,8 +265,8 @@ async function run() {
   );
   assert.match(
     transactionSource,
-    /color: 'green',[\s\S]*?variant: 'solid'/,
-    'commit must use the green solid action style',
+    /color: 'primary',[\s\S]*?variant: 'solid'/,
+    'commit must use the theme-colored solid action style',
   );
   assert.match(
     confirmationSource,

@@ -112,7 +112,7 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
           Button,
           {
             key: 'commit',
-            color: 'green',
+            color: 'primary',
             variant: 'solid',
             onClick: () => void releaseAll('commit'),
           },
