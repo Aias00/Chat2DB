@@ -11,8 +11,8 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -39,7 +39,7 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/begin}.
      */
-    @RequestMapping(value = "/begin", method = RequestMethod.POST)
+    @PostMapping("/begin")
     public DataResult<TransactionStateResponse> begin(@Valid @RequestBody TransactionBeginRequest request) {
         try {
             return DataResult.of(connectionContextService.beginManualTransaction(
@@ -55,7 +55,7 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/commit}.
      */
-    @RequestMapping(value = "/commit", method = RequestMethod.POST)
+    @PostMapping("/commit")
     public DataResult<TransactionStateResponse> commit(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
             return DataResult.of(connectionContextService.commitTransaction(
@@ -71,7 +71,7 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/rollback}.
      */
-    @RequestMapping(value = "/rollback", method = RequestMethod.POST)
+    @PostMapping("/rollback")
     public DataResult<TransactionStateResponse> rollback(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
             return DataResult.of(connectionContextService.rollbackTransaction(
@@ -87,7 +87,7 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/state}.
      */
-    @RequestMapping(value = "/state", method = RequestMethod.POST)
+    @PostMapping("/state")
     public DataResult<TransactionStateResponse> state(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
             return DataResult.of(connectionContextService.getTransactionState(
@@ -104,7 +104,7 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/release}.
      */
-    @RequestMapping(value = "/release", method = RequestMethod.POST)
+    @PostMapping("/release")
     public DataResult<TransactionStateResponse> release(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
             return DataResult.of(connectionContextService.releaseBoundConnection(

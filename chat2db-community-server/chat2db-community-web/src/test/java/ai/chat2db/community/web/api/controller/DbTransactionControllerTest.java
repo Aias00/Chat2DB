@@ -24,8 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.StaticMessageSource;
 import org.mapstruct.factory.Mappers;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -151,7 +150,7 @@ class DbTransactionControllerTest {
     }
 
     @Test
-    void transactionEndpointsAcceptPostOnly() throws Exception {
+    void transactionEndpointsUsePostMapping() throws Exception {
         assertOnlyPost("begin", TransactionBeginRequest.class);
         assertOnlyPost("commit", ConsoleCloseRequest.class);
         assertOnlyPost("rollback", ConsoleCloseRequest.class);
@@ -167,10 +166,10 @@ class DbTransactionControllerTest {
     }
 
     private static void assertOnlyPost(String methodName, Class<?> parameterType) throws Exception {
-        RequestMapping mapping = DbTransactionController.class
+        PostMapping mapping = DbTransactionController.class
                 .getDeclaredMethod(methodName, parameterType)
-                .getAnnotation(RequestMapping.class);
-        assertArrayEquals(new RequestMethod[]{RequestMethod.POST}, mapping.method());
+                .getAnnotation(PostMapping.class);
+        assertArrayEquals(new String[]{"/" + methodName}, mapping.value());
     }
 
     private static void setField(Object target, String fieldName, Object value) throws Exception {
