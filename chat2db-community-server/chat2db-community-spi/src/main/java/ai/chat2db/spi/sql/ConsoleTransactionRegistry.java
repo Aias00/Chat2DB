@@ -1,5 +1,6 @@
 package ai.chat2db.spi.sql;
 
+import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import lombok.extern.slf4j.Slf4j;
 
@@ -9,10 +10,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.Callable;
 
 /**
  * Server-side registry that pins one isolated JDBC connection to a SQL Console so that
@@ -94,11 +95,19 @@ public class ConsoleTransactionRegistry {
 
     public static class BoundTransaction {
         private final ConnectInfo connectInfo;
+        private final TransactionIsolationLevel isolationLevel;
+        private final List<TransactionIsolationLevel> supportedIsolationLevels;
         private volatile TransactionState state;
         private volatile long lastUsedMillis;
 
-        BoundTransaction(ConnectInfo connectInfo) {
+        BoundTransaction(
+                ConnectInfo connectInfo,
+                TransactionIsolationLevel isolationLevel,
+                List<TransactionIsolationLevel> supportedIsolationLevels
+        ) {
             this.connectInfo = connectInfo;
+            this.isolationLevel = isolationLevel;
+            this.supportedIsolationLevels = List.copyOf(supportedIsolationLevels);
             this.state = TransactionState.IN_TRANSACTION;
             this.lastUsedMillis = System.currentTimeMillis();
         }
@@ -109,6 +118,14 @@ public class ConsoleTransactionRegistry {
 
         public TransactionState getState() {
             return state;
+        }
+
+        public TransactionIsolationLevel getIsolationLevel() {
+            return isolationLevel;
+        }
+
+        public List<TransactionIsolationLevel> getSupportedIsolationLevels() {
+            return supportedIsolationLevels;
         }
 
         void setState(TransactionState state) {
@@ -131,10 +148,45 @@ public class ConsoleTransactionRegistry {
      * concurrently; the caller must then release its own fresh connection.
      */
     public static boolean registerIfAbsent(Long consoleId, ConnectInfo connectInfo) {
+        return registerIfAbsent(
+                consoleId,
+                connectInfo,
+                TransactionIsolationLevel.DEFAULT,
+                List.of(TransactionIsolationLevel.DEFAULT)
+        );
+    }
+
+    public static boolean registerIfAbsent(
+            Long consoleId,
+            ConnectInfo connectInfo,
+            TransactionIsolationLevel isolationLevel
+    ) {
+        List<TransactionIsolationLevel> supportedIsolationLevels = isolationLevel == null
+                || isolationLevel == TransactionIsolationLevel.DEFAULT
+                ? List.of(TransactionIsolationLevel.DEFAULT)
+                : List.of(TransactionIsolationLevel.DEFAULT, isolationLevel);
+        return registerIfAbsent(consoleId, connectInfo, isolationLevel, supportedIsolationLevels);
+    }
+
+    public static boolean registerIfAbsent(
+            Long consoleId,
+            ConnectInfo connectInfo,
+            TransactionIsolationLevel isolationLevel,
+            List<TransactionIsolationLevel> supportedIsolationLevels
+    ) {
         if (consoleId == null || connectInfo == null) {
             return false;
         }
-        return BOUND.putIfAbsent(consoleId, new BoundTransaction(connectInfo)) == null;
+        TransactionIsolationLevel effectiveIsolationLevel = isolationLevel == null
+                ? TransactionIsolationLevel.DEFAULT
+                : isolationLevel;
+        List<TransactionIsolationLevel> effectiveSupportedIsolationLevels = supportedIsolationLevels == null
+                ? List.of()
+                : supportedIsolationLevels;
+        return BOUND.putIfAbsent(
+                consoleId,
+                new BoundTransaction(connectInfo, effectiveIsolationLevel, effectiveSupportedIsolationLevels)
+        ) == null;
     }
 
     /**
@@ -171,6 +223,16 @@ public class ConsoleTransactionRegistry {
     public static Long getBoundDataSourceId(Long consoleId) {
         BoundTransaction bound = BOUND.get(consoleId);
         return bound == null ? null : bound.getConnectInfo().getDataSourceId();
+    }
+
+    public static TransactionIsolationLevel getIsolationLevel(Long consoleId) {
+        BoundTransaction bound = BOUND.get(consoleId);
+        return bound == null ? TransactionIsolationLevel.DEFAULT : bound.getIsolationLevel();
+    }
+
+    public static List<TransactionIsolationLevel> getSupportedIsolationLevels(Long consoleId) {
+        BoundTransaction bound = BOUND.get(consoleId);
+        return bound == null ? List.of() : bound.getSupportedIsolationLevels();
     }
 
     public static <T> T withConsoleLock(Long consoleId, Callable<T> action) throws Exception {

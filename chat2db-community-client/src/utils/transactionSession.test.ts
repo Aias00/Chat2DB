@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { releaseTransactionConsoles } from './transactionSessionCore';
 import type { TransactionState } from '@/store/workspace/slices/console/initialState';
+import {
+  TransactionIsolationLevel,
+  TransactionMode,
+  TransactionOutcome,
+} from '@/constants/transaction';
 
 async function run() {
 {
   const patches: Partial<TransactionState>[] = [];
+  let unknownOutcomes = 0;
   const success = await releaseTransactionConsoles(
     [{ consoleId: 42, dataSourceId: 7, databaseName: 'shop', schemaName: 'public' }],
     'rollback',
@@ -17,23 +23,29 @@ async function run() {
         assert.equal(request.dataSourceId, 7);
         return {
           inTransaction: false,
-          mode: 'auto',
-          outcome: 'UNKNOWN',
+          mode: TransactionMode.AUTO,
+          isolationLevel: TransactionIsolationLevel.DEFAULT,
+          supportedIsolationLevels: [],
+          outcome: TransactionOutcome.UNKNOWN,
           lastError: 'rollback outcome unknown',
         };
       },
       commitTransaction: async () => {
         throw new Error('commit must not be called for rollback close');
       },
+      onUnknownOutcome: () => {
+        unknownOutcomes += 1;
+      },
     },
   );
 
   assert.equal(success, true);
+  assert.equal(unknownOutcomes, 1);
   assert.deepEqual(patches, [
     {
-      mode: 'auto',
+      mode: TransactionMode.AUTO,
       inTransaction: false,
-      lastOutcome: 'UNKNOWN',
+      lastOutcome: TransactionOutcome.UNKNOWN,
       lastError: 'rollback outcome unknown',
     },
   ]);
@@ -50,8 +62,10 @@ async function run() {
       },
       commitTransaction: async () => ({
         inTransaction: false,
-        mode: 'auto',
-        outcome: 'COMMITTED',
+        mode: TransactionMode.AUTO,
+        isolationLevel: TransactionIsolationLevel.DEFAULT,
+        supportedIsolationLevels: [],
+        outcome: TransactionOutcome.COMMITTED,
       }),
       releaseTransaction: async () => {
         throw new Error('release must not be called for commit close');
@@ -60,7 +74,7 @@ async function run() {
   );
 
   assert.equal(success, true);
-  assert.equal(patches[0]?.lastOutcome, 'COMMITTED');
+  assert.equal(patches[0]?.lastOutcome, TransactionOutcome.COMMITTED);
 }
 
   console.log('Transaction session tests passed');

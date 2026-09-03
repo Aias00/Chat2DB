@@ -1,4 +1,9 @@
 import createRequest from './base';
+import type {
+  TransactionIsolationLevel,
+  TransactionMode,
+  TransactionOutcome,
+} from '@/constants/transaction';
 import type { IDataSourceExecutionContext } from './dmlRequest';
 
 /** Request body for console-scoped transaction endpoints (mirrors backend ConsoleCloseRequest). */
@@ -6,16 +11,22 @@ export interface ITransactionRequest extends IDataSourceExecutionContext {
   consoleId?: number;
 }
 
+export interface ITransactionBeginRequest extends ITransactionRequest {
+  isolationLevel: TransactionIsolationLevel;
+}
+
 /** Transaction state returned by the backend. */
 export interface ITransactionStateResponse {
   inTransaction: boolean;
-  mode: string;
-  outcome?: string;
+  mode: TransactionMode;
+  isolationLevel: TransactionIsolationLevel;
+  supportedIsolationLevels: TransactionIsolationLevel[];
+  outcome?: TransactionOutcome;
   lastError?: string;
 }
 
 /** Begin a manual transaction for the console (borrow one connection, auto-commit off). */
-const beginTransaction = createRequest<ITransactionRequest, ITransactionStateResponse>(
+const beginTransaction = createRequest<ITransactionBeginRequest, ITransactionStateResponse>(
   '/api/rdb/transaction/begin',
   { method: 'post', errorLevel: false },
 );

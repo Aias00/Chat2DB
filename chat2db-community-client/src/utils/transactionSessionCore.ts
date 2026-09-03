@@ -1,5 +1,6 @@
 import type { ITransactionRequest, ITransactionStateResponse } from '@/service/transaction';
 import type { TransactionState } from '@/store/workspace/slices/console/initialState';
+import { TransactionMode, TransactionOutcome } from '@/constants/transaction';
 
 export interface TxConsole {
   consoleId: number;
@@ -18,6 +19,7 @@ export interface ReleaseTransactionDependencies {
   store: TransactionSessionStore;
   commitTransaction: (request: ITransactionRequest) => Promise<ITransactionStateResponse>;
   releaseTransaction: (request: ITransactionRequest) => Promise<ITransactionStateResponse>;
+  onUnknownOutcome?: () => void;
 }
 
 export async function releaseTransactionConsoles(
@@ -39,6 +41,9 @@ export async function releaseTransactionConsoles(
             ? await dependencies.commitTransaction(request)
             : await dependencies.releaseTransaction(request);
         dependencies.store.setTransactionState(console.consoleId, transactionStatePatch(result));
+        if (result.outcome === TransactionOutcome.UNKNOWN) {
+          dependencies.onUnknownOutcome?.();
+        }
         return true;
       } catch (error) {
         dependencies.store.setTransactionState(console.consoleId, {
@@ -54,7 +59,7 @@ export async function releaseTransactionConsoles(
 
 function transactionStatePatch(result: ITransactionStateResponse | undefined): Partial<TransactionState> {
   return {
-    mode: result?.mode === 'manual' ? 'manual' : 'auto',
+    mode: result?.mode === TransactionMode.MANUAL ? TransactionMode.MANUAL : TransactionMode.AUTO,
     inTransaction: Boolean(result?.inTransaction),
     lastOutcome: result?.outcome,
     lastError: result?.lastError,

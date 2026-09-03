@@ -2,6 +2,8 @@ package ai.chat2db.community.domain.api.model.runtime;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * Snapshot of a console's manual-transaction state, returned to the frontend so it can keep
  * the toolbar (Commit/Rollback controls, status indicator) in sync and tell the user whether
@@ -9,6 +11,9 @@ import lombok.Data;
  */
 @Data
 public class TransactionStateResponse {
+
+    public static final String MODE_AUTO = "auto";
+    public static final String MODE_MANUAL = "manual";
 
     /**
      * Whether the console currently has an open (uncommitted) transaction.
@@ -33,10 +38,41 @@ public class TransactionStateResponse {
      */
     private String lastError;
 
+    /**
+     * Isolation level applied to the bound manual transaction.
+     */
+    private TransactionIsolationLevel isolationLevel;
+
+    /**
+     * Isolation levels supported by the current datasource's JDBC driver.
+     */
+    private List<TransactionIsolationLevel> supportedIsolationLevels = List.of();
+
     public static TransactionStateResponse of(boolean inTransaction, String mode) {
+        return of(inTransaction, mode, TransactionIsolationLevel.DEFAULT);
+    }
+
+    public static TransactionStateResponse of(
+            boolean inTransaction,
+            String mode,
+            TransactionIsolationLevel isolationLevel
+    ) {
+        return of(inTransaction, mode, isolationLevel, List.of());
+    }
+
+    public static TransactionStateResponse of(
+            boolean inTransaction,
+            String mode,
+            TransactionIsolationLevel isolationLevel,
+            List<TransactionIsolationLevel> supportedIsolationLevels
+    ) {
         TransactionStateResponse response = new TransactionStateResponse();
         response.inTransaction = inTransaction;
         response.mode = mode;
+        response.isolationLevel = isolationLevel == null ? TransactionIsolationLevel.DEFAULT : isolationLevel;
+        response.supportedIsolationLevels = supportedIsolationLevels == null
+                ? List.of()
+                : List.copyOf(supportedIsolationLevels);
         return response;
     }
 }

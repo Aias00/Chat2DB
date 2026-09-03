@@ -1090,6 +1090,9 @@ const WorkspaceTabs = memo(() => {
         useWorkspaceStore.getState().deleteEditor(item.id);
       }
       const closeId = item.uniqueData?.consoleId ?? item.id;
+      if (typeof item.uniqueData?.consoleId === 'number') {
+        useWorkspaceStore.getState().clearTransactionState(item.uniqueData.consoleId);
+      }
       if (isSavedConsoleLikeWorkspaceTab(item) && typeof closeId === 'number' && !isTemporaryId(closeId)) {
         closeWindowTab(closeId);
       }

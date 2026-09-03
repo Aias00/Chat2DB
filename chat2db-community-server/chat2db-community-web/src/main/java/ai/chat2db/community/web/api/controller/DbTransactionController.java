@@ -5,6 +5,8 @@ import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest;
+import ai.chat2db.community.web.api.model.request.db.TransactionBeginRequest;
+import ai.chat2db.community.web.api.converter.db.DbWebConverter;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,15 +31,20 @@ public class DbTransactionController {
     @Autowired
     private IDbConnectionContextService connectionContextService;
 
+    @Autowired
+    private DbWebConverter dbWebConverter;
+
     /**
      * Begins a manual transaction for the console.
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/begin}.
      */
-    @RequestMapping(value = "/begin", method = {RequestMethod.POST, RequestMethod.PUT})
-    public DataResult<TransactionStateResponse> begin(@Valid @RequestBody ConsoleCloseRequest request) {
+    @RequestMapping(value = "/begin", method = RequestMethod.POST)
+    public DataResult<TransactionStateResponse> begin(@Valid @RequestBody TransactionBeginRequest request) {
         try {
-            return DataResult.of(connectionContextService.beginManualTransaction(toContext(request)));
+            return DataResult.of(connectionContextService.beginManualTransaction(
+                    dbWebConverter.transactionBeginRequest2context(request)
+            ));
         } finally {
             connectionContextService.clear();
         }
@@ -48,10 +55,12 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/commit}.
      */
-    @RequestMapping(value = "/commit", method = {RequestMethod.POST, RequestMethod.PUT})
+    @RequestMapping(value = "/commit", method = RequestMethod.POST)
     public DataResult<TransactionStateResponse> commit(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
-            return DataResult.of(connectionContextService.commitTransaction(toContext(request)));
+            return DataResult.of(connectionContextService.commitTransaction(
+                    dbWebConverter.consoleCloseRequest2context(request)
+            ));
         } finally {
             connectionContextService.clear();
         }
@@ -62,10 +71,12 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/rollback}.
      */
-    @RequestMapping(value = "/rollback", method = {RequestMethod.POST, RequestMethod.PUT})
+    @RequestMapping(value = "/rollback", method = RequestMethod.POST)
     public DataResult<TransactionStateResponse> rollback(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
-            return DataResult.of(connectionContextService.rollbackTransaction(toContext(request)));
+            return DataResult.of(connectionContextService.rollbackTransaction(
+                    dbWebConverter.consoleCloseRequest2context(request)
+            ));
         } finally {
             connectionContextService.clear();
         }
@@ -76,10 +87,12 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/state}.
      */
-    @RequestMapping(value = "/state", method = {RequestMethod.POST, RequestMethod.PUT})
+    @RequestMapping(value = "/state", method = RequestMethod.POST)
     public DataResult<TransactionStateResponse> state(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
-            return DataResult.of(connectionContextService.getTransactionState(toContext(request)));
+            return DataResult.of(connectionContextService.getTransactionState(
+                    dbWebConverter.consoleCloseRequest2context(request)
+            ));
         } finally {
             connectionContextService.clear();
         }
@@ -91,19 +104,15 @@ public class DbTransactionController {
      * <p>
      * Endpoint: {@code POST /api/rdb/transaction/release}.
      */
-    @RequestMapping(value = "/release", method = {RequestMethod.POST, RequestMethod.PUT})
+    @RequestMapping(value = "/release", method = RequestMethod.POST)
     public DataResult<TransactionStateResponse> release(@Valid @RequestBody ConsoleCloseRequest request) {
         try {
-            return DataResult.of(connectionContextService.releaseBoundConnection(toContext(request)));
+            return DataResult.of(connectionContextService.releaseBoundConnection(
+                    dbWebConverter.consoleCloseRequest2context(request)
+            ));
         } finally {
             connectionContextService.clear();
         }
     }
 
-    private DbConnectionContextRequest toContext(ConsoleCloseRequest request) {
-        DbConnectionContextRequest context = new DbConnectionContextRequest();
-        context.setDataSourceId(request.getDataSourceId());
-        context.setConsoleId(request.getConsoleId());
-        return context;
-    }
 }

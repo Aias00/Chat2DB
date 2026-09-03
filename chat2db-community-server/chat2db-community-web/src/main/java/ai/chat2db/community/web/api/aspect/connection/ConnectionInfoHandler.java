@@ -29,6 +29,24 @@ public class ConnectionInfoHandler {
 
     @Around("within(@ai.chat2db.community.web.api.aspect.connection.ConnectionInfoAspect *)")
     public Object connectionInfoHandler(ProceedingJoinPoint proceedingJoinPoint) throws Throwable {
+        Long consoleId = consoleId(proceedingJoinPoint.getArgs());
+        if (consoleId != null) {
+            try {
+                return connectionContextService.withConsoleTransactionLock(consoleId, () -> {
+                    try {
+                        return proceedWithConnectionContext(proceedingJoinPoint);
+                    } catch (Throwable throwable) {
+                        throw new JoinPointInvocationException(throwable);
+                    }
+                });
+            } catch (JoinPointInvocationException exception) {
+                throw exception.getCause();
+            }
+        }
+        return proceedWithConnectionContext(proceedingJoinPoint);
+    }
+
+    private Object proceedWithConnectionContext(ProceedingJoinPoint proceedingJoinPoint) throws Throwable {
         try {
             Object[] params = proceedingJoinPoint.getArgs();
             if (params != null && params.length > 0) {
@@ -81,6 +99,24 @@ public class ConnectionInfoHandler {
             return proceedingJoinPoint.proceed();
         } finally {
             connectionContextService.clear();
+        }
+    }
+
+    private static Long consoleId(Object[] params) {
+        if (params == null) {
+            return null;
+        }
+        for (Object param : params) {
+            if (param instanceof IDataSourceConsoleRequestInfo requestInfo) {
+                return requestInfo.getConsoleId();
+            }
+        }
+        return null;
+    }
+
+    private static final class JoinPointInvocationException extends RuntimeException {
+        private JoinPointInvocationException(Throwable cause) {
+            super(cause);
         }
     }
 

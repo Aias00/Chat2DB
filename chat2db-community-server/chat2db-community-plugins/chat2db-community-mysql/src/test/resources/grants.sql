@@ -1,6 +1,6 @@
 -- grants.sql
--- Separate test accounts for the MySQL manual-transaction integration tests (#2586).
--- Run as root (Testcontainers init or a setup step) before tests that need a limited account.
+-- Separate fixture accounts for MySQL manual-transaction Web verification (#2586).
+-- Run as root before manual Web/Playwright verification.
 --
 --   c2d_tx_admin : full DDL + DML on c2d_tx_test (used for setup/teardown and visibility checks).
 --   c2d_tx_dml   : DML-only on c2d_tx_test (used to verify isolation from a second connection).

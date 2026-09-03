@@ -1,19 +1,33 @@
 import { IWorkspaceTab, IWorkspaceTabSplitLayout } from '@/typings/workspace';
 import { IConsole } from '@/typings';
 import type { WorkspaceTabScrollRequest } from '../../utils/workspaceTabScrollRequest';
-
-export type TransactionMode = 'auto' | 'manual';
+import {
+  TransactionIsolationLevel,
+  TransactionMode,
+  type TransactionOutcome,
+} from '@/constants/transaction';
 
 export interface TransactionState {
   /** Whether the console is in manual mode (auto-commit off). */
   mode: TransactionMode;
   /** Whether an uncommitted transaction is currently open on the server. */
   inTransaction: boolean;
+  /** Isolation level selected for the next or current manual transaction. */
+  isolationLevel: TransactionIsolationLevel;
+  /** Isolation levels reported by the current datasource's JDBC driver. */
+  supportedIsolationLevels: TransactionIsolationLevel[];
   /** Outcome of the last commit/rollback/release, when reported by the server. */
-  lastOutcome?: string;
+  lastOutcome?: TransactionOutcome;
   /** Last error message associated with the transaction, if any. */
   lastError?: string;
 }
+
+export const createInitialTransactionState = (): TransactionState => ({
+  mode: TransactionMode.AUTO,
+  inTransaction: false,
+  isolationLevel: TransactionIsolationLevel.DEFAULT,
+  supportedIsolationLevels: [],
+});
 
 export interface ConsoleState {
   consoleList: IConsole[] | null;

@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand/vanilla';
 import { WorkspaceStore } from '../../store';
-import { ConsoleState, TransactionMode, TransactionState } from './initialState';
+import { ConsoleState, createInitialTransactionState, TransactionState } from './initialState';
+import { TransactionIsolationLevel, TransactionMode } from '@/constants/transaction';
 import { createNextWorkspaceTabScrollRequest } from '../../utils/workspaceTabScrollRequest';
 import { ICreateConsoleParams, IBoundInfo, IWorkspaceTab } from '@/typings';
 import historyService from '@/service/history';
@@ -91,6 +92,8 @@ export interface ConsoleAction {
   deleteActiveWorkspaceTab: () => Promise<void>;
   /** Toggles the console between auto-commit and manual transaction mode. */
   setTransactionMode: (consoleId: number, mode: TransactionMode) => void;
+  /** Selects the isolation level used when the console opens its next manual transaction. */
+  setTransactionIsolation: (consoleId: number, isolationLevel: TransactionIsolationLevel) => void;
   /** Updates the console's runtime transaction state (in-transaction / outcome). */
   setTransactionState: (consoleId: number, patch: Partial<TransactionState>) => void;
   /** Clears the console's transaction state (e.g. after release or on close). */
@@ -338,6 +341,9 @@ export const createConsoleAction: StateCreator<WorkspaceStore, [['zustand/devtoo
     const newList = workspaceTabList.filter((item) => item?.id !== activeConsoleId);
 
     const savedConsoleId = removedWorkspaceTab?.uniqueData?.consoleId ?? removedWorkspaceTab?.id;
+    if (typeof removedWorkspaceTab?.uniqueData?.consoleId === 'number') {
+      get().clearTransactionState(removedWorkspaceTab.uniqueData.consoleId);
+    }
     if (isSavedConsoleLikeWorkspaceTab(removedWorkspaceTab) && typeof savedConsoleId === 'number') {
       await historyService.updateSavedConsole({
         id: savedConsoleId,
@@ -406,7 +412,7 @@ export const createConsoleAction: StateCreator<WorkspaceStore, [['zustand/devtoo
 
   setTransactionMode: (consoleId, mode) => {
     const map = get().transactionStateMap || {};
-    const current = map[consoleId] || { mode: 'auto', inTransaction: false };
+    const current = { ...createInitialTransactionState(), ...map[consoleId] };
     set({
       transactionStateMap: {
         ...map,
@@ -415,9 +421,20 @@ export const createConsoleAction: StateCreator<WorkspaceStore, [['zustand/devtoo
     });
   },
 
+  setTransactionIsolation: (consoleId, isolationLevel) => {
+    const map = get().transactionStateMap || {};
+    const current = { ...createInitialTransactionState(), ...map[consoleId] };
+    set({
+      transactionStateMap: {
+        ...map,
+        [consoleId]: { ...current, isolationLevel },
+      },
+    });
+  },
+
   setTransactionState: (consoleId, patch) => {
     const map = get().transactionStateMap || {};
-    const current = map[consoleId] || { mode: 'auto', inTransaction: false };
+    const current = { ...createInitialTransactionState(), ...map[consoleId] };
     set({
       transactionStateMap: {
         ...map,

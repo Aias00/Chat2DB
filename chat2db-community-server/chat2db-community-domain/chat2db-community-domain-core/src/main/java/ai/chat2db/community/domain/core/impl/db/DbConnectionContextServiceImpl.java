@@ -4,6 +4,7 @@ import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.model.metadata.ForeignKeyInfo;
 import ai.chat2db.community.domain.api.model.operation.Operation;
 import ai.chat2db.community.domain.api.model.runtime.ConnectionProfile;
+import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
 import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
 import ai.chat2db.community.domain.api.model.request.runtime.McpConnectionContextRequest;
@@ -20,6 +21,7 @@ import ai.chat2db.spi.model.request.TableMetadataRequest;
 import ai.chat2db.spi.model.request.TablesRequest;
 import ai.chat2db.spi.model.request.ViewMetadataRequest;
 import ai.chat2db.spi.sql.Chat2DBContext;
+import ai.chat2db.spi.sql.ConnectionPool;
 import ai.chat2db.spi.sql.ConsoleTransactionRegistry;
 import ai.chat2db.community.domain.api.enums.plugin.ObjectTypeEnum;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +30,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -135,33 +139,53 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             }
             // If a transaction is already open for this console, this is idempotent.
             if (ConsoleTransactionRegistry.isInTransaction(trustedParam.getConsoleId())) {
-                return TransactionStateResponse.of(true, "manual");
+                return manualTransactionState(trustedParam.getConsoleId());
             }
-            // Open a fresh, isolated connection (not borrowed from the pool) and switch it to
-            // manual commit. The connection is owned by the registry for the console's lifetime.
-            Connection connection = Chat2DBContext.getDbManager().getConnection(connectInfo);
-            connectInfo.setConnection(connection);
+            TransactionIsolationLevel isolationLevel = Objects.requireNonNullElse(
+                    trustedParam.getTransactionIsolationLevel(),
+                    TransactionIsolationLevel.DEFAULT
+            );
+            // Borrow one pool connection for the console and keep the lease until the
+            // transaction is resolved. consoleOwn prevents request cleanup from returning it
+            // to the shared queue while another console could acquire it.
             connectInfo.setConsoleOwn(Boolean.TRUE);
+            Connection connection = ConnectionPool.getConnection(connectInfo);
+            List<TransactionIsolationLevel> supportedIsolationLevels = List.of();
             try {
-                connection.setAutoCommit(false);
+                supportedIsolationLevels = supportedTransactionIsolationLevels(connection);
+                if (!supportedIsolationLevels.contains(isolationLevel)) {
+                    throw new BusinessException("transaction.unsupported");
+                }
+                configureManualTransactionConnection(connection, isolationLevel);
+            } catch (BusinessException e) {
+                discardNewTransactionConnection(connectInfo, connection);
+                throw e;
             } catch (SQLException e) {
-                log.error("Failed to disable autoCommit for consoleId={}", param.getConsoleId(), e);
-                connectInfo.setConsoleOwn(Boolean.FALSE);
-                connectInfo.setConnection(null);
-                quietlyClose(connection);
-                TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+                log.error("Failed to configure manual transaction for consoleId={}", param.getConsoleId(), e);
+                discardNewTransactionConnection(connectInfo, connection);
+                TransactionStateResponse response = TransactionStateResponse.of(
+                        false,
+                        TransactionStateResponse.MODE_AUTO,
+                        isolationLevel,
+                        supportedIsolationLevels
+                );
                 response.setLastError(e.getMessage());
                 return response;
             }
-            if (!ConsoleTransactionRegistry.registerIfAbsent(trustedParam.getConsoleId(), connectInfo)) {
+            if (!ConsoleTransactionRegistry.registerIfAbsent(
+                    trustedParam.getConsoleId(),
+                    connectInfo,
+                    isolationLevel,
+                    supportedIsolationLevels
+            )) {
                 // Another request opened the transaction concurrently; drop this request's fresh
                 // connection and report the existing open transaction.
                 connectInfo.setConsoleOwn(Boolean.FALSE);
                 connectInfo.setConnection(null);
                 quietlyClose(connection);
-                return TransactionStateResponse.of(true, "manual");
+                return manualTransactionState(trustedParam.getConsoleId());
             }
-            return TransactionStateResponse.of(true, "manual");
+            return manualTransactionState(trustedParam.getConsoleId());
         } finally {
             clear();
         }
@@ -174,7 +198,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 validateTransactionRequest(param);
                 ConsoleTransactionRegistry.TransactionOutcome outcome =
                         ConsoleTransactionRegistry.commit(param.getConsoleId());
-                TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+                TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
                 response.setOutcome(outcome.name());
                 return response;
             });
@@ -192,7 +216,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 validateTransactionRequest(param);
                 ConsoleTransactionRegistry.TransactionOutcome outcome =
                         ConsoleTransactionRegistry.rollback(param.getConsoleId());
-                TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+                TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
                 response.setOutcome(outcome.name());
                 return response;
             });
@@ -207,7 +231,25 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     public TransactionStateResponse getTransactionState(DbConnectionContextRequest param) {
         validateTransactionRequest(param);
         boolean inTransaction = ConsoleTransactionRegistry.isInTransaction(param.getConsoleId());
-        return TransactionStateResponse.of(inTransaction, inTransaction ? "manual" : "auto");
+        if (inTransaction) {
+            return manualTransactionState(param.getConsoleId());
+        }
+        try {
+            DbConnectionContextRequest trustedParam = resolveTransactionBeginContext(param);
+            trustedParam.setConsoleId(null);
+            bind(trustedParam);
+            Connection connection = Chat2DBContext.getConnection();
+            return TransactionStateResponse.of(
+                    false,
+                    TransactionStateResponse.MODE_AUTO,
+                    TransactionIsolationLevel.DEFAULT,
+                    supportedTransactionIsolationLevels(connection)
+            );
+        } catch (SQLException e) {
+            throw new BusinessException("connection error", null, e);
+        } finally {
+            clear();
+        }
     }
 
     @Override
@@ -218,7 +260,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                         validateTransactionRequest(param);
                         return ConsoleTransactionRegistry.release(param.getConsoleId(), true);
                     });
-            TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+            TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
             response.setOutcome(outcome.name());
             return response;
         } catch (RuntimeException e) {
@@ -231,6 +273,60 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     @Override
     public boolean isInTransaction(Long consoleId) {
         return ConsoleTransactionRegistry.isInTransaction(consoleId);
+    }
+
+    static void configureManualTransactionConnection(
+            Connection connection,
+            TransactionIsolationLevel isolationLevel
+    ) throws SQLException {
+        TransactionIsolationLevel effectiveIsolationLevel = Objects.requireNonNullElse(
+                isolationLevel,
+                TransactionIsolationLevel.DEFAULT
+        );
+        int jdbcIsolationLevel = effectiveIsolationLevel == TransactionIsolationLevel.DEFAULT
+                ? connection.getMetaData().getDefaultTransactionIsolation()
+                : toJdbcTransactionIsolation(effectiveIsolationLevel);
+        if (jdbcIsolationLevel != Connection.TRANSACTION_NONE) {
+            connection.setTransactionIsolation(jdbcIsolationLevel);
+        }
+        connection.setAutoCommit(false);
+    }
+
+    static List<TransactionIsolationLevel> supportedTransactionIsolationLevels(
+            Connection connection
+    ) throws SQLException {
+        DatabaseMetaData metaData = connection.getMetaData();
+        if (metaData == null || !metaData.supportsTransactions()) {
+            return List.of();
+        }
+        List<TransactionIsolationLevel> supported = new ArrayList<>();
+        supported.add(TransactionIsolationLevel.DEFAULT);
+        for (TransactionIsolationLevel isolationLevel : TransactionIsolationLevel.values()) {
+            if (isolationLevel != TransactionIsolationLevel.DEFAULT
+                    && metaData.supportsTransactionIsolationLevel(toJdbcTransactionIsolation(isolationLevel))) {
+                supported.add(isolationLevel);
+            }
+        }
+        return List.copyOf(supported);
+    }
+
+    private static int toJdbcTransactionIsolation(TransactionIsolationLevel isolationLevel) {
+        return switch (isolationLevel) {
+            case READ_UNCOMMITTED -> Connection.TRANSACTION_READ_UNCOMMITTED;
+            case READ_COMMITTED -> Connection.TRANSACTION_READ_COMMITTED;
+            case REPEATABLE_READ -> Connection.TRANSACTION_REPEATABLE_READ;
+            case SERIALIZABLE -> Connection.TRANSACTION_SERIALIZABLE;
+            case DEFAULT -> throw new IllegalArgumentException("DEFAULT does not have a JDBC isolation value");
+        };
+    }
+
+    private static TransactionStateResponse manualTransactionState(Long consoleId) {
+        return TransactionStateResponse.of(
+                true,
+                TransactionStateResponse.MODE_MANUAL,
+                ConsoleTransactionRegistry.getIsolationLevel(consoleId),
+                ConsoleTransactionRegistry.getSupportedIsolationLevels(consoleId)
+        );
     }
 
     @Override
@@ -352,6 +448,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
         DbConnectionContextRequest resolved = new DbConnectionContextRequest();
         resolved.setDataSourceId(param.getDataSourceId());
         resolved.setConsoleId(param.getConsoleId());
+        resolved.setTransactionIsolationLevel(param.getTransactionIsolationLevel());
         Operation console = param.getConsoleId() == null ? null : operationSavedService.getConsole(param.getConsoleId());
         if (console == null) {
             return resolved;
@@ -398,6 +495,12 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
         } catch (SQLException e) {
             log.debug("Failed to close connection during transaction begin cleanup", e);
         }
+    }
+
+    private void discardNewTransactionConnection(ConnectInfo connectInfo, Connection connection) {
+        connectInfo.setConsoleOwn(Boolean.FALSE);
+        connectInfo.setConnection(null);
+        quietlyClose(connection);
     }
 
 }

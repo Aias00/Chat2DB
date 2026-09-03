@@ -21,6 +21,7 @@ import { useWorkspaceStore } from '@/store/workspace';
 import { useAIStore } from '@/store/ai';
 import sqlService, { type IRoutineMigrationParams } from '@/service/sql';
 import { isRoutineOperationSupportedDatabaseType, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
+import { DatabaseCapability } from '@/constants/databaseCapabilities';
 import { EditorTableIdentifier } from '../../helper/tableIdentifier';
 import { useTreeStore } from '@/store/tree';
 import { isTemporaryId } from '@/utils';
@@ -51,11 +52,17 @@ import { getDataSourceWatermarkContent, getDataSourceWatermarkLayout } from '@/u
 import { withIdentityColorAlpha } from '@/utils/dataSourceIdentity';
 import { useDataSourceIdentityColor } from '@/components/DataSourceIdentityMark';
 import type { EditorDataSourceState } from '@/utils/editorDataSourceLifecycle';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import {
   createDataSourceExecutionBoundInfo,
   createDataSourceExecutionSnapshot,
   type DataSourceExecutionSnapshot,
 } from '@/service/dataSourceExecutionSnapshot';
+import {
+  TransactionIsolationLevel,
+  TransactionMode,
+  TransactionOutcome,
+} from '@/constants/transaction';
 
 export interface SQLExecutionInvocation extends IConsoleReturnExecuteSql {
   executionTarget: DataSourceExecutionSnapshot;
@@ -80,6 +87,7 @@ interface ISQLEditorWithOperationProps {
 
   sqlActionEnabled?: boolean;
   dataSourceState?: EditorDataSourceState;
+  sqlExecuting?: boolean;
   reloadSQL?: () => Promise<string>;
 
   onExecuteSQL: (props: SQLExecutionInvocation) => Promise<any>;
@@ -107,6 +115,7 @@ const BASIC_EDITOR_ACTIONS = new Set<SQLOptType>([
   SQLOptType.SAVE_FILE_TO_DESKTOP,
   SQLOptType.OPEN_CONTENT_DIFF,
   SQLOptType.TOGGLE_AUTO_COMMIT,
+  SQLOptType.SET_TRANSACTION_ISOLATION,
   SQLOptType.COMMIT_TRANSACTION,
   SQLOptType.ROLLBACK_TRANSACTION,
 ]);
@@ -138,6 +147,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     isConsole = true,
     sqlActionEnabled = true,
     dataSourceState = 'available',
+    sqlExecuting = false,
     reloadSQL,
     onChange,
   } = props;
@@ -341,7 +351,45 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
   const transactionState = useWorkspaceStore((state) =>
     consoleIdForTx != null ? state.transactionStateMap?.[consoleIdForTx] : undefined,
   );
-  const showTransactionControls = isConsole && consoleIdForTx != null;
+  const showTransactionControls =
+    isConsole &&
+    consoleIdForTx != null &&
+    isDatabaseCapabilitySupported(dbInfo.databaseType, DatabaseCapability.MANUAL_TRANSACTIONS);
+
+  useEffect(() => {
+    if (!showTransactionControls || consoleIdForTx == null || dbInfo.dataSourceId == null) {
+      return;
+    }
+    let mounted = true;
+    const synchronizeTransactionState = () => {
+      const stateAtRequestStart = useWorkspaceStore.getState().getTransactionState(consoleIdForTx);
+      transactionServer
+        .getTransactionState(transactionRequest(consoleIdForTx))
+        .then((result) => {
+          if (
+            !mounted ||
+            useWorkspaceStore.getState().getTransactionState(consoleIdForTx) !== stateAtRequestStart
+          ) {
+            return;
+          }
+          useWorkspaceStore.getState().setTransactionState(consoleIdForTx, {
+            mode: result.mode,
+            inTransaction: result.inTransaction,
+            isolationLevel: result.isolationLevel ?? TransactionIsolationLevel.DEFAULT,
+            supportedIsolationLevels: result.supportedIsolationLevels ?? [],
+            lastOutcome: result.outcome,
+            lastError: result.lastError,
+          });
+        })
+        .catch(() => undefined);
+    };
+    synchronizeTransactionState();
+    window.addEventListener('online', synchronizeTransactionState);
+    return () => {
+      mounted = false;
+      window.removeEventListener('online', synchronizeTransactionState);
+    };
+  }, [showTransactionControls, consoleIdForTx, dbInfo.dataSourceId]);
 
   const handleAction = (actionType: SQLOptType, params?: any) => {
     if (isReadOnly && !READONLY_ALLOWED_ACTIONS.has(actionType)) {
@@ -433,6 +481,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       case SQLOptType.TOGGLE_AUTO_COMMIT:
         void handleToggleAutoCommit();
         break;
+      case SQLOptType.SET_TRANSACTION_ISOLATION:
+        handleSetTransactionIsolation(params);
+        break;
       case SQLOptType.COMMIT_TRANSACTION:
         void handleCommitTransaction();
         break;
@@ -460,12 +511,21 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     }
     const store = useWorkspaceStore.getState();
     const current = store.getTransactionState(consoleId);
-    const nextMode = current?.mode === 'manual' ? 'auto' : 'manual';
+    const nextMode =
+      current?.mode === TransactionMode.MANUAL ? TransactionMode.AUTO : TransactionMode.MANUAL;
     // Leaving manual mode with an open transaction: roll it back first so no uncommitted work
     // is left dangling on the server.
-    if (current?.inTransaction && nextMode === 'auto') {
+    if (current?.inTransaction && nextMode === TransactionMode.AUTO) {
       try {
-        await transactionServer.rollbackTransaction(transactionRequest(consoleId));
+        const result = await transactionServer.rollbackTransaction(transactionRequest(consoleId));
+        store.setTransactionState(consoleId, {
+          inTransaction: false,
+          lastOutcome: result.outcome,
+          lastError: result.lastError,
+        });
+        if (result.outcome === TransactionOutcome.UNKNOWN) {
+          staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
+        }
       } catch (error) {
         // Rollback failed; stay in manual mode so the Commit/Rollback controls remain
         // available and the open transaction is not silently abandoned.
@@ -474,6 +534,18 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
       }
     }
     store.setTransactionMode(consoleId, nextMode);
+  };
+
+  const handleSetTransactionIsolation = (isolationLevel?: TransactionIsolationLevel) => {
+    const consoleId = resolveConsoleId();
+    if (consoleId == null || isolationLevel == null) {
+      return;
+    }
+    const store = useWorkspaceStore.getState();
+    if (store.getTransactionState(consoleId)?.inTransaction) {
+      return;
+    }
+    store.setTransactionIsolation(consoleId, isolationLevel);
   };
 
   const handleCommitTransaction = async () => {
@@ -488,6 +560,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
+      if (result?.outcome === TransactionOutcome.UNKNOWN) {
+        staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
+      }
     } catch (error) {
       staticMessage.error(String(error));
     }
@@ -505,8 +580,8 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
-      if (result?.outcome === 'UNKNOWN') {
-        staticMessage.warning(i18n('workspace.transaction.rollbackOutcomeUnknown'));
+      if (result?.outcome === TransactionOutcome.UNKNOWN) {
+        staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
       }
     } catch (error) {
       staticMessage.error(String(error));
@@ -1274,6 +1349,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
           action={handleAction}
           transactionState={transactionState}
           showTransactionControls={showTransactionControls}
+          transactionActionsDisabled={sqlExecuting}
         />
       )}
       <div ref={editorViewportRef} style={{ position: 'relative', flex: 1, height: '0px', width: '100%' }}>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { DatabaseTypeCode } from '@/constants/common';
-import { IdentifierQuoteMode } from '@/constants/databaseCapabilities';
+import { DatabaseCapability, IdentifierQuoteMode } from '@/constants/databaseCapabilities';
 import { EditColumnOperationType } from '@/constants/editTable';
 import {
   canCreateDatabase,
@@ -31,7 +31,11 @@ import {
   shouldShowMysqlTableBaseInfo,
   shouldShowSqliteIncludeCollation,
   shouldShowSqlServerSparse,
+  isDatabaseCapabilitySupported,
 } from './databaseJudgments';
+
+assert.equal(isDatabaseCapabilitySupported(DatabaseTypeCode.MYSQL, DatabaseCapability.MANUAL_TRANSACTIONS), true);
+assert.equal(isDatabaseCapabilitySupported(DatabaseTypeCode.POSTGRESQL, DatabaseCapability.MANUAL_TRANSACTIONS), false);
 
 assert.deepEqual(getDatabaseSupport(DatabaseTypeCode.MYSQL), {
   supportDatabase: true,

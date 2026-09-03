@@ -40,19 +40,27 @@ export async function confirmAndReleaseTransaction(tabs: IWorkspaceTab[]): Promi
 function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
   return new Promise((resolve) => {
     let resolved = false;
+    let settling = false;
+    const modalRef: { current?: { destroy: () => void } } = {};
     const finish = (value: boolean) => {
       if (resolved) {
         return;
       }
       resolved = true;
+      modalRef.current?.destroy();
       resolve(value);
     };
 
     const releaseAll = async (action: CloseAction) => {
+      if (settling) {
+        return;
+      }
+      settling = true;
       const success = await releaseTransactionConsoles(consoles, action, {
         store: useWorkspaceStore.getState(),
         commitTransaction: transactionServer.commitTransaction,
         releaseTransaction: transactionServer.releaseTransaction,
+        onUnknownOutcome: () => staticMessage.warning(i18n('workspace.transaction.outcomeUnknown')),
       });
       if (!success) {
         staticMessage.error(i18n('workspace.transaction.releaseFailed'));
@@ -62,7 +70,7 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
       finish(true);
     };
 
-    const modal = staticModal.confirm({
+    modalRef.current = staticModal.confirm({
       title: i18n('workspace.transaction.closeTitle'),
       content: i18n('workspace.transaction.closeContent'),
       closable: false,
@@ -71,7 +79,11 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
       footer: createElement(
         Fragment,
         null,
-        createElement(Button, { key: 'cancel', onClick: () => finish(false) }, i18n('workspace.transaction.cancel')),
+        createElement(
+          Button,
+          { key: 'cancel', onClick: () => !settling && finish(false) },
+          i18n('workspace.transaction.cancel'),
+        ),
         createElement(
           Button,
           { key: 'rollback', danger: true, onClick: () => void releaseAll('rollback') },
@@ -85,7 +97,6 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
       ),
       onCancel: () => finish(false),
     });
-    void modal;
   });
 }
 

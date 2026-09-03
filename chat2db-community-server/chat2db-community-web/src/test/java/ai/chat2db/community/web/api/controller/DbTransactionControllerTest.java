@@ -7,6 +7,7 @@ import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContext
 import ai.chat2db.community.domain.api.model.request.runtime.DbObjectsQueryRequest;
 import ai.chat2db.community.domain.api.model.request.runtime.McpConnectionContextRequest;
 import ai.chat2db.community.domain.api.model.runtime.ConnectionProfile;
+import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.tools.exception.BusinessException;
@@ -14,19 +15,27 @@ import ai.chat2db.community.tools.util.I18nUtils;
 import ai.chat2db.community.tools.wrapper.result.ActionResult;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.web.api.config.exception.EasyControllerExceptionHandler;
+import ai.chat2db.community.web.api.converter.db.DbWebConverter;
+import ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest;
+import ai.chat2db.community.web.api.model.request.db.TransactionBeginRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.StaticMessageSource;
+import org.mapstruct.factory.Mappers;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -58,8 +67,7 @@ class DbTransactionControllerTest {
     void commitEndpointPassesOnlyDatasourceAndConsoleIdentityToService() throws Exception {
         AtomicReference<DbConnectionContextRequest> received = new AtomicReference<>();
         DbTransactionController controller = controller(new RecordingConnectionContextService(received, null));
-        ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest request =
-                new ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest();
+        ConsoleCloseRequest request = new ConsoleCloseRequest();
         request.setDataSourceId(42L);
         request.setDatabaseName("shop");
         request.setSchemaName("public");
@@ -80,8 +88,7 @@ class DbTransactionControllerTest {
     void releaseEndpointReturnsTransactionStateAndKeepsRequestDatabaseAndSchemaOutOfContext() throws Exception {
         AtomicReference<DbConnectionContextRequest> received = new AtomicReference<>();
         DbTransactionController controller = controller(new RecordingConnectionContextService(received, null));
-        ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest request =
-                new ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest();
+        ConsoleCloseRequest request = new ConsoleCloseRequest();
         request.setDataSourceId(42L);
         request.setDatabaseName("shop");
         request.setSchemaName("public");
@@ -104,8 +111,7 @@ class DbTransactionControllerTest {
         AtomicInteger clears = new AtomicInteger();
         DbTransactionController controller = controller(
                 new RecordingConnectionContextService(new AtomicReference<>(), new RuntimeException("boom"), clears));
-        ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest request =
-                new ai.chat2db.community.web.api.model.request.data.source.ConsoleCloseRequest();
+        TransactionBeginRequest request = new TransactionBeginRequest();
         request.setDataSourceId(42L);
         request.setDatabaseName("tainted_db");
         request.setSchemaName("tainted_schema");
@@ -114,6 +120,23 @@ class DbTransactionControllerTest {
         assertThrows(RuntimeException.class, () -> controller.begin(request));
 
         assertEquals(1, clears.get());
+    }
+
+    @Test
+    void beginEndpointPassesSelectedIsolationLevelToService() throws Exception {
+        AtomicReference<DbConnectionContextRequest> received = new AtomicReference<>();
+        DbTransactionController controller = controller(new RecordingConnectionContextService(received, null));
+        TransactionBeginRequest request = new TransactionBeginRequest();
+        request.setDataSourceId(42L);
+        request.setConsoleId(7004L);
+        request.setIsolationLevel(TransactionIsolationLevel.READ_COMMITTED);
+
+        DataResult<TransactionStateResponse> result = controller.begin(request);
+
+        assertTrue(result.success());
+        assertEquals(42L, received.get().getDataSourceId());
+        assertEquals(7004L, received.get().getConsoleId());
+        assertEquals(TransactionIsolationLevel.READ_COMMITTED, received.get().getTransactionIsolationLevel());
     }
 
     @Test
@@ -127,12 +150,33 @@ class DbTransactionControllerTest {
         assertEquals("datasource.not.found", result.errorCode());
     }
 
+    @Test
+    void transactionEndpointsAcceptPostOnly() throws Exception {
+        assertOnlyPost("begin", TransactionBeginRequest.class);
+        assertOnlyPost("commit", ConsoleCloseRequest.class);
+        assertOnlyPost("rollback", ConsoleCloseRequest.class);
+        assertOnlyPost("state", ConsoleCloseRequest.class);
+        assertOnlyPost("release", ConsoleCloseRequest.class);
+    }
+
     private static DbTransactionController controller(IDbConnectionContextService service) throws Exception {
         DbTransactionController controller = new DbTransactionController();
-        Field field = DbTransactionController.class.getDeclaredField("connectionContextService");
-        field.setAccessible(true);
-        field.set(controller, service);
+        setField(controller, "connectionContextService", service);
+        setField(controller, "dbWebConverter", Mappers.getMapper(DbWebConverter.class));
         return controller;
+    }
+
+    private static void assertOnlyPost(String methodName, Class<?> parameterType) throws Exception {
+        RequestMapping mapping = DbTransactionController.class
+                .getDeclaredMethod(methodName, parameterType)
+                .getAnnotation(RequestMapping.class);
+        assertArrayEquals(new RequestMethod[]{RequestMethod.POST}, mapping.method());
+    }
+
+    private static void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     private record RecordingConnectionContextService(AtomicReference<DbConnectionContextRequest> received,
@@ -210,7 +254,7 @@ class DbTransactionControllerTest {
         }
 
         @Override
-        public <T> T withConsoleTransactionLock(Long consoleId, java.util.concurrent.Callable<T> action) throws Exception {
+        public <T> T withConsoleTransactionLock(Long consoleId, Callable<T> action) throws Exception {
             return action.call();
         }
 

@@ -1,11 +1,13 @@
 package ai.chat2db.spi.sql;
 
+import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -13,6 +15,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConsoleTransactionRegistryTest {
@@ -87,6 +91,56 @@ class ConsoleTransactionRegistryTest {
         assertEquals(1, rollbacks.get());
     }
 
+    @Test
+    void registeredTransactionRetainsSelectedIsolationLevel() {
+        long consoleId = 9103L;
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setConsoleId(consoleId);
+        connectInfo.setDataSourceId(42L);
+        connectInfo.setConsoleOwn(Boolean.TRUE);
+        connectInfo.setConnection(countingConnection(new AtomicInteger(), new AtomicInteger()));
+
+        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(
+                consoleId,
+                connectInfo,
+                TransactionIsolationLevel.READ_COMMITTED
+        ));
+
+        assertEquals(
+                TransactionIsolationLevel.READ_COMMITTED,
+                ConsoleTransactionRegistry.getIsolationLevel(consoleId)
+        );
+        assertEquals(List.of(
+                TransactionIsolationLevel.DEFAULT,
+                TransactionIsolationLevel.READ_COMMITTED
+        ), ConsoleTransactionRegistry.getSupportedIsolationLevels(consoleId));
+    }
+
+    @Test
+    void consoleOwnedConnectionStaysExclusiveUntilTransactionRelease() {
+        long consoleId = 9104L;
+        AtomicInteger closes = new AtomicInteger();
+        Connection connection = closeCountingConnection(closes);
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setConsoleId(consoleId);
+        connectInfo.setDataSourceId(42L);
+        connectInfo.setConsoleOwn(Boolean.TRUE);
+        connectInfo.setConnection(connection);
+        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(consoleId, connectInfo));
+
+        ConnectionPool.close(connectInfo);
+
+        assertEquals(0, closes.get());
+        assertSame(connection, ConsoleTransactionRegistry.getBoundConnectInfo(consoleId).getConnection());
+        assertNull(ConsoleTransactionRegistry.getBoundConnectInfo(consoleId + 1));
+
+        assertEquals(
+                ConsoleTransactionRegistry.TransactionOutcome.ROLLED_BACK,
+                ConsoleTransactionRegistry.release(consoleId, true)
+        );
+        assertEquals(1, closes.get());
+    }
+
     private static void registerBound(long consoleId, Connection connection) {
         ConnectInfo connectInfo = new ConnectInfo();
         connectInfo.setConsoleId(consoleId);
@@ -132,6 +186,21 @@ class ConsoleTransactionRegistryTest {
                         yield null;
                     }
                     case "setAutoCommit", "close", "abort" -> null;
+                    case "isClosed" -> false;
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Connection closeCountingConnection(AtomicInteger closes) {
+        return (Connection) Proxy.newProxyInstance(
+                ConsoleTransactionRegistryTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "close" -> {
+                        closes.incrementAndGet();
+                        yield null;
+                    }
+                    case "rollback", "setAutoCommit", "abort" -> null;
                     case "isClosed" -> false;
                     default -> defaultValue(method.getReturnType());
                 });

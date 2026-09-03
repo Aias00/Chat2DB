@@ -82,9 +82,10 @@ class ConnectionInfoHandlerLoggingTest {
     @Test
     void bindsSqlEditorRequestWithConsoleAndSchemaContext() throws Throwable {
         AtomicInteger clears = new AtomicInteger();
+        AtomicInteger locks = new AtomicInteger();
         AtomicReference<DbConnectionContextRequest> bound = new AtomicReference<>();
         ConnectionInfoHandler handler = new ConnectionInfoHandler();
-        setConnectionContextService(handler, proxyConnectionContextService(bound, clears));
+        setConnectionContextService(handler, proxyConnectionContextService(bound, clears, false, locks));
         SqlEditorExecuteRequest request = new SqlEditorExecuteRequest();
         request.setDataSourceId(42L);
         request.setDatabaseName("request_db");
@@ -99,6 +100,29 @@ class ConnectionInfoHandlerLoggingTest {
         assertEquals("request_schema", bound.get().getSchemaName());
         assertEquals(84L, bound.get().getConsoleId());
         assertEquals(1, clears.get());
+        assertEquals(1, locks.get());
+    }
+
+    @Test
+    void wrapsBoundConsoleExecutionInTransactionLock() throws Throwable {
+        AtomicInteger clears = new AtomicInteger();
+        AtomicInteger locks = new AtomicInteger();
+        AtomicReference<DbConnectionContextRequest> bound = new AtomicReference<>();
+        ConnectionInfoHandler handler = new ConnectionInfoHandler();
+        setConnectionContextService(handler, proxyConnectionContextService(bound, clears, true, locks));
+        SqlEditorExecuteRequest request = new SqlEditorExecuteRequest();
+        request.setDataSourceId(42L);
+        request.setConsoleId(84L);
+
+        Object result = handler.connectionInfoHandler(joinPoint(new Object[]{request}, () -> {
+            assertEquals(1, locks.get());
+            assertEquals(84L, bound.get().getConsoleId());
+            return "executed";
+        }));
+
+        assertEquals("executed", result);
+        assertEquals(1, locks.get());
+        assertEquals(1, clears.get());
     }
 
     private static void setConnectionContextService(ConnectionInfoHandler handler,
@@ -110,6 +134,15 @@ class ConnectionInfoHandlerLoggingTest {
 
     private static IDbConnectionContextService proxyConnectionContextService(
             AtomicReference<DbConnectionContextRequest> bound, AtomicInteger clears) {
+        return proxyConnectionContextService(bound, clears, false, new AtomicInteger());
+    }
+
+    private static IDbConnectionContextService proxyConnectionContextService(
+            AtomicReference<DbConnectionContextRequest> bound,
+            AtomicInteger clears,
+            boolean inTransaction,
+            AtomicInteger locks
+    ) {
         return (IDbConnectionContextService) Proxy.newProxyInstance(
                 ConnectionInfoHandlerLoggingTest.class.getClassLoader(),
                 new Class<?>[]{IDbConnectionContextService.class},
@@ -121,6 +154,11 @@ class ConnectionInfoHandlerLoggingTest {
                     case "clear" -> {
                         clears.incrementAndGet();
                         yield null;
+                    }
+                    case "isInTransaction" -> inTransaction;
+                    case "withConsoleTransactionLock" -> {
+                        locks.incrementAndGet();
+                        yield ((Callable<?>) args[1]).call();
                     }
                     default -> defaultValue(method.getReturnType());
                 });

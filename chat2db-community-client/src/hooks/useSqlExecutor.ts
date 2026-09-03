@@ -107,7 +107,7 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
   // When the console is in manual transaction mode, open a server-side transaction before the
   // first execution so subsequent executions reuse the bound connection. A begin failure blocks
   // execution: silently falling back to auto-commit would commit work the user expects to control.
-  const ensureTransactionBegun = useCallback(async (params: IExecuteSqlParams) => {
+  const ensureManualTransaction = useCallback(async (params: IExecuteSqlParams) => {
     const store = useWorkspaceStore.getState();
     await ensureManualTransactionStarted(params, store, transactionServer.beginTransaction);
   }, []);
@@ -119,7 +119,7 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
     }
     // In manual transaction mode, ensure a server-side transaction is open before executing so
     // this execution reuses the console's bound connection. begin is idempotent on the server.
-    await ensureTransactionBegun(params);
+    await ensureManualTransaction(params);
     const executeSqlParams: ISqlEditorExecuteRequest = {
       dataSourceId: params.dataSourceId,
       databaseName: params.databaseName,
@@ -238,7 +238,7 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
     });
   }, [
     defaultPageSize,
-    ensureTransactionBegun,
+    ensureManualTransaction,
     initSignal,
     onlyOne,
     onExecutionEvent,

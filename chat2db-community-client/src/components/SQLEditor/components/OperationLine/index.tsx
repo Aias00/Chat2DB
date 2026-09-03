@@ -14,6 +14,17 @@ import { isTemporaryId } from '@/utils';
 import { buildConsoleDefaultTabName } from '@/store/workspace/utils/consoleTabName';
 import transactionServer from '@/service/transaction';
 import type { TransactionState } from '@/store/workspace/slices/console/initialState';
+import { Button, Dropdown, Tooltip, type MenuProps } from 'antd';
+import { Check, ChevronDown, Undo2 } from 'lucide-react';
+import { TransactionIsolationLevel, TransactionMode } from '@/constants/transaction';
+import {
+  getTransactionModeLabelKey,
+  isTransactionIsolationLevel,
+  isTransactionMode,
+  shouldChangeTransactionMode,
+  TRANSACTION_ISOLATION_OPTIONS,
+  TRANSACTION_MODE_OPTIONS,
+} from './transactionToolbar';
 
 interface OperationLineProps {
   active: boolean;
@@ -26,6 +37,7 @@ interface OperationLineProps {
   contentDiffEnabled?: boolean;
   transactionState?: TransactionState;
   showTransactionControls?: boolean;
+  transactionActionsDisabled?: boolean;
 }
 
 const OperationLine = ({
@@ -39,6 +51,7 @@ const OperationLine = ({
   contentDiffEnabled = false,
   transactionState,
   showTransactionControls = false,
+  transactionActionsDisabled = false,
 }: OperationLineProps) => {
   const { styles, cx } = useStyles();
 
@@ -158,6 +171,54 @@ const OperationLine = ({
   };
 
   const shouldDisableActionButton = !hasEditorContent;
+  const transactionMode = transactionState?.mode ?? TransactionMode.AUTO;
+  const transactionIsolationLevel =
+    transactionState?.isolationLevel ?? TransactionIsolationLevel.DEFAULT;
+  const supportedTransactionIsolationOptions = TRANSACTION_ISOLATION_OPTIONS.filter((option) =>
+    transactionState?.supportedIsolationLevels?.includes(option.value),
+  );
+  const transactionMenuItems: NonNullable<MenuProps['items']> = [
+    {
+      type: 'group',
+      label: <span className={styles.transactionModeGroupLabel}>{i18n('workspace.transaction.mode')}</span>,
+      children: TRANSACTION_MODE_OPTIONS.map((option) => ({
+        key: option.value,
+        label: i18n(option.labelKey),
+        icon:
+          option.value === transactionMode ? (
+            <Check size={14} strokeWidth={2.5} />
+          ) : (
+            <span className={styles.transactionModeCheckPlaceholder} />
+          ),
+      })),
+    },
+  ];
+  if (supportedTransactionIsolationOptions.length > 0) {
+    transactionMenuItems.push(
+      {
+        type: 'divider',
+      },
+      {
+        type: 'group',
+        label: (
+          <span className={styles.transactionModeGroupLabel}>
+            {i18n('workspace.transaction.isolationLevel')}
+          </span>
+        ),
+        children: supportedTransactionIsolationOptions.map((option) => ({
+          key: option.value,
+          label: i18n(option.labelKey),
+          disabled: transactionState?.inTransaction,
+          icon:
+            option.value === transactionIsolationLevel ? (
+              <Check size={14} strokeWidth={2.5} />
+            ) : (
+              <span className={styles.transactionModeCheckPlaceholder} />
+            ),
+        })),
+      },
+    );
+  }
 
   return (
     <div className={styles.consoleOptionsWrapper}>
@@ -202,41 +263,75 @@ const OperationLine = ({
         )}
 
         {showTransactionControls && (
-          <>
-            <IconButton
-              className={styles.operatingButtonIcon}
-              code="icon-switch-horizontal"
-              size="sm"
-              title={i18n('common.button.autoCommit')}
-              onClick={() => {
-                action(SQLOptType.TOGGLE_AUTO_COMMIT);
+          <div className={styles.transactionControls}>
+            <Dropdown
+              trigger={['click']}
+              placement="bottomLeft"
+              overlayClassName={styles.transactionModeDropdown}
+              menu={{
+                items: transactionMenuItems,
+                selectable: false,
+                onClick: ({ key }) => {
+                  if (isTransactionMode(key) && shouldChangeTransactionMode(transactionMode, key)) {
+                    action(SQLOptType.TOGGLE_AUTO_COMMIT);
+                    return;
+                  }
+                  if (
+                    isTransactionIsolationLevel(key) &&
+                    !transactionState?.inTransaction &&
+                    key !== transactionIsolationLevel
+                  ) {
+                    action(SQLOptType.SET_TRANSACTION_ISOLATION, key);
+                  }
+                },
               }}
-            />
-            {transactionState?.mode === 'manual' && (
+            >
+              <Button
+                type="text"
+                size="small"
+                className={cx(
+                  styles.transactionModeTrigger,
+                  transactionMode === TransactionMode.MANUAL && styles.transactionModeTriggerManual,
+                )}
+                disabled={transactionActionsDisabled}
+                aria-label={i18n('workspace.transaction.mode')}
+              >
+                <span className={styles.transactionModePrefix}>Tx:</span>
+                <span>{i18n(getTransactionModeLabelKey(transactionMode))}</span>
+                <ChevronDown className={styles.transactionModeChevron} size={13} />
+              </Button>
+            </Dropdown>
+            {transactionMode === TransactionMode.MANUAL && (
               <>
-                <IconButton
-                  className={styles.operatingButtonIcon}
-                  code="icon-check"
-                  size="sm"
-                  disabled={!transactionState?.inTransaction}
-                  title={i18n('common.button.commit')}
-                  onClick={() => {
-                    action(SQLOptType.COMMIT_TRANSACTION);
-                  }}
-                />
-                <IconButton
-                  className={styles.operatingButtonIcon}
-                  code="icon-huigun"
-                  size="sm"
-                  disabled={!transactionState?.inTransaction}
-                  title={i18n('common.button.rollback')}
-                  onClick={() => {
-                    action(SQLOptType.ROLLBACK_TRANSACTION);
-                  }}
-                />
+                <Tooltip title={i18n('common.button.commit')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    className={cx(styles.transactionActionButton, styles.transactionCommitButton)}
+                    icon={<Check size={15} strokeWidth={2.25} />}
+                    disabled={transactionActionsDisabled || !transactionState?.inTransaction}
+                    aria-label={i18n('common.button.commit')}
+                    onClick={() => {
+                      action(SQLOptType.COMMIT_TRANSACTION);
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title={i18n('common.button.rollback')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    className={cx(styles.transactionActionButton, styles.transactionRollbackButton)}
+                    icon={<Undo2 size={15} strokeWidth={2.1} />}
+                    disabled={transactionActionsDisabled || !transactionState?.inTransaction}
+                    aria-label={i18n('common.button.rollback')}
+                    onClick={() => {
+                      action(SQLOptType.ROLLBACK_TRANSACTION);
+                    }}
+                  />
+                </Tooltip>
               </>
             )}
-          </>
+          </div>
         )}
 
         {(showRunSigleSQLButton || showRunButton) && <div className={styles.partingLine} />}

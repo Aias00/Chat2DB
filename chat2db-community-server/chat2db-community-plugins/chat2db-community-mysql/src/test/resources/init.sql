@@ -1,6 +1,6 @@
 -- init.sql
--- Schema for the MySQL manual-transaction integration tests (#2586).
--- Loaded by Testcontainers withInitScript as the root user before tests run.
+-- Schema for MySQL manual-transaction Web verification (#2586).
+-- Load as an administrator before manual Web/Playwright verification.
 
 CREATE DATABASE IF NOT EXISTS c2d_tx_test
     CHARACTER SET utf8mb4

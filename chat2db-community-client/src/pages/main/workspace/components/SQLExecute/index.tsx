@@ -1120,6 +1120,7 @@ const SQLExecute = forwardRef((props: IProps, ref: ForwardedRef<SQLExecuteRef>) 
           isConsole={isConsole}
           sqlActionEnabled={sqlActionEnabled}
           dataSourceState={dataSourceState}
+          sqlExecuting={executing}
           onChange={onEditorChange}
         />
       </div>

@@ -1,9 +1,19 @@
 import { DatabaseTypeCode } from '@/constants/common';
-import { databaseCapabilities, IdentifierQuoteMode } from '@/constants/databaseCapabilities';
+import { DatabaseCapability, databaseCapabilities, IdentifierQuoteMode } from '@/constants/databaseCapabilities';
 import { getDatabaseInfo, normalizeDatabaseType } from '@/constants/database';
 import { EditColumnOperationType } from '@/constants/editTable';
 
 type DatabaseTypeInput = DatabaseTypeCode | string | null | undefined;
+
+export const isDatabaseCapabilitySupported = (
+  databaseType: DatabaseTypeInput,
+  capability: DatabaseCapability,
+): boolean => {
+  if (capability === DatabaseCapability.MANUAL_TRANSACTIONS) {
+    return containsStrict(databaseCapabilities.manualTransactionsSupported, databaseType);
+  }
+  return false;
+};
 
 const normalize = (databaseType?: DatabaseTypeInput): DatabaseTypeCode | undefined => {
   return normalizeDatabaseType(databaseType) as DatabaseTypeCode | undefined;

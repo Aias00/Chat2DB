@@ -1,5 +1,9 @@
 import { DatabaseTypeCode } from './common';
 
+export enum DatabaseCapability {
+  MANUAL_TRANSACTIONS = 'MANUAL_TRANSACTIONS',
+}
+
 export enum IdentifierQuoteMode {
   NONE = 'NONE',
   DOUBLE_QUOTE = 'DOUBLE_QUOTE',
@@ -10,6 +14,7 @@ export enum IdentifierQuoteMode {
 export const databaseCapabilities = {
   routineOperationSupported: [DatabaseTypeCode.MYSQL],
   accountManageSupported: [DatabaseTypeCode.MYSQL],
+  manualTransactionsSupported: [DatabaseTypeCode.MYSQL],
   databaseDeleteSupported: [DatabaseTypeCode.MYSQL, DatabaseTypeCode.POSTGRESQL],
   schemaDeleteSupported: [DatabaseTypeCode.POSTGRESQL],
   createDatabaseUnsupported: [DatabaseTypeCode.H2],
