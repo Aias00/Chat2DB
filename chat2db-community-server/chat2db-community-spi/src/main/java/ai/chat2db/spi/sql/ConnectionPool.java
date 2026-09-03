@@ -1,5 +1,6 @@
 package ai.chat2db.spi.sql;
 
+import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import lombok.extern.slf4j.Slf4j;
@@ -8,8 +9,11 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.PreparedStatement;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class ConnectionPool {
@@ -30,8 +34,21 @@ public class ConnectionPool {
 
     private static final ConcurrentHashMap<Long, Long> CONNECTION_GENERATIONS = new ConcurrentHashMap<>();
 
+    private static final long CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS = TimeUnit.MINUTES.toMillis(30);
+
+    private static final long CONSOLE_TRANSACTION_CLEANUP_INTERVAL_MILLIS = TimeUnit.MINUTES.toMillis(1);
+
+    private static final Executor DIRECT_ABORT_EXECUTOR = Runnable::run;
+
+    private static final ConcurrentHashMap<Long, BoundTransaction> CONSOLE_TRANSACTIONS = new ConcurrentHashMap<>();
+
+    private static final Object[] CONSOLE_LOCKS = new Object[1024];
+
 
     static {
+        for (int i = 0; i < CONSOLE_LOCKS.length; i++) {
+            CONSOLE_LOCKS[i] = new Object();
+        }
         // Daemon + named so the periodic cleanup loop never blocks JVM exit and is
         // attributable in thread dumps/monitoring. A user (non-daemon) thread here
         // would hang the process on shutdown once the pool class is loaded.
@@ -40,6 +57,7 @@ public class ConnectionPool {
                 try {
                     Thread.sleep(1000 * 60 * 1);
                     cleanupConnections();
+                    evictIdleConsoleTransactions();
                 } catch (Exception e) {
                     log.error("close connection error", e);
                 }
@@ -47,6 +65,65 @@ public class ConnectionPool {
         }, "chat2db-conn-pool-cleanup");
         cleanupThread.setDaemon(true);
         cleanupThread.start();
+    }
+
+    public enum TransactionState {
+        IN_TRANSACTION,
+        COMMITTING,
+        ROLLING_BACK
+    }
+
+    public enum TransactionOutcome {
+        COMMITTED,
+        ROLLED_BACK,
+        RELEASED_WITHOUT_TRANSACTION,
+        UNKNOWN
+    }
+
+    public static class BoundTransaction {
+        private final ConnectInfo connectInfo;
+        private final TransactionIsolationLevel isolationLevel;
+        private final List<TransactionIsolationLevel> supportedIsolationLevels;
+        private volatile TransactionState state = TransactionState.IN_TRANSACTION;
+        private volatile long lastUsedMillis = System.currentTimeMillis();
+
+        BoundTransaction(
+                ConnectInfo connectInfo,
+                TransactionIsolationLevel isolationLevel,
+                List<TransactionIsolationLevel> supportedIsolationLevels
+        ) {
+            this.connectInfo = connectInfo;
+            this.isolationLevel = isolationLevel;
+            this.supportedIsolationLevels = List.copyOf(supportedIsolationLevels);
+        }
+
+        public ConnectInfo getConnectInfo() {
+            return connectInfo;
+        }
+
+        public TransactionState getState() {
+            return state;
+        }
+
+        public TransactionIsolationLevel getIsolationLevel() {
+            return isolationLevel;
+        }
+
+        public List<TransactionIsolationLevel> getSupportedIsolationLevels() {
+            return supportedIsolationLevels;
+        }
+
+        void setState(TransactionState state) {
+            this.state = state;
+        }
+
+        void touch() {
+            lastUsedMillis = System.currentTimeMillis();
+        }
+
+        long lastUsedMillis() {
+            return lastUsedMillis;
+        }
     }
 
     static void cleanupConnections() {
@@ -287,7 +364,7 @@ public class ConnectionPool {
         }
         // Sweep console-bound connections held outside the pool queue before invalidating
         // generations, so editing/closing a datasource also reclaims open transactions.
-        ConsoleTransactionRegistry.releaseByDataSourceId(datasourceId);
+        ConnectionPool.releaseByDataSourceId(datasourceId);
         CONNECTION_GENERATIONS.merge(datasourceId, 1L, Long::sum);
         CONNECTION_MAP.computeIfPresent(datasourceId, (key, keyMap) -> {
             for (Map.Entry<String, LinkedBlockingQueue<ConnectInfo>> entry : keyMap.entrySet()) {
@@ -321,7 +398,7 @@ public class ConnectionPool {
 
     public static void close(ConnectInfo connectInfo) {
         // Console-bound connections (manual transaction mode) are owned by
-        // ConsoleTransactionRegistry. They must NOT be returned to the pool queue while a
+        // ConnectionPool. They must NOT be returned to the pool queue while a
         // transaction is open; their lifecycle is resolved by commit/rollback/release.
         if (Boolean.TRUE.equals(connectInfo.getConsoleOwn())) {
             return;
@@ -371,6 +448,279 @@ public class ConnectionPool {
             }
             return keyMap;
         });
+    }
+
+    /**
+     * Registers one exclusive connection lease for a Console. The lease is owned by this
+     * connection pool, but is withheld from the shared queue until the transaction resolves.
+     */
+    public static boolean registerIfAbsent(Long consoleId, ConnectInfo connectInfo) {
+        return registerIfAbsent(
+                consoleId,
+                connectInfo,
+                TransactionIsolationLevel.DEFAULT,
+                List.of(TransactionIsolationLevel.DEFAULT)
+        );
+    }
+
+    public static boolean registerIfAbsent(
+            Long consoleId,
+            ConnectInfo connectInfo,
+            TransactionIsolationLevel isolationLevel
+    ) {
+        List<TransactionIsolationLevel> supportedIsolationLevels = isolationLevel == null
+                || isolationLevel == TransactionIsolationLevel.DEFAULT
+                ? List.of(TransactionIsolationLevel.DEFAULT)
+                : List.of(TransactionIsolationLevel.DEFAULT, isolationLevel);
+        return registerIfAbsent(consoleId, connectInfo, isolationLevel, supportedIsolationLevels);
+    }
+
+    public static boolean registerIfAbsent(
+            Long consoleId,
+            ConnectInfo connectInfo,
+            TransactionIsolationLevel isolationLevel,
+            List<TransactionIsolationLevel> supportedIsolationLevels
+    ) {
+        if (consoleId == null || connectInfo == null) {
+            return false;
+        }
+        TransactionIsolationLevel effectiveIsolationLevel = isolationLevel == null
+                ? TransactionIsolationLevel.DEFAULT
+                : isolationLevel;
+        List<TransactionIsolationLevel> effectiveSupportedIsolationLevels = supportedIsolationLevels == null
+                ? List.of()
+                : supportedIsolationLevels;
+        return CONSOLE_TRANSACTIONS.putIfAbsent(
+                consoleId,
+                new BoundTransaction(connectInfo, effectiveIsolationLevel, effectiveSupportedIsolationLevels)
+        ) == null;
+    }
+
+    public static ConnectInfo getBoundConnectInfo(Long consoleId) {
+        if (consoleId == null) {
+            return null;
+        }
+        BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+        if (bound == null || bound.getState() != TransactionState.IN_TRANSACTION) {
+            return null;
+        }
+        bound.touch();
+        return bound.getConnectInfo();
+    }
+
+    public static boolean isInTransaction(Long consoleId) {
+        BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+        return bound != null && bound.getState() == TransactionState.IN_TRANSACTION;
+    }
+
+    public static TransactionState getState(Long consoleId) {
+        BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+        return bound == null ? null : bound.getState();
+    }
+
+    public static Long getBoundDataSourceId(Long consoleId) {
+        BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+        return bound == null ? null : bound.getConnectInfo().getDataSourceId();
+    }
+
+    public static TransactionIsolationLevel getIsolationLevel(Long consoleId) {
+        BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+        return bound == null ? TransactionIsolationLevel.DEFAULT : bound.getIsolationLevel();
+    }
+
+    public static List<TransactionIsolationLevel> getSupportedIsolationLevels(Long consoleId) {
+        BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+        return bound == null ? List.of() : bound.getSupportedIsolationLevels();
+    }
+
+    public static <T> T withConsoleLock(Long consoleId, Callable<T> action) throws Exception {
+        if (consoleId == null) {
+            return action.call();
+        }
+        synchronized (lockFor(consoleId)) {
+            return action.call();
+        }
+    }
+
+    public static TransactionOutcome commit(Long consoleId) {
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+            if (bound == null) {
+                return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            }
+            bound.setState(TransactionState.COMMITTING);
+            Connection connection = bound.getConnectInfo().getConnection();
+            boolean discardRequired = false;
+            try {
+                connection.commit();
+            } catch (SQLException e) {
+                log.error("Commit failed for consoleId={}, discarding connection", consoleId, e);
+                discardRequired = true;
+            }
+            if (!discardRequired) {
+                discardRequired = !restoreAutoCommit(connection);
+            }
+            if (discardRequired) {
+                discardConsoleConnection(bound.getConnectInfo());
+                CONSOLE_TRANSACTIONS.remove(consoleId);
+                return TransactionOutcome.UNKNOWN;
+            }
+            bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
+            CONSOLE_TRANSACTIONS.remove(consoleId);
+            close(bound.getConnectInfo());
+            return TransactionOutcome.COMMITTED;
+        }
+    }
+
+    public static TransactionOutcome rollback(Long consoleId) {
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction bound = CONSOLE_TRANSACTIONS.get(consoleId);
+            if (bound == null) {
+                return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            }
+            bound.setState(TransactionState.ROLLING_BACK);
+            Connection connection = bound.getConnectInfo().getConnection();
+            boolean discardRequired = false;
+            try {
+                connection.rollback();
+            } catch (SQLException e) {
+                log.error("Rollback failed for consoleId={}, discarding connection", consoleId, e);
+                discardRequired = true;
+            }
+            if (!discardRequired) {
+                discardRequired = !restoreAutoCommit(connection);
+            }
+            if (discardRequired) {
+                discardConsoleConnection(bound.getConnectInfo());
+                CONSOLE_TRANSACTIONS.remove(consoleId);
+                return TransactionOutcome.UNKNOWN;
+            }
+            bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
+            CONSOLE_TRANSACTIONS.remove(consoleId);
+            close(bound.getConnectInfo());
+            return TransactionOutcome.ROLLED_BACK;
+        }
+    }
+
+    public static TransactionOutcome release(Long consoleId, boolean rollbackIfInTransaction) {
+        synchronized (lockFor(consoleId)) {
+            BoundTransaction bound = CONSOLE_TRANSACTIONS.remove(consoleId);
+            if (bound == null) {
+                return TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            }
+            TransactionOutcome outcome = TransactionOutcome.RELEASED_WITHOUT_TRANSACTION;
+            Connection connection = bound.getConnectInfo().getConnection();
+            if (rollbackIfInTransaction && bound.getState() == TransactionState.IN_TRANSACTION) {
+                boolean discardRequired = false;
+                try {
+                    connection.rollback();
+                    outcome = TransactionOutcome.ROLLED_BACK;
+                } catch (SQLException e) {
+                    log.error("Release-time rollback failed for consoleId={}, discarding connection", consoleId, e);
+                    discardRequired = true;
+                }
+                if (!discardRequired) {
+                    discardRequired = !restoreAutoCommit(connection);
+                }
+                if (discardRequired) {
+                    discardConsoleConnection(bound.getConnectInfo());
+                    return TransactionOutcome.UNKNOWN;
+                }
+            } else if (!restoreAutoCommit(connection)) {
+                discardConsoleConnection(bound.getConnectInfo());
+                return TransactionOutcome.UNKNOWN;
+            }
+            bound.getConnectInfo().setConsoleOwn(Boolean.FALSE);
+            close(bound.getConnectInfo());
+            return outcome;
+        }
+    }
+
+    public static void releaseByDataSourceId(Long dataSourceId) {
+        if (dataSourceId == null) {
+            return;
+        }
+        List<Long> toRelease = new ArrayList<>();
+        for (Map.Entry<Long, BoundTransaction> entry : CONSOLE_TRANSACTIONS.entrySet()) {
+            if (Objects.equals(entry.getValue().getConnectInfo().getDataSourceId(), dataSourceId)) {
+                toRelease.add(entry.getKey());
+            }
+        }
+        for (Long consoleId : toRelease) {
+            release(consoleId, true);
+        }
+    }
+
+    public static void releaseAll(boolean rollbackIfInTransaction) {
+        List<Long> toRelease = new ArrayList<>(CONSOLE_TRANSACTIONS.keySet());
+        for (Long consoleId : toRelease) {
+            try {
+                release(consoleId, rollbackIfInTransaction);
+            } catch (Throwable e) {
+                log.error("Release-all failed for consoleId={}", consoleId, e);
+            }
+        }
+    }
+
+    public static int size() {
+        return CONSOLE_TRANSACTIONS.size();
+    }
+
+    private static boolean restoreAutoCommit(Connection connection) {
+        try {
+            connection.setAutoCommit(true);
+            return true;
+        } catch (SQLException e) {
+            log.error("Failed to restore autoCommit after transaction resolution", e);
+            return false;
+        }
+    }
+
+    private static void discardConsoleConnection(ConnectInfo connectInfo) {
+        if (connectInfo == null) {
+            return;
+        }
+        Connection connection = connectInfo.getConnection();
+        if (connection == null) {
+            return;
+        }
+        connectInfo.setConnection(null);
+        try {
+            connection.abort(DIRECT_ABORT_EXECUTOR);
+            return;
+        } catch (Throwable abortEx) {
+            log.debug("Connection.abort failed, falling back to close", abortEx);
+        }
+        try {
+            connection.close();
+        } catch (Throwable closeEx) {
+            log.debug("Connection.close failed during discard", closeEx);
+        }
+    }
+
+    static void evictIdleConsoleTransactions() {
+        long now = System.currentTimeMillis();
+        List<Long> toEvict = new ArrayList<>();
+        for (Map.Entry<Long, BoundTransaction> entry : CONSOLE_TRANSACTIONS.entrySet()) {
+            BoundTransaction bound = entry.getValue();
+            long idle = now - bound.lastUsedMillis();
+            if (bound.getState() == TransactionState.IN_TRANSACTION) {
+                if (idle > CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS) {
+                    toEvict.add(entry.getKey());
+                }
+            } else if (idle > CONSOLE_TRANSACTION_IDLE_TIMEOUT_MILLIS * 2) {
+                toEvict.add(entry.getKey());
+            }
+        }
+        for (Long consoleId : toEvict) {
+            log.warn("Evicting idle console transaction for consoleId={}", consoleId);
+            release(consoleId, true);
+        }
+    }
+
+    private static Object lockFor(Long consoleId) {
+        int index = consoleId == null ? 0 : Math.floorMod(consoleId.hashCode(), CONSOLE_LOCKS.length);
+        return CONSOLE_LOCKS[index];
     }
 
 }

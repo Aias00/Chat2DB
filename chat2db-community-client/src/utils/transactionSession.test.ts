@@ -39,12 +39,11 @@ async function run() {
     },
   );
 
-  assert.equal(success, true);
+  assert.equal(success, false);
   assert.equal(unknownOutcomes, 1);
   assert.deepEqual(patches, [
     {
-      mode: TransactionMode.AUTO,
-      inTransaction: false,
+      inTransaction: true,
       lastOutcome: TransactionOutcome.UNKNOWN,
       lastError: 'rollback outcome unknown',
     },

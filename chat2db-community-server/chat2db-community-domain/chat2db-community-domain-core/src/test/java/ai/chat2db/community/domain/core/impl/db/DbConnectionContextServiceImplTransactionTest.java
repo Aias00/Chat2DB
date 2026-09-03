@@ -11,7 +11,7 @@ import ai.chat2db.community.domain.api.service.db.IDbWorkspaceDataSourceService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
-import ai.chat2db.spi.sql.ConsoleTransactionRegistry;
+import ai.chat2db.spi.sql.ConnectionPool;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +35,7 @@ class DbConnectionContextServiceImplTransactionTest {
     @AfterEach
     void tearDown() {
         Chat2DBContext.removeContext();
-        ConsoleTransactionRegistry.releaseAll(true);
+        ConnectionPool.releaseAll(true);
     }
 
     @Test
@@ -50,7 +50,7 @@ class DbConnectionContextServiceImplTransactionTest {
 
         assertEquals("datasource.not.found", thrown.getCode());
         assertEquals(0, commits.get());
-        assertTrue(ConsoleTransactionRegistry.isInTransaction(consoleId));
+        assertTrue(ConnectionPool.isInTransaction(consoleId));
     }
 
     @Test
@@ -65,7 +65,7 @@ class DbConnectionContextServiceImplTransactionTest {
 
         assertEquals("transaction.datasource.mismatch", thrown.getCode());
         assertEquals(0, rollbacks.get());
-        assertTrue(ConsoleTransactionRegistry.isInTransaction(consoleId));
+        assertTrue(ConnectionPool.isInTransaction(consoleId));
     }
 
     @Test
@@ -152,7 +152,7 @@ class DbConnectionContextServiceImplTransactionTest {
         assertEquals("auto", response.getMode());
         assertEquals("ROLLED_BACK", response.getOutcome());
         assertEquals(1, rollbacks.get());
-        assertFalse(ConsoleTransactionRegistry.isInTransaction(consoleId));
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
     }
 
     @Test
@@ -166,7 +166,7 @@ class DbConnectionContextServiceImplTransactionTest {
         assertFalse(response.isInTransaction());
         assertEquals("auto", response.getMode());
         assertEquals("UNKNOWN", response.getOutcome());
-        assertFalse(ConsoleTransactionRegistry.isInTransaction(consoleId));
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
     }
 
     @Test
@@ -231,7 +231,7 @@ class DbConnectionContextServiceImplTransactionTest {
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
         connectInfo.setDriverConfig(new DriverConfig());
-        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(consoleId, connectInfo, isolationLevel));
+        assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo, isolationLevel));
         return connectInfo;
     }
 

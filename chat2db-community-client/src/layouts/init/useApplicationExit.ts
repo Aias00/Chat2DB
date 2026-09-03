@@ -9,6 +9,7 @@ import { useUserStore } from '@/store/session';
 import { useWorkspaceStore } from '@/store/workspace';
 import { isDesktop } from '@/utils/env';
 import { prepareWorkspaceEditorsForApplicationExit } from '@/utils/editorCloseConfirmation';
+import confirmAndReleaseTransaction from '@/utils/transactionSession';
 import { coordinateApplicationExit } from './applicationExitCoordinator';
 
 const useApplicationExit = () => {
@@ -31,9 +32,11 @@ const useApplicationExit = () => {
         await coordinateApplicationExit({
           confirmDirtyEditors: () => {
             const workspace = useWorkspaceStore.getState();
-            return prepareWorkspaceEditorsForApplicationExit(
-              workspace.workspaceTabList || [],
-              workspace.editorList || {},
+            const tabs = workspace.workspaceTabList || [];
+            return confirmAndReleaseTransaction(tabs).then((transactionOk) =>
+              transactionOk
+                ? prepareWorkspaceEditorsForApplicationExit(tabs, workspace.editorList || {})
+                : false,
             );
           },
           shouldManageTasks: () => {

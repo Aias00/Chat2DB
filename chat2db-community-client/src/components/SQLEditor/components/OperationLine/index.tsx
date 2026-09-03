@@ -16,7 +16,7 @@ import transactionServer from '@/service/transaction';
 import type { TransactionState } from '@/store/workspace/slices/console/initialState';
 import { Button, Dropdown, Tooltip, type MenuProps } from 'antd';
 import { Check, ChevronDown, Undo2 } from 'lucide-react';
-import { TransactionIsolationLevel, TransactionMode } from '@/constants/transaction';
+import { TransactionIsolationLevel, TransactionMode, TransactionOutcome } from '@/constants/transaction';
 import {
   getTransactionModeLabelKey,
   isTransactionIsolationLevel,
@@ -125,7 +125,7 @@ const OperationLine = ({
         staticModal.confirm({
           title: i18n('workspace.transaction.switchConnectionTitle'),
           content: i18n('workspace.transaction.switchConnectionContent'),
-          okText: i18n('workspace.transaction.rollback'),
+          okText: i18n('workspace.transaction.rollbackOnly'),
           cancelText: i18n('common.button.cancel'),
           onOk: () => resolve(true),
           onCancel: () => resolve(false),
@@ -135,12 +135,16 @@ const OperationLine = ({
         return;
       }
       try {
-        await transactionServer.rollbackTransaction({
+        const result = await transactionServer.rollbackTransaction({
           dataSourceId: dbInfo.dataSourceId as number,
           databaseName: dbInfo.databaseName,
           schemaName: dbInfo.schemaName,
           consoleId: dbInfo.consoleId,
         });
+        if (result.outcome === TransactionOutcome.UNKNOWN || result.inTransaction) {
+          staticMessage.error(i18n('workspace.transaction.releaseFailed'));
+          return;
+        }
         useWorkspaceStore.getState().setTransactionState(dbInfo.consoleId, { inTransaction: false });
       } catch (error) {
         // The rollback failed, so the server still holds an open transaction; abort the

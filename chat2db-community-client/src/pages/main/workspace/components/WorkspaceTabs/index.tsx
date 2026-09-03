@@ -71,7 +71,6 @@ import {
 } from '../../utils/localTextFile';
 import { confirmWorkspaceTabsClose } from '@/utils/editorCloseConfirmation';
 import { resolveEditorDataSourceConnectable, resolveEditorDataSourceState } from '@/utils/editorDataSourceLifecycle';
-import { confirmAndKillTerminalTabs } from '@/utils/terminalSession';
 import confirmAndReleaseTransaction from '@/utils/transactionSession';
 import { EditorType } from '@/components/SQLEditor';
 import { ShortcutAction } from '@/constants/shortcut';
@@ -1101,19 +1100,13 @@ const WorkspaceTabs = memo(() => {
 
   const confirmWorkspaceTabItemsClose = (tabs: ITabItem[]) => {
     const closeKeySet = new Set(tabs.map((tab) => tab.key));
-    return confirmWorkspaceTabsClose(
-      (workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id)),
-      workspaceTabList || [],
-      useWorkspaceStore.getState().editorList || {},
-    ).then((ok) =>
-      ok
-        ? confirmAndKillTerminalTabs(
-            (workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id)),
+    const tabsToClose = (workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id));
+    return confirmAndReleaseTransaction(tabsToClose).then((transactionOk) =>
+      transactionOk
+        ? confirmWorkspaceTabsClose(
+            tabsToClose,
             workspaceTabList || [],
-          ).then((terminalOk) =>
-            terminalOk
-              ? confirmAndReleaseTransaction((workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id)))
-              : false,
+            useWorkspaceStore.getState().editorList || {},
           )
         : false,
     );
@@ -1121,12 +1114,14 @@ const WorkspaceTabs = memo(() => {
 
   const requestCloseWorkspaceTabs = async (tabs: IWorkspaceTab[]) => {
     const closableTabs = tabs.filter((item) => !item.pinned);
-    if (await confirmWorkspaceTabsClose(
+    if (
+      await confirmAndReleaseTransaction(closableTabs) &&
+      await confirmWorkspaceTabsClose(
         closableTabs,
         workspaceTabList || [],
         useWorkspaceStore.getState().editorList || {},
-      ) && await confirmAndKillTerminalTabs(closableTabs, workspaceTabList || [])
-        && await confirmAndReleaseTransaction(closableTabs)) {
+      )
+    ) {
       closeWorkspaceTabs(closableTabs);
     }
   };

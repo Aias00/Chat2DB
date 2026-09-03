@@ -19,11 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ConsoleTransactionRegistryTest {
+class ConnectionPoolTransactionTest {
 
     @AfterEach
     void tearDown() {
-        ConsoleTransactionRegistry.releaseAll(true);
+        ConnectionPool.releaseAll(true);
     }
 
     @Test
@@ -35,13 +35,13 @@ class ConsoleTransactionRegistryTest {
         AtomicInteger rollbacks = new AtomicInteger();
         registerBound(consoleId, blockingCommitConnection(commitEntered, releaseCommit, commits, rollbacks));
 
-        FutureTask<ConsoleTransactionRegistry.TransactionOutcome> commit =
-                new FutureTask<>(() -> ConsoleTransactionRegistry.commit(consoleId));
+        FutureTask<ConnectionPool.TransactionOutcome> commit =
+                new FutureTask<>(() -> ConnectionPool.commit(consoleId));
         new Thread(commit, "commit-test").start();
         assertTrue(commitEntered.await(2, TimeUnit.SECONDS));
 
-        FutureTask<ConsoleTransactionRegistry.TransactionOutcome> rollback =
-                new FutureTask<>(() -> ConsoleTransactionRegistry.rollback(consoleId));
+        FutureTask<ConnectionPool.TransactionOutcome> rollback =
+                new FutureTask<>(() -> ConnectionPool.rollback(consoleId));
         new Thread(rollback, "rollback-test").start();
 
         Thread.sleep(100);
@@ -50,9 +50,9 @@ class ConsoleTransactionRegistryTest {
 
         releaseCommit.countDown();
 
-        assertEquals(ConsoleTransactionRegistry.TransactionOutcome.COMMITTED,
+        assertEquals(ConnectionPool.TransactionOutcome.COMMITTED,
                 commit.get(2, TimeUnit.SECONDS));
-        assertEquals(ConsoleTransactionRegistry.TransactionOutcome.RELEASED_WITHOUT_TRANSACTION,
+        assertEquals(ConnectionPool.TransactionOutcome.RELEASED_WITHOUT_TRANSACTION,
                 rollback.get(2, TimeUnit.SECONDS));
         assertEquals(1, commits.get());
         assertEquals(0, rollbacks.get());
@@ -67,7 +67,7 @@ class ConsoleTransactionRegistryTest {
         registerBound(consoleId, countingConnection(new AtomicInteger(), rollbacks));
 
         FutureTask<Void> operation = new FutureTask<>(() ->
-                ConsoleTransactionRegistry.withConsoleLock(consoleId, () -> {
+                ConnectionPool.withConsoleLock(consoleId, () -> {
                     operationEntered.countDown();
                     assertTrue(finishOperation.await(2, TimeUnit.SECONDS));
                     return null;
@@ -75,8 +75,8 @@ class ConsoleTransactionRegistryTest {
         new Thread(operation, "operation-test").start();
         assertTrue(operationEntered.await(2, TimeUnit.SECONDS));
 
-        FutureTask<ConsoleTransactionRegistry.TransactionOutcome> release =
-                new FutureTask<>(() -> ConsoleTransactionRegistry.release(consoleId, true));
+        FutureTask<ConnectionPool.TransactionOutcome> release =
+                new FutureTask<>(() -> ConnectionPool.release(consoleId, true));
         new Thread(release, "release-test").start();
 
         Thread.sleep(100);
@@ -85,7 +85,7 @@ class ConsoleTransactionRegistryTest {
 
         finishOperation.countDown();
 
-        assertEquals(ConsoleTransactionRegistry.TransactionOutcome.ROLLED_BACK,
+        assertEquals(ConnectionPool.TransactionOutcome.ROLLED_BACK,
                 release.get(2, TimeUnit.SECONDS));
         operation.get(2, TimeUnit.SECONDS);
         assertEquals(1, rollbacks.get());
@@ -100,7 +100,7 @@ class ConsoleTransactionRegistryTest {
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(countingConnection(new AtomicInteger(), new AtomicInteger()));
 
-        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(
+        assertTrue(ConnectionPool.registerIfAbsent(
                 consoleId,
                 connectInfo,
                 TransactionIsolationLevel.READ_COMMITTED
@@ -108,12 +108,12 @@ class ConsoleTransactionRegistryTest {
 
         assertEquals(
                 TransactionIsolationLevel.READ_COMMITTED,
-                ConsoleTransactionRegistry.getIsolationLevel(consoleId)
+                ConnectionPool.getIsolationLevel(consoleId)
         );
         assertEquals(List.of(
                 TransactionIsolationLevel.DEFAULT,
                 TransactionIsolationLevel.READ_COMMITTED
-        ), ConsoleTransactionRegistry.getSupportedIsolationLevels(consoleId));
+        ), ConnectionPool.getSupportedIsolationLevels(consoleId));
     }
 
     @Test
@@ -126,17 +126,17 @@ class ConsoleTransactionRegistryTest {
         connectInfo.setDataSourceId(42L);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
-        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(consoleId, connectInfo));
+        assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo));
 
         ConnectionPool.close(connectInfo);
 
         assertEquals(0, closes.get());
-        assertSame(connection, ConsoleTransactionRegistry.getBoundConnectInfo(consoleId).getConnection());
-        assertNull(ConsoleTransactionRegistry.getBoundConnectInfo(consoleId + 1));
+        assertSame(connection, ConnectionPool.getBoundConnectInfo(consoleId).getConnection());
+        assertNull(ConnectionPool.getBoundConnectInfo(consoleId + 1));
 
         assertEquals(
-                ConsoleTransactionRegistry.TransactionOutcome.ROLLED_BACK,
-                ConsoleTransactionRegistry.release(consoleId, true)
+                ConnectionPool.TransactionOutcome.ROLLED_BACK,
+                ConnectionPool.release(consoleId, true)
         );
         assertEquals(1, closes.get());
     }
@@ -147,13 +147,13 @@ class ConsoleTransactionRegistryTest {
         connectInfo.setDataSourceId(42L);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
-        assertTrue(ConsoleTransactionRegistry.registerIfAbsent(consoleId, connectInfo));
+        assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo));
     }
 
     private static Connection blockingCommitConnection(CountDownLatch commitEntered,
             CountDownLatch releaseCommit, AtomicInteger commits, AtomicInteger rollbacks) {
         return (Connection) Proxy.newProxyInstance(
-                ConsoleTransactionRegistryTest.class.getClassLoader(),
+                ConnectionPoolTransactionTest.class.getClassLoader(),
                 new Class<?>[]{Connection.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "commit" -> {
@@ -174,7 +174,7 @@ class ConsoleTransactionRegistryTest {
 
     private static Connection countingConnection(AtomicInteger commits, AtomicInteger rollbacks) {
         return (Connection) Proxy.newProxyInstance(
-                ConsoleTransactionRegistryTest.class.getClassLoader(),
+                ConnectionPoolTransactionTest.class.getClassLoader(),
                 new Class<?>[]{Connection.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "commit" -> {
@@ -193,7 +193,7 @@ class ConsoleTransactionRegistryTest {
 
     private static Connection closeCountingConnection(AtomicInteger closes) {
         return (Connection) Proxy.newProxyInstance(
-                ConsoleTransactionRegistryTest.class.getClassLoader(),
+                ConnectionPoolTransactionTest.class.getClassLoader(),
                 new Class<?>[]{Connection.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "close" -> {

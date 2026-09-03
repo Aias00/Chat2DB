@@ -30,7 +30,6 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -106,10 +105,9 @@ class DbTransactionControllerTest {
     }
 
     @Test
-    void transactionEndpointClearsContextInFinallyWhenServiceFails() throws Exception {
-        AtomicInteger clears = new AtomicInteger();
+    void transactionEndpointPropagatesServiceFailure() throws Exception {
         DbTransactionController controller = controller(
-                new RecordingConnectionContextService(new AtomicReference<>(), new RuntimeException("boom"), clears));
+                new RecordingConnectionContextService(new AtomicReference<>(), new RuntimeException("boom")));
         TransactionBeginRequest request = new TransactionBeginRequest();
         request.setDataSourceId(42L);
         request.setDatabaseName("tainted_db");
@@ -117,8 +115,6 @@ class DbTransactionControllerTest {
         request.setConsoleId(7003L);
 
         assertThrows(RuntimeException.class, () -> controller.begin(request));
-
-        assertEquals(1, clears.get());
     }
 
     @Test
@@ -179,11 +175,12 @@ class DbTransactionControllerTest {
     }
 
     private record RecordingConnectionContextService(AtomicReference<DbConnectionContextRequest> received,
-            RuntimeException failure, AtomicInteger clears) implements IDbConnectionContextService {
+            RuntimeException failure) implements IDbConnectionContextService {
 
         private RecordingConnectionContextService(AtomicReference<DbConnectionContextRequest> received,
                 RuntimeException failure) {
-            this(received, failure, new AtomicInteger());
+            this.received = received;
+            this.failure = failure;
         }
 
         @Override
@@ -205,7 +202,6 @@ class DbTransactionControllerTest {
 
         @Override
         public void clear() {
-            clears.incrementAndGet();
         }
 
         @Override

@@ -321,13 +321,13 @@ export const createConsoleAction: StateCreator<WorkspaceStore, [['zustand/devtoo
     if (activeWorkspaceTab?.pinned) {
       return;
     }
+    if (activeWorkspaceTab && !(await confirmAndReleaseTransaction([activeWorkspaceTab]))) {
+      return;
+    }
     if (
       activeWorkspaceTab &&
       !(await confirmWorkspaceTabsClose([activeWorkspaceTab], workspaceTabList, editorList || {}))
     ) {
-      return;
-    }
-    if (activeWorkspaceTab && !(await confirmAndReleaseTransaction([activeWorkspaceTab]))) {
       return;
     }
 

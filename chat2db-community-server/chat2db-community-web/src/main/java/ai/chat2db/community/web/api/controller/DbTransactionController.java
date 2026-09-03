@@ -41,13 +41,9 @@ public class DbTransactionController {
      */
     @PostMapping("/begin")
     public DataResult<TransactionStateResponse> begin(@Valid @RequestBody TransactionBeginRequest request) {
-        try {
-            return DataResult.of(connectionContextService.beginManualTransaction(
-                    dbWebConverter.transactionBeginRequest2context(request)
-            ));
-        } finally {
-            connectionContextService.clear();
-        }
+        return DataResult.of(connectionContextService.beginManualTransaction(
+                dbWebConverter.transactionBeginRequest2context(request)
+        ));
     }
 
     /**
@@ -57,13 +53,9 @@ public class DbTransactionController {
      */
     @PostMapping("/commit")
     public DataResult<TransactionStateResponse> commit(@Valid @RequestBody ConsoleCloseRequest request) {
-        try {
-            return DataResult.of(connectionContextService.commitTransaction(
-                    dbWebConverter.consoleCloseRequest2context(request)
-            ));
-        } finally {
-            connectionContextService.clear();
-        }
+        return DataResult.of(connectionContextService.commitTransaction(
+                dbWebConverter.consoleCloseRequest2context(request)
+        ));
     }
 
     /**
@@ -73,13 +65,9 @@ public class DbTransactionController {
      */
     @PostMapping("/rollback")
     public DataResult<TransactionStateResponse> rollback(@Valid @RequestBody ConsoleCloseRequest request) {
-        try {
-            return DataResult.of(connectionContextService.rollbackTransaction(
-                    dbWebConverter.consoleCloseRequest2context(request)
-            ));
-        } finally {
-            connectionContextService.clear();
-        }
+        return DataResult.of(connectionContextService.rollbackTransaction(
+                dbWebConverter.consoleCloseRequest2context(request)
+        ));
     }
 
     /**
@@ -89,13 +77,9 @@ public class DbTransactionController {
      */
     @PostMapping("/state")
     public DataResult<TransactionStateResponse> state(@Valid @RequestBody ConsoleCloseRequest request) {
-        try {
-            return DataResult.of(connectionContextService.getTransactionState(
-                    dbWebConverter.consoleCloseRequest2context(request)
-            ));
-        } finally {
-            connectionContextService.clear();
-        }
+        return DataResult.of(connectionContextService.getTransactionState(
+                dbWebConverter.consoleCloseRequest2context(request)
+        ));
     }
 
     /**
@@ -106,13 +90,9 @@ public class DbTransactionController {
      */
     @PostMapping("/release")
     public DataResult<TransactionStateResponse> release(@Valid @RequestBody ConsoleCloseRequest request) {
-        try {
-            return DataResult.of(connectionContextService.releaseBoundConnection(
-                    dbWebConverter.consoleCloseRequest2context(request)
-            ));
-        } finally {
-            connectionContextService.clear();
-        }
+        return DataResult.of(connectionContextService.releaseBoundConnection(
+                dbWebConverter.consoleCloseRequest2context(request)
+        ));
     }
 
 }

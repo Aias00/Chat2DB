@@ -6,7 +6,7 @@ import SQLEditor, { SQLEditorRef } from '../SQLEditor';
 import RoutineOperationModals from './RoutineOperationModals';
 import InitialSaveNameModal from './InitialSaveNameModal';
 import { EditorSetValueType, EditorType, SQLOptType } from '../../type';
-import { staticMessage } from '@chat2db/ui';
+import { staticMessage, staticModal } from '@chat2db/ui';
 import { Modal } from 'antd';
 import { IConsoleReturnExecuteSql, IBoundInfo, TreeNodeData } from '@/typings';
 import { saveFileToDesktop, saveLocalFileContent, waitForLocalFileSave } from '@/utils/file';
@@ -516,16 +516,30 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     // Leaving manual mode with an open transaction: roll it back first so no uncommitted work
     // is left dangling on the server.
     if (current?.inTransaction && nextMode === TransactionMode.AUTO) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        staticModal.confirm({
+          title: i18n('workspace.transaction.switchModeTitle'),
+          content: i18n('workspace.transaction.switchModeContent'),
+          okText: i18n('workspace.transaction.rollbackOnly'),
+          cancelText: i18n('workspace.transaction.cancel'),
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!confirmed) {
+        return;
+      }
       try {
         const result = await transactionServer.rollbackTransaction(transactionRequest(consoleId));
+        if (result.outcome === TransactionOutcome.UNKNOWN || result.inTransaction) {
+          staticMessage.error(i18n('workspace.transaction.releaseFailed'));
+          return;
+        }
         store.setTransactionState(consoleId, {
           inTransaction: false,
           lastOutcome: result.outcome,
           lastError: result.lastError,
         });
-        if (result.outcome === TransactionOutcome.UNKNOWN) {
-          staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
-        }
       } catch (error) {
         // Rollback failed; stay in manual mode so the Commit/Rollback controls remain
         // available and the open transaction is not silently abandoned.
@@ -556,7 +570,11 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     try {
       const result = await transactionServer.commitTransaction(transactionRequest(consoleId));
       useWorkspaceStore.getState().setTransactionState(consoleId, {
-        inTransaction: false,
+        // An unknown outcome means the server could not prove that the bound
+        // transaction ended. Keep the console in manual mode until it is
+        // explicitly resolved instead of hiding the recovery controls.
+        inTransaction:
+          result?.outcome === TransactionOutcome.UNKNOWN ? true : Boolean(result?.inTransaction),
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
@@ -576,7 +594,8 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     try {
       const result = await transactionServer.rollbackTransaction(transactionRequest(consoleId));
       useWorkspaceStore.getState().setTransactionState(consoleId, {
-        inTransaction: false,
+        inTransaction:
+          result?.outcome === TransactionOutcome.UNKNOWN ? true : Boolean(result?.inTransaction),
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });

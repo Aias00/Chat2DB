@@ -262,6 +262,7 @@ export default {
     'This console has an open transaction with uncommitted changes. How do you want to proceed?',
   'workspace.transaction.commit': 'Commit and close',
   'workspace.transaction.rollback': 'Roll back and close',
+  'workspace.transaction.rollbackOnly': 'Roll back',
   'workspace.transaction.cancel': 'Cancel',
   'workspace.transaction.inTransaction': 'In transaction',
   'workspace.transaction.autoCommitOn': 'Auto-commit',
@@ -281,6 +282,9 @@ export default {
     'Rollback outcome is unknown. The connection was discarded; please verify the data manually.',
   'workspace.transaction.outcomeUnknown':
     'The transaction outcome is unknown. The connection was discarded; please verify the data manually.',
+  'workspace.transaction.switchModeTitle': 'Switch transaction mode',
+  'workspace.transaction.switchModeContent':
+    'Switching to auto-commit will roll back the current uncommitted transaction. Continue?',
   'workspace.transaction.switchConnectionTitle': 'Uncommitted transaction',
   'workspace.transaction.switchConnectionContent':
     'Switching the connection will roll back the current uncommitted transaction. Continue?',

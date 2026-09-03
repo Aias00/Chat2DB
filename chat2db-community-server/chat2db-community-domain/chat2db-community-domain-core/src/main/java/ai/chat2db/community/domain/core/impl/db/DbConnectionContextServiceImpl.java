@@ -22,7 +22,6 @@ import ai.chat2db.spi.model.request.TablesRequest;
 import ai.chat2db.spi.model.request.ViewMetadataRequest;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.spi.sql.ConnectionPool;
-import ai.chat2db.spi.sql.ConsoleTransactionRegistry;
 import ai.chat2db.community.domain.api.enums.plugin.ObjectTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -57,7 +56,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
         // and the trusted metadata captured when the transaction began. Rebuilding from the
         // current request would let later request database/schema fields change the console's
         // transaction context while the JDBC connection itself stays bound.
-        ConnectInfo bound = ConsoleTransactionRegistry.getBoundConnectInfo(param.getConsoleId());
+        ConnectInfo bound = ConnectionPool.getBoundConnectInfo(param.getConsoleId());
         if (bound != null && bound.getConnection() != null) {
             validateBoundTransactionRequest(param, bound);
             ConnectInfo connectInfo = bound.copy();
@@ -113,8 +112,8 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
         // survive it. Release the bound connection (rolling back any open transaction) before
         // rebuilding the context for the new database.
         if (connectInfo.getConsoleId() != null
-                && ConsoleTransactionRegistry.isInTransaction(connectInfo.getConsoleId())) {
-            ConsoleTransactionRegistry.release(connectInfo.getConsoleId(), true);
+                && ConnectionPool.isInTransaction(connectInfo.getConsoleId())) {
+            ConnectionPool.release(connectInfo.getConsoleId(), true);
         }
         Chat2DBContext.removeContext();
         connectInfo.setDatabaseName(databaseName);
@@ -138,7 +137,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 throw new BusinessException("connection error");
             }
             // If a transaction is already open for this console, this is idempotent.
-            if (ConsoleTransactionRegistry.isInTransaction(trustedParam.getConsoleId())) {
+            if (ConnectionPool.isInTransaction(trustedParam.getConsoleId())) {
                 return manualTransactionState(trustedParam.getConsoleId());
             }
             TransactionIsolationLevel isolationLevel = Objects.requireNonNullElse(
@@ -172,7 +171,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 response.setLastError(e.getMessage());
                 return response;
             }
-            if (!ConsoleTransactionRegistry.registerIfAbsent(
+            if (!ConnectionPool.registerIfAbsent(
                     trustedParam.getConsoleId(),
                     connectInfo,
                     isolationLevel,
@@ -194,10 +193,10 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     @Override
     public TransactionStateResponse commitTransaction(DbConnectionContextRequest param) {
         try {
-            return ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+            return ConnectionPool.withConsoleLock(param.getConsoleId(), () -> {
                 validateTransactionRequest(param);
-                ConsoleTransactionRegistry.TransactionOutcome outcome =
-                        ConsoleTransactionRegistry.commit(param.getConsoleId());
+                ConnectionPool.TransactionOutcome outcome =
+                        ConnectionPool.commit(param.getConsoleId());
                 TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
                 response.setOutcome(outcome.name());
                 return response;
@@ -212,10 +211,10 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     @Override
     public TransactionStateResponse rollbackTransaction(DbConnectionContextRequest param) {
         try {
-            return ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+            return ConnectionPool.withConsoleLock(param.getConsoleId(), () -> {
                 validateTransactionRequest(param);
-                ConsoleTransactionRegistry.TransactionOutcome outcome =
-                        ConsoleTransactionRegistry.rollback(param.getConsoleId());
+                ConnectionPool.TransactionOutcome outcome =
+                        ConnectionPool.rollback(param.getConsoleId());
                 TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
                 response.setOutcome(outcome.name());
                 return response;
@@ -230,7 +229,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     @Override
     public TransactionStateResponse getTransactionState(DbConnectionContextRequest param) {
         validateTransactionRequest(param);
-        boolean inTransaction = ConsoleTransactionRegistry.isInTransaction(param.getConsoleId());
+        boolean inTransaction = ConnectionPool.isInTransaction(param.getConsoleId());
         if (inTransaction) {
             return manualTransactionState(param.getConsoleId());
         }
@@ -255,10 +254,10 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     @Override
     public TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest param) {
         try {
-            ConsoleTransactionRegistry.TransactionOutcome outcome =
-                    ConsoleTransactionRegistry.withConsoleLock(param.getConsoleId(), () -> {
+            ConnectionPool.TransactionOutcome outcome =
+                    ConnectionPool.withConsoleLock(param.getConsoleId(), () -> {
                         validateTransactionRequest(param);
-                        return ConsoleTransactionRegistry.release(param.getConsoleId(), true);
+                        return ConnectionPool.release(param.getConsoleId(), true);
                     });
             TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
             response.setOutcome(outcome.name());
@@ -272,7 +271,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
 
     @Override
     public boolean isInTransaction(Long consoleId) {
-        return ConsoleTransactionRegistry.isInTransaction(consoleId);
+        return ConnectionPool.isInTransaction(consoleId);
     }
 
     static void configureManualTransactionConnection(
@@ -324,19 +323,19 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
         return TransactionStateResponse.of(
                 true,
                 TransactionStateResponse.MODE_MANUAL,
-                ConsoleTransactionRegistry.getIsolationLevel(consoleId),
-                ConsoleTransactionRegistry.getSupportedIsolationLevels(consoleId)
+                ConnectionPool.getIsolationLevel(consoleId),
+                ConnectionPool.getSupportedIsolationLevels(consoleId)
         );
     }
 
     @Override
     public <T> T withConsoleTransactionLock(Long consoleId, Callable<T> action) throws Exception {
-        return ConsoleTransactionRegistry.withConsoleLock(consoleId, action);
+        return ConnectionPool.withConsoleLock(consoleId, action);
     }
 
     @Override
     public void releaseAllBoundTransactions() {
-        ConsoleTransactionRegistry.releaseAll(true);
+        ConnectionPool.releaseAll(true);
     }
 
     @Override
@@ -476,7 +475,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             log.info("query datasource failed:{}", param.getDataSourceId());
             throw new BusinessException("datasource.not.found");
         }
-        Long boundDataSourceId = ConsoleTransactionRegistry.getBoundDataSourceId(param.getConsoleId());
+        Long boundDataSourceId = ConnectionPool.getBoundDataSourceId(param.getConsoleId());
         if (boundDataSourceId != null && !Objects.equals(boundDataSourceId, param.getDataSourceId())) {
             throw new BusinessException("transaction.datasource.mismatch");
         }

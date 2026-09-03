@@ -39,6 +39,10 @@ const operationLineSource = readFileSync(
   'src/components/SQLEditor/components/OperationLine/index.tsx',
   'utf8',
 );
+const editorSource = readFileSync(
+  'src/components/SQLEditor/editor/SQLEditorWithOperation/index.tsx',
+  'utf8',
+);
 assert.doesNotMatch(operationLineSource, /\bSwitch\b/, 'transaction mode must not regress to a binary switch');
 assert.match(operationLineSource, /<Dropdown\b/, 'transaction mode must use a compact menu');
 assert.match(
@@ -53,6 +57,13 @@ assert.equal(
   )?.length,
   2,
   'commit and rollback must stay disabled until the console transaction starts',
+);
+assert.equal(
+  editorSource.match(
+    /result\?\.outcome\s*=== TransactionOutcome\.UNKNOWN \? true : Boolean\(result\?\.inTransaction\)/g,
+  )?.length,
+  2,
+  'commit and rollback must preserve an open transaction when the outcome is unknown',
 );
 assert.match(
   operationLineSource,

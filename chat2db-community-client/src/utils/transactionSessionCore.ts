@@ -37,13 +37,19 @@ export async function releaseTransactionConsoles(
       };
       try {
         const result =
-          action === 'commit'
-            ? await dependencies.commitTransaction(request)
-            : await dependencies.releaseTransaction(request);
-        dependencies.store.setTransactionState(console.consoleId, transactionStatePatch(result));
+            action === 'commit'
+              ? await dependencies.commitTransaction(request)
+              : await dependencies.releaseTransaction(request);
         if (result.outcome === TransactionOutcome.UNKNOWN) {
           dependencies.onUnknownOutcome?.();
+          dependencies.store.setTransactionState(console.consoleId, {
+            inTransaction: true,
+            lastOutcome: result.outcome,
+            lastError: result.lastError,
+          });
+          return false;
         }
+        dependencies.store.setTransactionState(console.consoleId, transactionStatePatch(result));
         return true;
       } catch (error) {
         dependencies.store.setTransactionState(console.consoleId, {

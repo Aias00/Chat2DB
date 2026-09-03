@@ -190,6 +190,7 @@ async function run() {
 
   const workspaceTabsSource = readFileSync('src/pages/main/workspace/components/WorkspaceTabs/index.tsx', 'utf8');
   const consoleActionSource = readFileSync('src/store/workspace/slices/console/action.ts', 'utf8');
+  const applicationExitSource = readFileSync('src/layouts/init/useApplicationExit.ts', 'utf8');
   const editorSource = readFileSync('src/components/SQLEditor/editor/SQLEditorWithOperation/index.tsx', 'utf8');
   const confirmationSource = readFileSync('src/utils/editorCloseConfirmation.tsx', 'utf8');
   const markdownSource = readFileSync('src/pages/main/workspace/components/WorkspaceTabs/FilePreviewTab.tsx', 'utf8');
@@ -208,6 +209,27 @@ async function run() {
     consoleActionSource,
     /deleteActiveWorkspaceTab[\s\S]*?confirmWorkspaceTabsClose/,
     'the global close shortcut uses the shared guard',
+  );
+  const deleteTabBody = consoleActionSource.slice(consoleActionSource.indexOf('deleteActiveWorkspaceTab'));
+  assert.ok(
+    deleteTabBody.indexOf('confirmAndReleaseTransaction') < deleteTabBody.indexOf('confirmWorkspaceTabsClose'),
+    'the global close shortcut must resolve the transaction before the ordinary editor-save prompt',
+  );
+  const tabCloseGuardBody = workspaceTabsSource.slice(workspaceTabsSource.indexOf('const confirmWorkspaceTabItemsClose'));
+  assert.ok(
+    tabCloseGuardBody.indexOf('confirmAndReleaseTransaction') < tabCloseGuardBody.indexOf('confirmWorkspaceTabsClose'),
+    'tab close must resolve the transaction before the ordinary editor-save prompt',
+  );
+  const bulkCloseBody = workspaceTabsSource.slice(workspaceTabsSource.indexOf('const requestCloseWorkspaceTabs'));
+  assert.ok(
+    bulkCloseBody.indexOf('confirmAndReleaseTransaction') < bulkCloseBody.indexOf('confirmWorkspaceTabsClose'),
+    'bulk tab close must resolve the transaction before the ordinary editor-save prompt',
+  );
+  const applicationExitBody = applicationExitSource.slice(applicationExitSource.indexOf('confirmDirtyEditors'));
+  assert.ok(
+    applicationExitBody.indexOf('confirmAndReleaseTransaction') <
+      applicationExitBody.indexOf('prepareWorkspaceEditorsForApplicationExit'),
+    'application exit must resolve transactions before the ordinary editor-save prompt',
   );
   assert.match(editorSource, /hasUnsavedChangesBeforeClose/, 'editor refs expose dirty-state detection');
   assert.match(editorSource, /saveBeforeClose/, 'editor refs expose a real save operation');
