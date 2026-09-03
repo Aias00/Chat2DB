@@ -6,6 +6,7 @@ import ai.chat2db.community.domain.api.model.request.datasource.DbDataSourcePage
 import ai.chat2db.community.domain.api.model.request.datasource.DbDataSourcePreConnectRequest;
 import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
 import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
+import ai.chat2db.community.domain.api.model.runtime.TransactionMode;
 import ai.chat2db.community.domain.api.model.storage.WorkspaceDataSource;
 import ai.chat2db.community.domain.api.service.db.IDbWorkspaceDataSourceService;
 import ai.chat2db.community.tools.exception.BusinessException;
@@ -149,7 +150,7 @@ class DbConnectionContextServiceImplTransactionTest {
         var response = service.releaseBoundConnection(request(consoleId, 10L));
 
         assertFalse(response.isInTransaction());
-        assertEquals("auto", response.getMode());
+        assertEquals(TransactionMode.AUTO, response.getMode());
         assertEquals("ROLLED_BACK", response.getOutcome());
         assertEquals(1, rollbacks.get());
         assertFalse(ConnectionPool.isInTransaction(consoleId));
@@ -164,7 +165,7 @@ class DbConnectionContextServiceImplTransactionTest {
         var response = service.releaseBoundConnection(request(consoleId, 10L));
 
         assertFalse(response.isInTransaction());
-        assertEquals("auto", response.getMode());
+        assertEquals(TransactionMode.AUTO, response.getMode());
         assertEquals("UNKNOWN", response.getOutcome());
         assertFalse(ConnectionPool.isInTransaction(consoleId));
     }

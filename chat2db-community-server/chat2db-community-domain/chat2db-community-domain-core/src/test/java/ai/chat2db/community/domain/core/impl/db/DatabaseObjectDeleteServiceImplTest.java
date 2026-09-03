@@ -6,6 +6,7 @@ import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.model.db.DatabaseObjectDeletePrepare;
 import ai.chat2db.community.domain.api.model.runtime.ConnectionProfile;
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
+import ai.chat2db.community.domain.api.model.runtime.TransactionMode;
 import ai.chat2db.community.domain.api.model.request.db.DbDatabaseDeletePrepareRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbDatabaseObjectDeleteExecuteRequest;
 import ai.chat2db.community.domain.api.model.request.db.DbSchemaDeletePrepareRequest;
@@ -332,28 +333,28 @@ class DatabaseObjectDeleteServiceImplTest {
 
         @Override
         public TransactionStateResponse beginManualTransaction(DbConnectionContextRequest param) {
-            return TransactionStateResponse.of(false, "auto");
+            return TransactionStateResponse.of(false, TransactionMode.AUTO);
         }
 
         @Override
         public TransactionStateResponse commitTransaction(DbConnectionContextRequest param) {
-            return TransactionStateResponse.of(false, "auto");
+            return TransactionStateResponse.of(false, TransactionMode.AUTO);
         }
 
         @Override
         public TransactionStateResponse rollbackTransaction(DbConnectionContextRequest param) {
-            return TransactionStateResponse.of(false, "auto");
+            return TransactionStateResponse.of(false, TransactionMode.AUTO);
         }
 
         @Override
         public TransactionStateResponse getTransactionState(DbConnectionContextRequest param) {
-            return TransactionStateResponse.of(false, "auto");
+            return TransactionStateResponse.of(false, TransactionMode.AUTO);
         }
 
         @Override
         public TransactionStateResponse releaseBoundConnection(DbConnectionContextRequest param) {
             // No-op mock: the delete flow does not bind console-owned connections.
-            return TransactionStateResponse.of(false, "auto");
+            return TransactionStateResponse.of(false, TransactionMode.AUTO);
         }
 
         @Override

@@ -9,6 +9,7 @@ import ai.chat2db.community.domain.api.model.request.runtime.McpConnectionContex
 import ai.chat2db.community.domain.api.model.runtime.ConnectionProfile;
 import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
+import ai.chat2db.community.domain.api.model.runtime.TransactionMode;
 import ai.chat2db.community.domain.api.service.db.IDbConnectionContextService;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.community.tools.util.I18nUtils;
@@ -96,7 +97,7 @@ class DbTransactionControllerTest {
 
         assertTrue(result.success());
         assertFalse(result.getData().isInTransaction());
-        assertEquals("auto", result.getData().getMode());
+        assertEquals(TransactionMode.AUTO, result.getData().getMode());
         assertEquals("ROLLED_BACK", result.getData().getOutcome());
         assertEquals(42L, received.get().getDataSourceId());
         assertEquals(7002L, received.get().getConsoleId());
@@ -238,7 +239,7 @@ class DbTransactionControllerTest {
             if (failure != null) {
                 throw failure;
             }
-            TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+            TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
             response.setOutcome("ROLLED_BACK");
             return response;
         }
@@ -317,7 +318,7 @@ class DbTransactionControllerTest {
             if (failure != null) {
                 throw failure;
             }
-            TransactionStateResponse response = TransactionStateResponse.of(false, "auto");
+            TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
             response.setOutcome("COMMITTED");
             return response;
         }

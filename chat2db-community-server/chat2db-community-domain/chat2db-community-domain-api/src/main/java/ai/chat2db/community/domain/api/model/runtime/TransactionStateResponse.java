@@ -12,9 +12,6 @@ import java.util.List;
 @Data
 public class TransactionStateResponse {
 
-    public static final String MODE_AUTO = "auto";
-    public static final String MODE_MANUAL = "manual";
-
     /**
      * Whether the console currently has an open (uncommitted) transaction.
      */
@@ -24,7 +21,7 @@ public class TransactionStateResponse {
      * Transaction mode the console is operating in: {@code manual} when auto-commit is off,
      * {@code auto} otherwise.
      */
-    private String mode;
+    private TransactionMode mode;
 
     /**
      * Outcome of the most recent commit/rollback/release operation, or null when none has
@@ -48,13 +45,13 @@ public class TransactionStateResponse {
      */
     private List<TransactionIsolationLevel> supportedIsolationLevels = List.of();
 
-    public static TransactionStateResponse of(boolean inTransaction, String mode) {
+    public static TransactionStateResponse of(boolean inTransaction, TransactionMode mode) {
         return of(inTransaction, mode, TransactionIsolationLevel.DEFAULT);
     }
 
     public static TransactionStateResponse of(
             boolean inTransaction,
-            String mode,
+            TransactionMode mode,
             TransactionIsolationLevel isolationLevel
     ) {
         return of(inTransaction, mode, isolationLevel, List.of());
@@ -62,13 +59,13 @@ public class TransactionStateResponse {
 
     public static TransactionStateResponse of(
             boolean inTransaction,
-            String mode,
+            TransactionMode mode,
             TransactionIsolationLevel isolationLevel,
             List<TransactionIsolationLevel> supportedIsolationLevels
     ) {
         TransactionStateResponse response = new TransactionStateResponse();
         response.inTransaction = inTransaction;
-        response.mode = mode;
+        response.mode = mode == null ? TransactionMode.AUTO : mode;
         response.isolationLevel = isolationLevel == null ? TransactionIsolationLevel.DEFAULT : isolationLevel;
         response.supportedIsolationLevels = supportedIsolationLevels == null
                 ? List.of()

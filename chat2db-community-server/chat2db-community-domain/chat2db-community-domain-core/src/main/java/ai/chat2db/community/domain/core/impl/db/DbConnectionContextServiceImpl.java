@@ -6,6 +6,7 @@ import ai.chat2db.community.domain.api.model.operation.Operation;
 import ai.chat2db.community.domain.api.model.runtime.ConnectionProfile;
 import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
 import ai.chat2db.community.domain.api.model.runtime.TransactionStateResponse;
+import ai.chat2db.community.domain.api.model.runtime.TransactionMode;
 import ai.chat2db.community.domain.api.model.request.runtime.DbConnectionContextRequest;
 import ai.chat2db.community.domain.api.model.request.runtime.McpConnectionContextRequest;
 import ai.chat2db.community.domain.api.model.request.runtime.DbObjectsQueryRequest;
@@ -164,7 +165,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 discardNewTransactionConnection(connectInfo, connection);
                 TransactionStateResponse response = TransactionStateResponse.of(
                         false,
-                        TransactionStateResponse.MODE_AUTO,
+                        TransactionMode.AUTO,
                         isolationLevel,
                         supportedIsolationLevels
                 );
@@ -197,7 +198,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 validateTransactionRequest(param);
                 ConnectionPool.TransactionOutcome outcome =
                         ConnectionPool.commit(param.getConsoleId());
-                TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
+                TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
                 response.setOutcome(outcome.name());
                 return response;
             });
@@ -215,7 +216,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 validateTransactionRequest(param);
                 ConnectionPool.TransactionOutcome outcome =
                         ConnectionPool.rollback(param.getConsoleId());
-                TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
+                TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
                 response.setOutcome(outcome.name());
                 return response;
             });
@@ -240,7 +241,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             Connection connection = Chat2DBContext.getConnection();
             return TransactionStateResponse.of(
                     false,
-                    TransactionStateResponse.MODE_AUTO,
+                    TransactionMode.AUTO,
                     TransactionIsolationLevel.DEFAULT,
                     supportedTransactionIsolationLevels(connection)
             );
@@ -259,7 +260,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                         validateTransactionRequest(param);
                         return ConnectionPool.release(param.getConsoleId(), true);
                     });
-            TransactionStateResponse response = TransactionStateResponse.of(false, TransactionStateResponse.MODE_AUTO);
+            TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
             response.setOutcome(outcome.name());
             return response;
         } catch (RuntimeException e) {
@@ -322,7 +323,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
     private static TransactionStateResponse manualTransactionState(Long consoleId) {
         return TransactionStateResponse.of(
                 true,
-                TransactionStateResponse.MODE_MANUAL,
+                TransactionMode.MANUAL,
                 ConnectionPool.getIsolationLevel(consoleId),
                 ConnectionPool.getSupportedIsolationLevels(consoleId)
         );
