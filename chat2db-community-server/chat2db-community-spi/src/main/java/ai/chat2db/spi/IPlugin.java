@@ -108,6 +108,10 @@ public interface IPlugin {
         return null;
     }
 
+    default IPartitionManager getPartitionManager() {
+        return null;
+    }
+
     /**
      * Returns all database configurations supported by this plugin instance.
      *

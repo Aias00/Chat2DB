@@ -1,6 +1,7 @@
-package ai.chat2db.community.domain.core.impl.db;
+package ai.chat2db.plugin.mysql.partition;
 
 import ai.chat2db.community.domain.api.model.metadata.TablePartition;
+import ai.chat2db.plugin.mysql.MysqlPlugin;
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.enums.parser.DatabaseTypeEnum;
@@ -29,7 +30,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class DbPartitionServiceImplTest {
+class MysqlPartitionManagerTest {
+
+    @Test
+    void mysqlPluginExposesPartitionManager() {
+        assertTrue(new MysqlPlugin().getPartitionManager() instanceof MysqlPartitionManager);
+    }
 
     private IPlugin previousMysqlPlugin;
 
@@ -54,7 +60,7 @@ class DbPartitionServiceImplTest {
         Map<Integer, String> parameters = new HashMap<>();
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36", connection(parameters)));
 
-        assertTrue(new DbPartitionServiceImpl().list("orders_db", "orders").isEmpty());
+        assertTrue(new MysqlPartitionManager().list("orders_db", "orders").isEmpty());
 
         assertEquals("orders_db", parameters.get(1));
         assertEquals("orders", parameters.get(2));
@@ -65,7 +71,7 @@ class DbPartitionServiceImplTest {
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), List.of(fullMetadataRow()))));
 
-        TablePartition partition = new DbPartitionServiceImpl().list("orders_db", "orders").get(0);
+        TablePartition partition = new MysqlPartitionManager().list("orders_db", "orders").get(0);
 
         assertEquals("p_mid", partition.getPartitionName());
         assertEquals("sp0", partition.getSubpartitionName());
@@ -105,7 +111,7 @@ class DbPartitionServiceImplTest {
                         })
                         .toList())));
 
-        List<String> actualMethods = new DbPartitionServiceImpl().list("orders_db", "orders").stream()
+        List<String> actualMethods = new MysqlPartitionManager().list("orders_db", "orders").stream()
                 .map(TablePartition::getMethod)
                 .toList();
 
@@ -114,7 +120,7 @@ class DbPartitionServiceImplTest {
 
     @Test
     void destructivePreviewSqlQualifiesTableWithRequestedDatabase() {
-        DbPartitionServiceImpl service = new DbPartitionServiceImpl();
+        MysqlPartitionManager service = new MysqlPartitionManager();
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), partitionRows("RANGE", "p202401"))));
 
@@ -131,7 +137,7 @@ class DbPartitionServiceImplTest {
 
     @Test
     void addAndReorganizePreviewSqlFollowPartitionType() {
-        DbPartitionServiceImpl service = new DbPartitionServiceImpl();
+        MysqlPartitionManager service = new MysqlPartitionManager();
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), partitionRows("RANGE COLUMNS", "p2025", "p_future"))));
 
@@ -156,7 +162,7 @@ class DbPartitionServiceImplTest {
 
     @Test
     void operationPreviewsRejectUnsupportedPartitionTypes() {
-        DbPartitionServiceImpl service = new DbPartitionServiceImpl();
+        MysqlPartitionManager service = new MysqlPartitionManager();
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), partitionRows("HASH", "p0"))));
 
@@ -174,12 +180,12 @@ class DbPartitionServiceImplTest {
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), nonPartitionedRow())));
 
-        assertTrue(new DbPartitionServiceImpl().list("orders_db", "orders").isEmpty());
+        assertTrue(new MysqlPartitionManager().list("orders_db", "orders").isEmpty());
     }
 
     @Test
     void maintenancePreviewSqlIsLimitedToSupportedOperations() {
-        DbPartitionServiceImpl service = new DbPartitionServiceImpl();
+        MysqlPartitionManager service = new MysqlPartitionManager();
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), partitionRows("RANGE", "p202401"))));
 
@@ -193,7 +199,7 @@ class DbPartitionServiceImplTest {
 
     @Test
     void partitionOperationsRequireMysql57OrNewer() {
-        DbPartitionServiceImpl service = new DbPartitionServiceImpl();
+        MysqlPartitionManager service = new MysqlPartitionManager();
 
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "5.6.51", connection(new HashMap<>())));
         assertThrows(BusinessException.class, () -> service.coalescePartitionSql("orders_db", "orders", 1));
