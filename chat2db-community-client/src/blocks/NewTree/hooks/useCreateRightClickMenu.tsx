@@ -62,6 +62,7 @@ import { DataSourceIdentityColorRequestRegistry } from '../dataSourceIdentityCol
 import DataSourceColorMenuItem from '../components/DataSourceColorMenuItem';
 import { withDataSourceColorMenuOption } from '../dataSourceColorMenu';
 import { isDangerousTreeOperation } from '../treeMenuDanger';
+import { createActiveTransactionsWorkspaceTabId } from '../monitorTree';
 
 export interface MenuLabelRenderContext {
   closeMenu: () => void;
@@ -125,6 +126,7 @@ export const canBeDoubleClicked = [
   TreeNodeType.TRIGGER,
   TreeNodeType.ALL_DATA,
   TreeNodeType.DATABASE_ACCOUNT,
+  TreeNodeType.ACTIVE_TRANSACTIONS,
   TreeNodeType.SAVE_CONSOLE,
 ];
 
@@ -419,6 +421,26 @@ export const useCreateRightClickMenu = () => {
             closable: true,
           });
         },
+      },
+
+      [OperationColumn.ActiveTransactions]: {
+        text: i18n('workspace.ops.activeTransactions'),
+        icon: 'icon-file-text',
+        doubleClickTrigger: true,
+        handle: () => {
+          addWorkspaceTab({
+            id: createActiveTransactionsWorkspaceTabId(dataSourceId),
+            type: WorkspaceTabType.ActiveTransactions,
+            title: i18n('workspace.ops.activeTransactions'),
+            uniqueData: {
+              ...extraParams,
+            },
+          });
+        },
+        discard:
+          !hasPermission ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.ACTIVE_TRANSACTION_INSPECTION),
+        requiredOperations: ['SELECT'],
       },
 
       [OperationColumn.CreateAccount]: {
