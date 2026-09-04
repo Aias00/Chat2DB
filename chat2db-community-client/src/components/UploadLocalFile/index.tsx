@@ -8,7 +8,6 @@ import { customRequestOSS } from '@/utils/file';
 import { UploadTypeEnum } from '@/typings/upload';
 import { isDesktop } from '@/utils/env';
 import jcefApi from '@/jcef';
-import importExportServices from '@/service/importExport';
 
 type FileType = Parameters<GetProp<UploadProps, 'beforeUpload'>>[0];
 
@@ -27,7 +26,6 @@ interface IProps extends UploadProps {
   // Whether OSS upload is enabled on the web.
   webOssUpload?: boolean;
   fileSize?: number;
-  stageLocalFile?: boolean;
 }
 
 export interface UploadLocalFileRef {
@@ -44,7 +42,6 @@ const UploadLocalFile = forwardRef((props: IProps, ref: ForwardedRef<UploadLocal
     webOssUpload,
     descriptionSlot,
     fileSize,
-    stageLocalFile,
     ...rest
   } = props;
   const { styles, cx } = useStyles();
@@ -91,19 +88,9 @@ const UploadLocalFile = forwardRef((props: IProps, ref: ForwardedRef<UploadLocal
   const isWebOssUpload = webOssUpload && !isDesktop;
   const isWebLocalUpload = !isDesktop && !isWebOssUpload;
 
-  const fileUploadOnChange = async ({ file }) => {
+  const fileUploadOnChange = ({ file }) => {
     if (isWebLocalUpload) {
       const selectedFile = file.originFileObj || file;
-      if (stageLocalFile) {
-        try {
-          const filePath = await importExportServices.stageImportFile({ file: selectedFile });
-          const selection = { file: selectedFile, filePath, fileName: file.name };
-          setFileList((current) => (multiple ? [...current, selection] : [selection]));
-        } catch (error) {
-          staticMessage.error(error instanceof Error ? error.message : i18n('common.text.failure'));
-        }
-        return;
-      }
       const selection = {
         file: selectedFile,
         filePath: selectedFile?.path,
@@ -142,7 +129,7 @@ const UploadLocalFile = forwardRef((props: IProps, ref: ForwardedRef<UploadLocal
         return type.replace('.', '');
       }) || [];
 
-    jcefApi.selectFile({ fileTypeList, fileSize, stageLocalFile }).then((data) => {
+    jcefApi.selectFile({ fileTypeList, fileSize }).then((data) => {
       if (data) {
         setFileList(data);
       }

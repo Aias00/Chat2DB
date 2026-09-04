@@ -16,7 +16,7 @@
 ## Verification
 
 1. Connect as `import002_admin`; import `fixture_utf8.csv` — verify the preview shows the
-   Chinese header correctly and the quoted value `quoted "value"` stays in one field.
+   Chinese value correctly and the quoted value `quoted "value"` stays in one field.
 2. Import `fixture_gb18030.csv` with encoding GB18030 — verify no character corruption and
    the row imports as 张伟/中文备注.
 3. Import `fixture_latin1.csv` with encoding ISO-8859-1 — verify José/café import correctly.

@@ -3,12 +3,12 @@ import { Button, Checkbox, Modal, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import i18n from '@/i18n';
 import sqlService, { IImportPreview, ICsvOptions } from '@/service/sql';
-import importExportServices from '@/service/importExport';
-import { ImportExportFileType, ImportExportTaskType } from '@/constants/importExport';
+import { ImportExportFileType } from '@/constants/importExport';
 import {
   buildCsvOptionsForTaskSubmit,
   csvOptionsToPreviewParam,
   DEFAULT_CSV_OPTIONS,
+  inferImportFileFormat,
 } from '@/blocks/ImportAndExport/utils/csvOptions';
 
 interface IProps {
@@ -16,8 +16,7 @@ interface IProps {
   databaseName: string;
   schemaName?: string;
   tableName: string;
-  filePath: string;
-  fileFormat: ImportExportFileType;
+  file: File;
   onSubmitted: (taskId: number) => void;
 }
 
@@ -34,20 +33,21 @@ const ImportMappingContent = ({
   databaseName,
   schemaName,
   tableName,
-  filePath,
-  fileFormat,
+  file,
   onSubmitted,
 }: IProps) => {
   const [preview, setPreview] = useState<IImportPreview | null>(null);
+  const [fileId, setFileId] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [unmappedTarget, setUnmappedTarget] = useState<'DEFAULT' | 'NULL'>('DEFAULT');
   const [executing, setExecuting] = useState(false);
   const [csvOptions, setCsvOptions] = useState<ICsvOptions>(DEFAULT_CSV_OPTIONS);
+  const fileFormat = useMemo(() => inferImportFileFormat(file.name), [file.name]);
   const isCsv = fileFormat === ImportExportFileType.CSV;
 
-  const load = useCallback(() => {
+  const load = useCallback((stagedFileId: string) => {
     setLoading(true);
     setError(null);
     let previewCsvOptions: string | undefined;
@@ -64,7 +64,7 @@ const ImportMappingContent = ({
         databaseName,
         schemaName,
         tableName,
-        filePath,
+        fileId: stagedFileId,
         csvOptions: previewCsvOptions,
       })
       .then((data) => {
@@ -79,11 +79,22 @@ const ImportMappingContent = ({
         setError(e?.message || i18n('common.text.failure'));
       })
       .finally(() => setLoading(false));
-  }, [dataSourceId, databaseName, tableName, filePath, isCsv, csvOptions]);
+  }, [dataSourceId, databaseName, schemaName, tableName, isCsv, csvOptions]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setLoading(true);
+    setError(null);
+    sqlService
+      .uploadImportFile({ file })
+      .then((id) => {
+        setFileId(id);
+        load(id);
+      })
+      .catch((e) => {
+        setError(e?.message || i18n('common.text.failure'));
+        setLoading(false);
+      });
+  }, [file, load]);
 
   const targetOptions = useMemo(() => {
     if (!preview) {
@@ -158,19 +169,17 @@ const ImportMappingContent = ({
       setError(e instanceof Error ? e.message : i18n('common.text.failure'));
       return;
     }
+    if (!fileId) {
+      return;
+    }
     setExecuting(true);
-    importExportServices
-      .submitImport({
+    sqlService
+      .executeImportWithMapping({
         dataSourceId,
         databaseName,
         schemaName,
         tableName,
-        sourceFile: filePath,
-        format: fileFormat,
-        taskType:
-          fileFormat === ImportExportFileType.SQL
-            ? ImportExportTaskType.SQL_FILE_IMPORT
-            : ImportExportTaskType.DATA_FILE_IMPORT,
+        fileId,
         mappings: Object.entries(mapping)
           .filter(([, target]) => target && target !== SKIP)
           .map(([source, target]) => ({ sourceColumn: source, targetColumn: target })),
@@ -263,7 +272,7 @@ const ImportMappingContent = ({
                 {i18n('workspace.importExport.requiredUnmapped')}: {blockedColumns.map((c) => c.name).join(', ')}
               </span>
             )}
-            <Button size="small" onClick={load} loading={loading}>
+            <Button size="small" onClick={() => fileId && load(fileId)} loading={loading}>
               {i18n('common.button.refresh')}
             </Button>
           </div>

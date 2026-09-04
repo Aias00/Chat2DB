@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, forwardRef, ForwardedRef, useImperativeHandle, useEffect } from 'react';
 import { useStyles } from './style';
-import UploadLocalFile from '@/components/UploadLocalFile';
+import UploadLocalFile, { type FileUrl } from '@/components/UploadLocalFile';
 import { Form, Input, Select } from 'antd';
 import i18n from '@/i18n';
 import { useImportExportStore } from '@/store/importExport';
@@ -9,13 +9,11 @@ import { ImportExportType, ImportExportFileType, ImportExportTaskType } from '@/
 import { ExportTaskParams, ImportTaskParams } from '@/service/importExport';
 import { isDesktop, isDevelopment } from '@/utils/env';
 import jcefApi from '@/jcef';
-import { buildCsvOptionsForTaskSubmit, DEFAULT_CSV_OPTIONS } from '@/blocks/ImportAndExport/utils/csvOptions';
-import { ICsvOptions } from '@/service/sql';
 
 interface IProps {
   className?: string;
   setIsReady?: (p: boolean) => void;
-  onImportFileChange?: (filePath: string, format: ImportExportFileType) => void;
+  onImportFileChange?: (file: FileUrl) => void;
 }
 
 export interface ImportExportFileRef {
@@ -37,7 +35,7 @@ const exportTypeOptions = [
 ];
 
 const ImportExportFile = forwardRef((props: IProps, ref: ForwardedRef<ImportExportFileRef>) => {
-  const { setIsReady, onImportFileChange } = props;
+  const { setIsReady } = props;
   const { styles } = useStyles();
   const [form] = Form.useForm();
   const [fileUrlList, setFileUrlList] = useState<string[]>([]);
@@ -46,7 +44,6 @@ const ImportExportFile = forwardRef((props: IProps, ref: ForwardedRef<ImportExpo
     exportType: ImportExportFileType.CSV,
     containsHeader: true,
   });
-  const [csvOptions, setCsvOptions] = useState<ICsvOptions>(DEFAULT_CSV_OPTIONS);
 
   const { importExportDataBoundInfo } = useImportExportStore((state) => {
     return {
@@ -88,17 +85,10 @@ const ImportExportFile = forwardRef((props: IProps, ref: ForwardedRef<ImportExpo
   const handleFileUrlListChange = (_fileUrlList) => {
     const paths = _fileUrlList.map((item) => item.filePath);
     setFileUrlList(paths);
-    if (isImport && paths[0] && onImportFileChange) {
-      onImportFileChange(paths[0], formValue.exportType);
+    if (isImport && _fileUrlList[0] && props.onImportFileChange) {
+      props.onImportFileChange(_fileUrlList[0]);
     }
   };
-
-  useEffect(() => {
-    const filePath = fileUrlList[0] || formValue.fileUrl;
-    if (isImport && filePath && onImportFileChange) {
-      onImportFileChange(filePath, formValue.exportType);
-    }
-  }, [fileUrlList, formValue.exportType, formValue.fileUrl, isImport, onImportFileChange]);
 
   useImperativeHandle(ref, () => ({
     getValues: () => {
@@ -117,7 +107,6 @@ const ImportExportFile = forwardRef((props: IProps, ref: ForwardedRef<ImportExpo
           tableNames: [tableName],
           containsHeader: formValue.containsHeader,
           exportPath: exportLocation || formValue.fileUrl,
-          csvOptions: buildCsvOptionsForTaskSubmit(formValue.exportType === ImportExportFileType.CSV, csvOptions),
         };
       }
       return {
@@ -173,58 +162,9 @@ const ImportExportFile = forwardRef((props: IProps, ref: ForwardedRef<ImportExpo
           </div>
         </Form.Item>
       )}
-      {isExport && formValue.exportType === ImportExportFileType.CSV && (
-        <Form.Item label={`${i18n('workspace.importExport.csvOptions')}:`}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Select
-              style={{ width: 140 }}
-              value={csvOptions.encoding}
-              onChange={(value) => setCsvOptions((prev) => ({ ...prev, encoding: value }))}
-              options={['AUTO', 'UTF-8', 'UTF-16LE', 'UTF-16BE', 'GB18030', 'ISO-8859-1', 'WINDOWS-1252', 'SHIFT_JIS', 'BIG5'].map(
-                (value) => ({ value, label: value }),
-              )}
-            />
-            <Select
-              style={{ width: 110 }}
-              value={csvOptions.delimiter}
-              onChange={(value) => setCsvOptions((prev) => ({ ...prev, delimiter: value }))}
-              options={[
-                { value: ',', label: i18n('workspace.importExport.delimiterComma') },
-                { value: ';', label: i18n('workspace.importExport.delimiterSemicolon') },
-                { value: '\t', label: i18n('workspace.importExport.delimiterTab') },
-                { value: '|', label: i18n('workspace.importExport.delimiterPipe') },
-              ]}
-            />
-            <Select
-              style={{ width: 120 }}
-              value={csvOptions.quote}
-              onChange={(value) => setCsvOptions((prev) => ({ ...prev, quote: value }))}
-              options={[
-                { value: '"', label: i18n('workspace.importExport.quoteDouble') },
-                { value: "'", label: i18n('workspace.importExport.quoteSingle') },
-              ]}
-            />
-            <Select
-              style={{ width: 140 }}
-              value={csvOptions.escape}
-              onChange={(value) => setCsvOptions((prev) => ({ ...prev, escape: value }))}
-              options={[
-                { value: '"', label: i18n('workspace.importExport.escapeDouble') },
-                { value: '\\', label: i18n('workspace.importExport.escapeBackslash') },
-              ]}
-            />
-            <Select
-              style={{ width: 110 }}
-              value={csvOptions.newline}
-              onChange={(value) => setCsvOptions((prev) => ({ ...prev, newline: value }))}
-              options={['LF', 'CRLF', 'CR'].map((value) => ({ value, label: value }))}
-            />
-          </div>
-        </Form.Item>
-      )}
       {isImport && (
         <Form.Item>
-          <UploadLocalFile fileUrlListChange={handleFileUrlListChange} accept={uploadLocalFileAccept} stageLocalFile />
+          <UploadLocalFile fileUrlListChange={handleFileUrlListChange} accept={uploadLocalFileAccept} />
         </Form.Item>
       )}
       {isDevelopment && (

@@ -3,7 +3,6 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.tools.exception.BusinessException;
-import ai.chat2db.community.tools.util.ConfigUtils;
 import ai.chat2db.spi.DefaultMetaService;
 import ai.chat2db.spi.IDbMetaData;
 import ai.chat2db.spi.IPlugin;
@@ -28,7 +27,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DbImportPreviewServiceImplTest {
 
@@ -48,25 +49,6 @@ class DbImportPreviewServiceImplTest {
             Chat2DBContext.PLUGIN_MAP.put(DB_TYPE, previousPlugin);
             previousPlugin = null;
         }
-    }
-
-    @Test
-    void resolvesFilesInsideManagedImportDirectory() throws Exception {
-        Path importDirectory = Path.of(ConfigUtils.getBasePath(), "import-files");
-        Files.createDirectories(importDirectory);
-        Path file = Files.writeString(importDirectory.resolve("sample.csv"), "name\nAda\n");
-
-        Path resolved = DbImportPreviewServiceImpl.resolveImportFile(file.toString());
-
-        assertEquals(file.toRealPath(), resolved);
-    }
-
-    @Test
-    void rejectsFilesOutsideManagedImportDirectory() throws Exception {
-        Path outside = Files.writeString(tempDir.resolve("sample.csv"), "name\nAda\n");
-
-        assertThrows(java.io.IOException.class,
-                () -> DbImportPreviewServiceImpl.resolveImportFile(outside.toString()));
     }
 
     @Test
@@ -130,7 +112,7 @@ class DbImportPreviewServiceImplTest {
     }
 
     @Test
-    void valueBindingPreservesImportedTextAndParsesFloatingPointDecimals() throws Exception {
+    void valueBindingSanitizesFormulaTextAndParsesFloatingPointDecimals() throws Exception {
         List<Map<String, Object>> targetColumns = List.of(
                 target("rate", "DOUBLE", true, false, null),
                 target("ratio", "FLOAT", true, false, null),
@@ -145,7 +127,14 @@ class DbImportPreviewServiceImplTest {
 
         bindRow(statement, row, targetColumns, sourceToTarget, "DEFAULT");
 
-        assertEquals(List.of("setDouble:1:1.25", "setDouble:2:2.5", "setString:3:=1+1"), calls);
+        assertEquals(List.of("setDouble:1:1.25", "setDouble:2:2.5", "setString:3:'=1+1"), calls);
+    }
+
+    @Test
+    void emptyRowsAreSkippedButRowsWithDataAreNot() throws Exception {
+        assertTrue(isEmptyRow(Map.of()));
+        assertTrue(isEmptyRow(Map.of(0, new ExcelParser.CellValue("", "empty"))));
+        assertFalse(isEmptyRow(Map.of(0, new ExcelParser.CellValue("Ada", "string"))));
     }
 
     @Test
@@ -203,16 +192,14 @@ class DbImportPreviewServiceImplTest {
     }
 
     private Path importFile(String name) throws Exception {
-        Path importDirectory = Path.of(ConfigUtils.getBasePath(), "import-files");
-        Files.createDirectories(importDirectory);
-        return importDirectory.resolve(name);
+        return tempDir.resolve(name);
     }
 
     private static Object parseRows(Path file, int limit, Map<String, Object> csvOptions) throws Exception {
         Method method = DbImportPreviewServiceImpl.class
-                .getDeclaredMethod("parseRows", String.class, int.class, Map.class);
+                .getDeclaredMethod("parseRows", java.io.File.class, int.class, Map.class);
         method.setAccessible(true);
-        return invoke(method, null, file.toString(), limit, csvOptions);
+        return invoke(method, null, file.toFile(), limit, csvOptions);
     }
 
     @SuppressWarnings("unchecked")
@@ -229,6 +216,12 @@ class DbImportPreviewServiceImplTest {
                 Map.class, List.class, Map.class, String.class);
         method.setAccessible(true);
         invoke(method, null, statement, row, targetColumns, sourceToTarget, strategy);
+    }
+
+    private static boolean isEmptyRow(Map<Integer, ExcelParser.CellValue> row) throws Exception {
+        Method method = DbImportPreviewServiceImpl.class.getDeclaredMethod("isEmptyRow", Map.class);
+        method.setAccessible(true);
+        return invoke(method, null, row);
     }
 
     private static String buildInsertSql(String databaseName, String schemaName, String tableName,

@@ -1,11 +1,13 @@
 package ai.chat2db.community.domain.api.service.db;
 
+import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
+
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Bounded import preview with column mapping (MYSQL-IMPORT-001). Preview and execution
- * share the same file parser, so the mapping shown is exactly what gets imported.
+ * Bounded import preview and mapped CSV execution for a server-staged file.
  */
 public interface IDbImportPreviewService {
 
@@ -17,13 +19,13 @@ public interface IDbImportPreviewService {
      * @param dataSourceId the datasource id.
      * @param databaseName the database name.
      * @param tableName    the target table name.
-     * @param filePath     the uploaded file path (extension selects the parser).
+     * @param file         a previously staged upload.
      * @param csvOptions   CSV options: encoding, delimiter, quote, escape, hasHeader,
      *                     emptyAsNull (ignored for XLS/XLSX).
      * @return preview model.
      */
     Map<String, Object> preview(Long dataSourceId, String databaseName, String schemaName, String tableName,
-                                String filePath, Map<String, Object> csvOptions);
+                                File file, Map<String, Object> csvOptions);
 
     /**
      * Imports the whole file using the given column mapping. Rows are inserted one by one
@@ -33,13 +35,15 @@ public interface IDbImportPreviewService {
      * @param dataSourceId    the datasource id.
      * @param databaseName    the database name.
      * @param tableName       the target table name.
-     * @param filePath        the uploaded file path.
+     * @param file            a previously staged upload.
      * @param csvOptions      CSV options (ignored for XLS/XLSX).
      * @param mappings        list of {sourceColumn, targetColumn}; sourceColumn null skips the source field.
      * @param unmappedTarget  DEFAULT or NULL for unmapped target columns.
+     * @param context         task lifecycle and cancellation context.
      * @return import result with totals and row-level errors.
      */
     Map<String, Object> execute(Long dataSourceId, String databaseName, String schemaName, String tableName,
-                                String filePath, Map<String, Object> csvOptions,
-                                List<Map<String, String>> mappings, String unmappedTarget);
+                                File file, Map<String, Object> csvOptions,
+                                List<Map<String, String>> mappings, String unmappedTarget,
+                                TaskExecutionContext context);
 }

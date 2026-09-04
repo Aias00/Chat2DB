@@ -3,8 +3,8 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.model.task.CsvOptions;
 import ai.chat2db.community.domain.api.service.db.IDbImportPreviewService;
+import ai.chat2db.community.domain.api.service.task.TaskExecutionContext;
 import ai.chat2db.community.tools.exception.BusinessException;
-import ai.chat2db.community.tools.util.ConfigUtils;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.model.request.TableMetadataRequest;
 import ai.chat2db.spi.model.request.TablesRequest;
@@ -13,11 +13,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -42,13 +41,11 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
     private static final int EXECUTION_BATCH_SIZE = 200;
     private static final String DEFAULT_STRATEGY = "DEFAULT";
     private static final String NULL_STRATEGY = "NULL";
-    private static final String IMPORT_FILE_DIRECTORY = "import-files";
-
     @Override
     public Map<String, Object> preview(Long dataSourceId, String databaseName, String schemaName, String tableName,
-                                       String filePath, Map<String, Object> csvOptions) {
+                                       File file, Map<String, Object> csvOptions) {
         ImportTarget target = resolveImportTarget(dataSourceId, databaseName, schemaName, tableName);
-        ParseOutcome outcome = parseRows(filePath, PREVIEW_ROW_LIMIT, csvOptions);
+        ParseOutcome outcome = parseRows(file, PREVIEW_ROW_LIMIT, csvOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
             throw new BusinessException("import.preview.emptyFile");
@@ -104,10 +101,12 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
 
     @Override
     public Map<String, Object> execute(Long dataSourceId, String databaseName, String schemaName, String tableName,
-                                       String filePath, Map<String, Object> csvOptions,
-                                       List<Map<String, String>> mappings, String unmappedTarget) {
+                                       File file, Map<String, Object> csvOptions,
+                                       List<Map<String, String>> mappings, String unmappedTarget,
+                                       TaskExecutionContext context) {
         ImportTarget target = resolveImportTarget(dataSourceId, databaseName, schemaName, tableName);
-        ParseOutcome outcome = parseRows(filePath, Integer.MAX_VALUE, csvOptions);
+        context.checkCancelled();
+        ParseOutcome outcome = parseRows(file, Integer.MAX_VALUE, csvOptions);
         List<Map<Integer, ExcelParser.CellValue>> rows = outcome.rows;
         if (rows.isEmpty()) {
             throw new BusinessException("import.preview.emptyFile");
@@ -161,14 +160,19 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         try (PreparedStatement statement = connection.prepareStatement(insertSql)) {
             List<RowToInsert> batch = new ArrayList<>(EXECUTION_BATCH_SIZE);
             for (int r = outcome.firstDataRow; r < rows.size(); r++) {
+                context.checkCancelled();
                 Map<Integer, ExcelParser.CellValue> row = rows.get(r);
+                if (isEmptyRow(row)) {
+                    skipped++;
+                    continue;
+                }
                 try {
                     bindRow(statement, row, targetColumns, sourceToTarget, strategy);
                     statement.addBatch();
                     batch.add(new RowToInsert(r + 1, row));
                     if (batch.size() == EXECUTION_BATCH_SIZE) {
                         BatchResult result = executeBatch(statement, connection, batch, targetColumns,
-                                sourceToTarget, strategy, errors);
+                                sourceToTarget, strategy, errors, context);
                         success += result.success();
                         failed += result.failed();
                     }
@@ -179,7 +183,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             }
             if (!batch.isEmpty()) {
                 BatchResult result = executeBatch(statement, connection, batch, targetColumns,
-                        sourceToTarget, strategy, errors);
+                        sourceToTarget, strategy, errors, context);
                 success += result.success();
                 failed += result.failed();
             }
@@ -207,9 +211,15 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         return !Boolean.TRUE.equals(target.get("autoIncrement"));
     }
 
+    private static boolean isEmptyRow(Map<Integer, ExcelParser.CellValue> row) {
+        return row == null || row.isEmpty() || row.values().stream()
+                .allMatch(value -> value == null || StringUtils.isEmpty(value.value()));
+    }
+
     private static BatchResult executeBatch(PreparedStatement statement, Connection connection,
             List<RowToInsert> batch, List<Map<String, Object>> targetColumns, Map<Integer, String> sourceToTarget,
-            String strategy, List<Map<String, Object>> errors) throws SQLException {
+            String strategy, List<Map<String, Object>> errors, TaskExecutionContext context) throws SQLException {
+        context.checkCancelled();
         try {
             statement.executeBatch();
             connection.commit();
@@ -222,6 +232,7 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             int success = 0;
             int failed = 0;
             for (RowToInsert item : batch) {
+                context.checkCancelled();
                 try {
                     bindRow(statement, item.row(), targetColumns, sourceToTarget, strategy);
                     statement.executeUpdate();
@@ -371,8 +382,17 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
         } else if (type.contains("BIT")) {
             statement.setString(index, value.trim());
         } else {
-            statement.setString(index, value);
+            statement.setString(index, sanitizeFormula(value));
         }
+    }
+
+    private static String sanitizeFormula(String value) {
+        if (StringUtils.isEmpty(value)) {
+            return value;
+        }
+        char first = value.charAt(0);
+        return first == '=' || first == '+' || first == '-' || first == '@'
+                || first == '\t' || first == '\r' ? "'" + value : value;
     }
 
     static ImportTarget resolveImportTarget(Long dataSourceId, String requestedDatabaseName,
@@ -471,48 +491,18 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
                                   List<Map<String, Object>> columns) {
     }
 
-    private static Path importFile(String filePath) {
-        if (StringUtils.isBlank(filePath)) {
-            throw new BusinessException("import.preview.fileRequired");
-        }
-        try {
-            Path path = resolveImportFile(filePath);
-            if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
-                throw new java.io.IOException("file is not readable");
-            }
-            return path;
-        } catch (Exception e) {
-            log.warn("import preview cannot read file {}", filePath, e);
-            throw new BusinessException("import.preview.fileUnreadable", new Object[]{e.getMessage()}, e);
-        }
-    }
-
-    static Path resolveImportFile(String filePath) throws java.io.IOException {
-        Path baseDirectory = Paths.get(ConfigUtils.getBasePath(), IMPORT_FILE_DIRECTORY)
-                .toAbsolutePath()
-                .normalize();
-        Files.createDirectories(baseDirectory);
-        Path realBaseDirectory = baseDirectory.toRealPath();
-        Path realFile = Paths.get(filePath).toAbsolutePath().normalize().toRealPath();
-        if (!realFile.startsWith(realBaseDirectory)) {
-            throw new java.io.IOException("file is outside import directory");
-        }
-        return realFile;
-    }
-
     private static boolean isCsv(String fileName) {
         String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
         return lower.endsWith(".csv");
     }
 
-    private static ParseOutcome parseRows(String fileName, int limit,
+    private static ParseOutcome parseRows(File file, int limit,
                                           Map<String, Object> csvOptions) {
-        if (isCsv(fileName)) {
+        if (file != null && file.isFile() && file.canRead() && isCsv(file.getName())) {
             CsvOptions options = CsvOptions.fromMap(csvOptions);
             CsvParser parser = new CsvParser(options);
-            Path importFile = importFile(fileName);
             CsvParser.CsvResult result;
-            try (InputStream inputStream = Files.newInputStream(importFile)) {
+            try (InputStream inputStream = Files.newInputStream(file.toPath())) {
                 result = parser.parse(inputStream, limit);
             } catch (BusinessException e) {
                 throw e;
@@ -543,21 +533,5 @@ public class DbImportPreviewServiceImpl implements IDbImportPreviewService {
             return new ParseOutcome(typedRows, header, firstDataRow, List.of());
         }
         throw new BusinessException("import.preview.unsupportedFile");
-    }
-
-    private static String csvStringOption(Map<String, Object> csvOptions, String key, String defaultValue) {
-        Object value = csvOptions.getOrDefault(key, defaultValue);
-        if (!(value instanceof String stringValue)) {
-            throw new BusinessException("import.preview.invalidCsvOptions");
-        }
-        return stringValue;
-    }
-
-    private static boolean csvBooleanOption(Map<String, Object> csvOptions, String key, boolean defaultValue) {
-        Object value = csvOptions.getOrDefault(key, defaultValue);
-        if (!(value instanceof Boolean booleanValue)) {
-            throw new BusinessException("import.preview.invalidCsvOptions");
-        }
-        return booleanValue;
     }
 }

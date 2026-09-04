@@ -438,7 +438,7 @@ const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', {
 
 /** Import preview and column mapping (MYSQL-IMPORT-001). */
 export interface IImportPreview {
-  sourceColumns: { name: string; sampleValues: string[] }[];
+  sourceColumns: { name: string; sampleValues: { value: string; type: string }[] }[];
   targetColumns: {
     name: string;
     dataType: string;
@@ -451,12 +451,8 @@ export interface IImportPreview {
   previewRows: number;
 }
 
-export interface IImportExecuteResult {
-  totalRows: number;
-  successCount: number;
-  failedCount: number;
-  skippedCount: number;
-  errors: { row: number; column: string | null; message: string }[];
+export interface IImportTaskSubmitResult {
+  taskId: number;
 }
 
 export interface ICsvOptions {
@@ -475,7 +471,7 @@ const getImportPreview = createRequest<
     databaseName: string;
     schemaName?: string;
     tableName: string;
-    filePath: string;
+    fileId: string;
     csvOptions?: string;
   },
   IImportPreview
@@ -487,13 +483,18 @@ const executeImportWithMapping = createRequest<
     databaseName: string;
     schemaName?: string;
     tableName: string;
-    filePath: string;
+    fileId: string;
     mappings: { sourceColumn: string | null; targetColumn: string }[];
     unmappedTarget: 'DEFAULT' | 'NULL';
     csvOptions?: ICsvOptions;
   },
-  IImportExecuteResult
+  IImportTaskSubmitResult
 >('/api/rdb/import_preview/execute', { method: 'post', requestBody: true });
+
+const uploadImportFile = createRequest<{ file: File }, string>('/api/rdb/import_preview/upload', {
+  method: 'post',
+  contentType: 'formData',
+});
 
 /** Active InnoDB transactions (MYSQL-OPS-002). */
 export interface IActiveTransactionItem {
@@ -614,6 +615,7 @@ export default {
   checkIsSelectSQL,
   getImportPreview,
   executeImportWithMapping,
+  uploadImportFile,
   getActiveTransactionList,
   getDataSourceList,
 };
