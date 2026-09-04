@@ -22,12 +22,12 @@
    (order does not matter), and rows import with age 28.
 5. Import `fixture_extra.csv` — map the extra_column to "Skip field"; execute; verify the
    row imports and the extra column is ignored.
-6. Import a file with an unmapped value for `code` into `import001_strict` — verify
-   execution is blocked before any write (NOT NULL without default and strategy NULL)
-   and no partial rows are inserted.
+6. Import a file with an unmapped value for `code` into `import001_strict` — verify the
+   UI blocks submission for NULL strategy. If the API is called directly, verify the task
+   fails and its transaction leaves no partial rows.
 7. Set unmapped strategy to DEFAULT on `import001_contacts` for a file missing `note` —
    verify the note default is applied; with NULL strategy verify `note` becomes NULL.
-8. Feed a file with an invalid numeric `age` — verify the row is reported as failed with
-   the source row number and the target column, while valid rows still import.
+8. Feed a file with an invalid numeric `age` — verify the task fails, the batch error is
+   recorded, and the file-level transaction rolls back all rows.
 9. Feed a large CSV (generated) — verify only the bounded preview rows are shown and the
    preview stays fast.

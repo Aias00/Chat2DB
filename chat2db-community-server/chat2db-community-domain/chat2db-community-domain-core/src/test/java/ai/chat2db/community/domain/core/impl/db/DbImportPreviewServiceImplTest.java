@@ -94,6 +94,24 @@ class DbImportPreviewServiceImplTest {
         assertEquals(0, metaData.requests.size());
     }
 
+    @Test
+    void previewKeepsOnlyTheConfiguredNumberOfDataRows(@TempDir Path directory) throws Exception {
+        StringBuilder content = new StringBuilder("Name\n");
+        for (int row = 1; row <= 100; row++) {
+            content.append("row-").append(row).append('\n');
+        }
+        Path path = directory.resolve("large-orders.csv");
+        Files.writeString(path, content, StandardCharsets.UTF_8);
+
+        Map<String, Object> preview = new DbImportPreviewServiceImpl()
+                .preview(DATA_SOURCE_ID, DATABASE, "orders", path.toFile());
+
+        assertEquals(50, preview.get("previewRows"));
+        List<?> sourceColumns = (List<?>) preview.get("sourceColumns");
+        Map<?, ?> sourceColumn = (Map<?, ?>) sourceColumns.get(0);
+        assertEquals(50, ((List<?>) sourceColumn.get("sampleValues")).size());
+    }
+
     private File csv(Path directory) throws Exception {
         Path path = directory.resolve("orders.csv");
         Files.writeString(path, "Name\nAlice\n", StandardCharsets.UTF_8);
