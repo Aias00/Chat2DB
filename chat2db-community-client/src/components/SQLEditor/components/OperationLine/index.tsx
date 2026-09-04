@@ -27,6 +27,10 @@ import {
   TRANSACTION_ISOLATION_OPTIONS,
   TRANSACTION_MODE_OPTIONS,
 } from './transactionToolbar';
+import {
+  applySavedConsoleBoundInfoSwitch,
+  resolveSavedConsoleBoundInfoSwitch,
+} from './savedConsoleBoundInfoSwitch';
 
 interface OperationLineProps {
   active: boolean;
@@ -164,25 +168,37 @@ const OperationLine = ({
         return;
       }
     }
-    const nameCustomized = _dbInfo.nameCustomized ?? dbInfo.nameCustomized ?? false;
-    const nextDBInfo = {
-      ..._dbInfo,
-      nameCustomized,
-    };
-    setDBInfo(nextDBInfo);
-    if (!nextDBInfo.consoleId || isTemporaryId(nextDBInfo.consoleId)) {
+    const { nextDBInfo, persistBeforeUiSwitch } = resolveSavedConsoleBoundInfoSwitch(dbInfo, _dbInfo);
+    const consoleId = nextDBInfo.consoleId;
+    if (typeof consoleId !== 'number' || isTemporaryId(consoleId)) {
+      setDBInfo(nextDBInfo);
       return;
     }
-    historyService.updateSavedConsole({
-      id: nextDBInfo.consoleId,
+    const persistSavedConsole = () => historyService.updateSavedConsole({
+      id: consoleId,
       dataSourceId: nextDBInfo.dataSourceId,
       dataSourceName: nextDBInfo.dataSourceName,
       databaseName: nextDBInfo.databaseName,
       schemaName: nextDBInfo.schemaName,
       type: nextDBInfo.databaseType,
-      name: nameCustomized ? undefined : buildConsoleDefaultTabName(nextDBInfo),
-      nameCustomized,
+      name: nextDBInfo.nameCustomized ? undefined : buildConsoleDefaultTabName(nextDBInfo),
+      nameCustomized: nextDBInfo.nameCustomized,
     });
+    if (persistBeforeUiSwitch) {
+      try {
+        await applySavedConsoleBoundInfoSwitch(
+          { nextDBInfo, persistBeforeUiSwitch },
+          persistSavedConsole,
+          setDBInfo,
+        );
+      } catch (error) {
+        staticMessage.error(String(error));
+        return;
+      }
+      return;
+    }
+    setDBInfo(nextDBInfo);
+    void persistSavedConsole();
   };
 
   const shouldDisableActionButton = !hasEditorContent;

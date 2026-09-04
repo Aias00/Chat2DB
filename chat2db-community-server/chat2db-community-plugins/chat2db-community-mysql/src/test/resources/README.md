@@ -18,13 +18,17 @@ mvn -B -f chat2db-community-server/pom.xml \
   -pl :chat2db-community-mysql -am \
   -Dmaven.test.skip=false -DskipTests=false \
   -Dtest=MysqlManualTransactionIntegrationTest \
+  '-Dsurefire.includes=**/*Test.java' \
   -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dmaven.test.failure.ignore=false test
+  -Dmaven.test.failure.ignore=false \
+  -Dchat2db.mysql.fixture.required=true test
 ```
 
 The parameterized test verifies both server versions and skips cleanly when a fixture is not
-running. Manual Web verification remains useful for the Controller, renderer, and close-dialog
-lifecycle.
+running during ordinary local test runs. CI runs the same test with
+`-Dchat2db.mysql.fixture.required=true`, so a missing MySQL fixture fails the job instead of
+being reported as skipped. Manual Web verification remains useful for the Controller, renderer,
+and close-dialog lifecycle.
 
 ## Manual Concurrent Check
 

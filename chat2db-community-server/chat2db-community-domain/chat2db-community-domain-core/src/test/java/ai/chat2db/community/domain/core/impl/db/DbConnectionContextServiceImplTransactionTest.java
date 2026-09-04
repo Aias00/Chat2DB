@@ -1,6 +1,7 @@
 package ai.chat2db.community.domain.core.impl.db;
 
 import ai.chat2db.community.domain.api.model.PageResponse;
+import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.model.request.datasource.DbDataSourcePageQueryRequest;
 import ai.chat2db.community.domain.api.model.request.datasource.DbDataSourcePreConnectRequest;
@@ -10,7 +11,10 @@ import ai.chat2db.community.domain.api.model.runtime.TransactionMode;
 import ai.chat2db.community.domain.api.model.storage.WorkspaceDataSource;
 import ai.chat2db.community.domain.api.service.db.IDbWorkspaceDataSourceService;
 import ai.chat2db.community.domain.api.service.ops.IOpsOperationSavedService;
+import ai.chat2db.community.domain.core.converter.ConnectionContextConverter;
 import ai.chat2db.community.tools.exception.BusinessException;
+import ai.chat2db.spi.IDbManager;
+import ai.chat2db.spi.IPlugin;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import ai.chat2db.spi.sql.ConnectionPool;
@@ -31,16 +35,20 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DbConnectionContextServiceImplTransactionTest {
 
+    private static final String TEST_DB_TYPE = "TEST_TX";
+
     @AfterEach
     void tearDown() {
         Chat2DBContext.removeContext();
         ConnectionPool.releaseAll(true);
+        Chat2DBContext.PLUGIN_MAP.remove(TEST_DB_TYPE);
     }
 
     @Test
@@ -175,6 +183,34 @@ class DbConnectionContextServiceImplTransactionTest {
     }
 
     @Test
+    void commitKeepsCommittedOutcomeAndReportsCleanupError() {
+        long consoleId = 9009L;
+        AtomicInteger commits = new AtomicInteger();
+        AtomicInteger aborts = new AtomicInteger();
+        registerBound(
+                consoleId,
+                10L,
+                cleanupFailingConnection(commits, aborts),
+                TransactionIsolationLevel.READ_COMMITTED,
+                Connection.TRANSACTION_REPEATABLE_READ
+        );
+        DbConnectionContextServiceImpl service = service(Set.of(10L));
+
+        var response = service.commitTransaction(request(consoleId, 10L));
+
+        assertFalse(response.isInTransaction());
+        assertEquals(TransactionMode.AUTO, response.getMode());
+        assertEquals("COMMITTED", response.getOutcome());
+        assertEquals(
+                "Failed to restore transaction isolation: restore isolation failed",
+                response.getLastError()
+        );
+        assertEquals(1, commits.get());
+        assertEquals(1, aborts.get());
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
+    }
+
+    @Test
     void selectedIsolationLevelIsAppliedBeforeAutoCommitIsDisabled() throws Exception {
         List<String> calls = new ArrayList<>();
         Connection connection = connectionRecordingConfiguration(calls);
@@ -233,10 +269,30 @@ class DbConnectionContextServiceImplTransactionTest {
         assertTrue(begin.get(2, TimeUnit.SECONDS));
     }
 
+    @Test
+    void beginRejectsConnectionWhenDatasourceGenerationChangesBeforeRegister() {
+        long consoleId = 9010L;
+        long dataSourceId = -9010L;
+        AtomicInteger closes = new AtomicInteger();
+        installPlugin(generationInvalidatingConnection(dataSourceId, closes));
+        DbConnectionContextServiceImpl service = service(Set.of(dataSourceId));
+        DbConnectionContextRequest request = request(consoleId, dataSourceId);
+        request.setTransactionIsolationLevel(TransactionIsolationLevel.READ_COMMITTED);
+
+        BusinessException thrown = assertThrows(BusinessException.class,
+                () -> service.beginManualTransaction(request));
+
+        assertEquals("datasource.not.found", thrown.getCode());
+        assertEquals(1, closes.get());
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
+        assertNull(ConnectionPool.getBoundConnectInfo(consoleId));
+    }
+
     private static DbConnectionContextServiceImpl service(Set<Long> visibleDatasourceIds) {
         DbConnectionContextServiceImpl service = new DbConnectionContextServiceImpl();
         setField(service, "workspaceDataSourceService",
                 new VisibleWorkspaceDataSourceService(visibleDatasourceIds));
+        setField(service, "connectionContextConverter", new ConnectionContextConverter());
         setField(service, "operationSavedService", Proxy.newProxyInstance(
                 DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
                 new Class<?>[]{IOpsOperationSavedService.class},
@@ -262,14 +318,39 @@ class DbConnectionContextServiceImplTransactionTest {
             Connection connection,
             TransactionIsolationLevel isolationLevel
     ) {
+        return registerBound(consoleId, dataSourceId, connection, isolationLevel, null);
+    }
+
+    private static ConnectInfo registerBound(
+            long consoleId,
+            long dataSourceId,
+            Connection connection,
+            TransactionIsolationLevel isolationLevel,
+            Integer originalJdbcIsolationLevel
+    ) {
         ConnectInfo connectInfo = new ConnectInfo();
         connectInfo.setConsoleId(consoleId);
         connectInfo.setDataSourceId(dataSourceId);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
         connectInfo.setDriverConfig(new DriverConfig());
-        assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo, isolationLevel));
+        ConnectionPool.markCurrentGeneration(connectInfo);
+        assertTrue(ConnectionPool.registerIfAbsent(
+                consoleId,
+                connectInfo,
+                isolationLevel,
+                supportedIsolationLevels(isolationLevel),
+                originalJdbcIsolationLevel
+        ));
         return connectInfo;
+    }
+
+    private static List<TransactionIsolationLevel> supportedIsolationLevels(
+            TransactionIsolationLevel isolationLevel
+    ) {
+        return isolationLevel == TransactionIsolationLevel.DEFAULT
+                ? List.of(TransactionIsolationLevel.DEFAULT)
+                : List.of(TransactionIsolationLevel.DEFAULT, isolationLevel);
     }
 
     private static Connection proxyConnection(AtomicInteger commits, AtomicInteger rollbacks) {
@@ -301,6 +382,84 @@ class DbConnectionContextServiceImplTransactionTest {
                     case "isClosed" -> false;
                     default -> defaultValue(method.getReturnType());
                 });
+    }
+
+    private static Connection cleanupFailingConnection(AtomicInteger commits, AtomicInteger aborts) {
+        return (Connection) Proxy.newProxyInstance(
+                DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "commit" -> {
+                        commits.incrementAndGet();
+                        yield null;
+                    }
+                    case "setTransactionIsolation" -> throw new SQLException("restore isolation failed");
+                    case "setAutoCommit", "close" -> null;
+                    case "abort" -> {
+                        aborts.incrementAndGet();
+                        yield null;
+                    }
+                    case "isClosed" -> false;
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Connection generationInvalidatingConnection(long dataSourceId, AtomicInteger closes) {
+        DatabaseMetaData metaData = (DatabaseMetaData) Proxy.newProxyInstance(
+                DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
+                new Class<?>[]{DatabaseMetaData.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "supportsTransactions" -> true;
+                    case "supportsTransactionIsolationLevel" -> true;
+                    case "getDefaultTransactionIsolation" -> Connection.TRANSACTION_REPEATABLE_READ;
+                    default -> defaultValue(method.getReturnType());
+                });
+        return (Connection) Proxy.newProxyInstance(
+                DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getMetaData" -> metaData;
+                    case "getTransactionIsolation" -> {
+                        ConnectionPool.removeConnection(dataSourceId);
+                        yield Connection.TRANSACTION_REPEATABLE_READ;
+                    }
+                    case "setTransactionIsolation", "setAutoCommit", "rollback", "abort" -> null;
+                    case "close" -> {
+                        closes.incrementAndGet();
+                        yield null;
+                    }
+                    case "isClosed" -> false;
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static void installPlugin(Connection connection) {
+        DBConfig dbConfig = new DBConfig();
+        dbConfig.setDbType(TEST_DB_TYPE);
+        dbConfig.setDefaultDriverConfig(new DriverConfig());
+        IDbManager dbManager = (IDbManager) Proxy.newProxyInstance(
+                DbConnectionContextServiceImplTransactionTest.class.getClassLoader(),
+                new Class<?>[]{IDbManager.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getConnection" -> connection;
+                    default -> defaultValue(method.getReturnType());
+                });
+        Chat2DBContext.PLUGIN_MAP.put(TEST_DB_TYPE, new IPlugin() {
+            @Override
+            public DBConfig getDBConfig() {
+                return dbConfig;
+            }
+
+            @Override
+            public IDbManager getDbManager() {
+                return dbManager;
+            }
+
+            @Override
+            public boolean supportsManualTransactions() {
+                return true;
+            }
+        });
     }
 
     private static Connection connectionRecordingConfiguration(List<String> calls) {
@@ -406,6 +565,9 @@ class DbConnectionContextServiceImplTransactionTest {
             }
             WorkspaceDataSource dataSource = new WorkspaceDataSource();
             dataSource.setId(id);
+            dataSource.setType(TEST_DB_TYPE);
+            dataSource.setUrl("jdbc:test");
+            dataSource.setDriverConfig(new DriverConfig());
             return dataSource;
         }
 

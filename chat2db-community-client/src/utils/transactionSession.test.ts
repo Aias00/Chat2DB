@@ -43,7 +43,7 @@ async function run() {
   assert.equal(unknownOutcomes, 1);
   assert.deepEqual(patches, [
     {
-      inTransaction: false,
+      inTransaction: true,
       lastOutcome: TransactionOutcome.UNKNOWN,
       lastError: 'rollback outcome unknown',
     },
@@ -69,7 +69,7 @@ async function run() {
   );
 
   assert.equal(success, false);
-  assert.equal(patches[0]?.inTransaction, false, 'the next execution must reconcile through idempotent begin');
+  assert.equal(patches[0]?.inTransaction, true, 'transport failure must keep transaction recovery controls available');
   assert.equal(patches[0]?.lastOutcome, TransactionOutcome.UNKNOWN);
 }
 

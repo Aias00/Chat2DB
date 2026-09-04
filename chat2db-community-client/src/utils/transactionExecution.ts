@@ -1,7 +1,7 @@
 import type { ITransactionBeginRequest, ITransactionStateResponse } from '@/service/transaction';
 import type { TransactionState } from '@/store/workspace/slices/console/initialState';
 import type { IExecuteSqlParams } from '@/typings';
-import { TransactionIsolationLevel, TransactionMode } from '@/constants/transaction';
+import { TransactionIsolationLevel, TransactionMode, TransactionOutcome } from '@/constants/transaction';
 
 export interface TransactionStateAccess {
   getTransactionState: (consoleId: number) => TransactionState | undefined;
@@ -26,7 +26,11 @@ export function reconcileTransactionState(
   result: ITransactionStateResponse,
 ): Partial<TransactionState> {
   const supportedIsolationLevels = result.supportedIsolationLevels ?? [];
-  let isolationLevel = result.inTransaction
+  const inTransaction =
+    result.outcome === TransactionOutcome.UNKNOWN
+      ? current?.inTransaction ?? result.inTransaction
+      : result.inTransaction;
+  let isolationLevel = inTransaction
     ? result.isolationLevel ?? TransactionIsolationLevel.DEFAULT
     : current?.isolationLevel ?? result.isolationLevel ?? TransactionIsolationLevel.DEFAULT;
   if (
@@ -36,8 +40,8 @@ export function reconcileTransactionState(
     isolationLevel = TransactionIsolationLevel.DEFAULT;
   }
   return {
-    mode: result.inTransaction ? TransactionMode.MANUAL : current?.mode ?? result.mode,
-    inTransaction: result.inTransaction,
+    mode: inTransaction ? TransactionMode.MANUAL : current?.mode ?? result.mode,
+    inTransaction,
     opening: false,
     isolationLevel,
     supportedIsolationLevels,
@@ -56,7 +60,7 @@ export async function ensureManualTransactionStarted(
     return;
   }
   const state = stateAccess.getTransactionState(consoleId);
-  if (!state || state.mode !== TransactionMode.MANUAL || state.inTransaction) {
+  if (!state || state.mode !== TransactionMode.MANUAL) {
     return;
   }
 
@@ -90,8 +94,9 @@ export async function ensureManualTransactionStarted(
         return result;
       } catch (error) {
         stateAccess.setTransactionState(consoleId, {
-          inTransaction: false,
+          ...(state.inTransaction ? { inTransaction: true } : {}),
           opening: false,
+          lastOutcome: TransactionOutcome.UNKNOWN,
           lastError: error instanceof Error ? error.message : String(error),
         });
         throw error;

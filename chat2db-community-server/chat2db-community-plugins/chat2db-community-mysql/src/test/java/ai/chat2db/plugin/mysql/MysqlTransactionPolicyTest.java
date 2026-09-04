@@ -43,6 +43,37 @@ class MysqlTransactionPolicyTest {
     }
 
     @Test
+    void blocksAutocommitEnableVariantsOnBoundMysqlTransactions() {
+        bindMysql(true);
+
+        assertBlocked("SET autocommit=1");
+        assertBlocked("SET SESSION autocommit = ON");
+        assertBlocked("SET @@session.autocommit = 1");
+        assertBlocked("SET /* keep parsing */ autocommit = 1");
+    }
+
+    @Test
+    void blocksDynamicSqlAndExecutableCommentsOnBoundMysqlTransactions() {
+        bindMysql(true);
+
+        assertBlocked("PREPARE ddl FROM 'CREATE TABLE marker(id INT)'");
+        assertBlocked("EXECUTE ddl");
+        assertBlocked("CALL commit_pending_work()");
+        assertBlocked("{ CALL commit_pending_work() }");
+        assertBlocked("/*!80000 CREATE TABLE marker(id INT) */");
+    }
+
+    @Test
+    void blocksTransactionEndingStatementsButAllowsSavepointRollback() {
+        bindMysql(true);
+
+        assertBlocked("COMMIT");
+        assertBlocked("ROLLBACK");
+        assertBlocked("ROLLBACK WORK");
+        assertDoesNotThrow(() -> Chat2DBContext.beforeExecute(plan("ROLLBACK TO SAVEPOINT sp1")));
+    }
+
+    @Test
     void allowsTransactionalStatementsAndUnboundConnections() {
         bindMysql(true);
         assertDoesNotThrow(() -> Chat2DBContext.beforeExecute(plan("INSERT INTO tx_innodb(val) VALUES ('pending')")));
@@ -57,6 +88,10 @@ class MysqlTransactionPolicyTest {
         connectInfo.setConsoleOwn(consoleOwn);
         connectInfo.setDriverConfig(new DriverConfig());
         Chat2DBContext.putContext(connectInfo);
+    }
+
+    private static void assertBlocked(String sql) {
+        assertThrows(BusinessException.class, () -> Chat2DBContext.beforeExecute(plan(sql)));
     }
 
     private static SqlExecutionPlan plan(String sql) {

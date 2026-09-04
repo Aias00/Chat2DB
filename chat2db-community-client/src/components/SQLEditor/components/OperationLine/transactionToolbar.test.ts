@@ -60,15 +60,25 @@ assert.equal(
 );
 assert.equal(
   editorSource.match(
-    /inTransaction: Boolean\(result\?\.inTransaction\)/g,
+    /inTransaction: outcomeUnknown \? current\?\.inTransaction \?\? true : Boolean\(result\?\.inTransaction\)/g,
   )?.length,
   2,
-  'commit and rollback must follow the server session state even when the outcome is unknown',
+  'commit and rollback must keep recovery controls available until an unknown outcome is reconciled',
+);
+assert.equal(
+  editorSource.match(/void reconcileCurrentTransactionState\(consoleId\)/g)?.length,
+  4,
+  'unknown responses and transport failures must reconcile with the server',
 );
 assert.match(
   operationLineSource,
   /disabled: transactionState\?\.inTransaction/,
   'isolation levels must be disabled while a transaction is open',
+);
+assert.match(
+  editorSource,
+  /nextMode === TransactionMode\.MANUAL[\s\S]*?staticMessage\.warning\(i18n\('workspace\.transaction\.myIsamNotProtected'\)\)/,
+  'entering manual mode must warn that non-transactional engines cannot be rolled back',
 );
 
 const operationLineStyleSource = readFileSync(

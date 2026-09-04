@@ -29,16 +29,12 @@ const useApplicationExit = () => {
       }
       const cancelNativeExit = () => jcefApi.cancelApplicationExit({ operationId });
       try {
+        const workspace = useWorkspaceStore.getState();
+        const tabs = workspace.workspaceTabList || [];
         await coordinateApplicationExit({
-          confirmDirtyEditors: () => {
-            const workspace = useWorkspaceStore.getState();
-            const tabs = workspace.workspaceTabList || [];
-            return confirmAndReleaseTransaction(tabs).then((transactionOk) =>
-              transactionOk
-                ? prepareWorkspaceEditorsForApplicationExit(tabs, workspace.editorList || {})
-                : false,
-            );
-          },
+          confirmDirtyEditors: () =>
+            prepareWorkspaceEditorsForApplicationExit(tabs, workspace.editorList || {}),
+          finalizeBeforeClose: () => confirmAndReleaseTransaction(tabs),
           shouldManageTasks: () => {
             if (!clientRuntime.requiresAuthentication && !clientRuntime.requiresLicenseActivation) {
               return true;

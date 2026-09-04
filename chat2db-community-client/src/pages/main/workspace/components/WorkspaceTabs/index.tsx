@@ -1108,25 +1108,22 @@ const WorkspaceTabs = memo(() => {
   const confirmWorkspaceTabItemsClose = (tabs: ITabItem[]) => {
     const closeKeySet = new Set(tabs.map((tab) => tab.key));
     const tabsToClose = (workspaceTabList || []).filter((tab) => closeKeySet.has(tab.id));
-    return confirmAndReleaseTransaction(tabsToClose).then((transactionOk) =>
-      transactionOk
-        ? confirmWorkspaceTabsClose(
-            tabsToClose,
-            workspaceTabList || [],
-            useWorkspaceStore.getState().editorList || {},
-          )
-        : false,
+    return confirmWorkspaceTabsClose(
+      tabsToClose,
+      workspaceTabList || [],
+      useWorkspaceStore.getState().editorList || {},
+      () => confirmAndReleaseTransaction(tabsToClose),
     );
   };
 
   const requestCloseWorkspaceTabs = async (tabs: IWorkspaceTab[]) => {
     const closableTabs = tabs.filter((item) => !item.pinned);
     if (
-      await confirmAndReleaseTransaction(closableTabs) &&
       await confirmWorkspaceTabsClose(
         closableTabs,
         workspaceTabList || [],
         useWorkspaceStore.getState().editorList || {},
+        () => confirmAndReleaseTransaction(closableTabs),
       )
     ) {
       closeWorkspaceTabs(closableTabs);

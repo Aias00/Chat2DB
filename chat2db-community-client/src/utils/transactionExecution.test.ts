@@ -72,7 +72,7 @@ async function run() {
       supportedIsolationLevels: [TransactionIsolationLevel.DEFAULT, TransactionIsolationLevel.READ_COMMITTED],
     };
   });
-  assert.equal(calls, 0, 'an open console transaction must keep using its existing exclusive connection');
+  assert.equal(calls, 1, 'manual execution must idempotently begin even when local state says a transaction is open');
 }
 
 {
@@ -117,6 +117,23 @@ async function run() {
   );
   assert.equal(state.current()?.inTransaction, false);
   assert.equal(state.current()?.lastError, 'begin unavailable');
+}
+
+{
+  const state = stateAccess({
+    mode: TransactionMode.MANUAL,
+    inTransaction: true,
+    isolationLevel: TransactionIsolationLevel.DEFAULT,
+    supportedIsolationLevels: [TransactionIsolationLevel.DEFAULT],
+  });
+  await assert.rejects(
+    ensureManualTransactionStarted(params, state.access, async () => {
+      throw new Error('begin transport failed');
+    }),
+    /begin transport failed/,
+  );
+  assert.equal(state.current()?.inTransaction, true);
+  assert.equal(state.current()?.lastError, 'begin transport failed');
 }
 
 {

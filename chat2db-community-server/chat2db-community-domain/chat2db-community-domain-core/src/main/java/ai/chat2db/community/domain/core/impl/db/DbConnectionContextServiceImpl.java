@@ -165,7 +165,9 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
             connectInfo.setConsoleOwn(Boolean.TRUE);
             Connection connection = ConnectionPool.getConnection(connectInfo);
             List<TransactionIsolationLevel> supportedIsolationLevels = List.of();
+            Integer originalJdbcIsolationLevel = null;
             try {
+                originalJdbcIsolationLevel = connection.getTransactionIsolation();
                 supportedIsolationLevels = supportedTransactionIsolationLevels(connection);
                 if (!supportedIsolationLevels.contains(isolationLevel)) {
                     throw new BusinessException("transaction.unsupported");
@@ -186,12 +188,21 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 response.setLastError(e.getMessage());
                 return response;
             }
+            if (!ConnectionPool.isCurrentGeneration(connectInfo)) {
+                discardNewTransactionConnection(connectInfo, connection);
+                throw new BusinessException("datasource.not.found");
+            }
             if (!ConnectionPool.registerIfAbsent(
                     trustedParam.getConsoleId(),
                     connectInfo,
                     isolationLevel,
-                    supportedIsolationLevels
+                    supportedIsolationLevels,
+                    originalJdbcIsolationLevel
             )) {
+                if (!ConnectionPool.isInTransaction(trustedParam.getConsoleId())) {
+                    discardNewTransactionConnection(connectInfo, connection);
+                    throw new BusinessException("datasource.not.found");
+                }
                 // Another request opened the transaction concurrently; drop this request's fresh
                 // connection and report the existing open transaction.
                 connectInfo.setConsoleOwn(Boolean.FALSE);
@@ -214,7 +225,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 ConnectionPool.TransactionOutcome outcome =
                         ConnectionPool.commit(consoleId);
                 TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
-                response.setOutcome(outcome.name());
+                applyTransactionOutcome(response, outcome);
                 return response;
             });
         } catch (RuntimeException e) {
@@ -233,7 +244,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 ConnectionPool.TransactionOutcome outcome =
                         ConnectionPool.rollback(consoleId);
                 TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
-                response.setOutcome(outcome.name());
+                applyTransactionOutcome(response, outcome);
                 return response;
             });
         } catch (RuntimeException e) {
@@ -289,7 +300,7 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                         return ConnectionPool.release(consoleId, true);
                     });
             TransactionStateResponse response = TransactionStateResponse.of(false, TransactionMode.AUTO);
-            response.setOutcome(outcome.name());
+            applyTransactionOutcome(response, outcome);
             return response;
         } catch (RuntimeException e) {
             throw e;
@@ -355,6 +366,14 @@ public class DbConnectionContextServiceImpl implements IDbConnectionContextServi
                 ConnectionPool.getIsolationLevel(consoleId),
                 ConnectionPool.getSupportedIsolationLevels(consoleId)
         );
+    }
+
+    private static void applyTransactionOutcome(
+            TransactionStateResponse response,
+            ConnectionPool.TransactionOutcome outcome
+    ) {
+        response.setOutcome(outcome.name());
+        response.setLastError(ConnectionPool.consumeLastTransactionCleanupError());
     }
 
     @Override

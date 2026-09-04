@@ -553,6 +553,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
         return;
       }
     }
+    if (nextMode === TransactionMode.MANUAL) {
+      staticMessage.warning(i18n('workspace.transaction.myIsamNotProtected'));
+    }
     store.setTransactionMode(consoleId, nextMode);
   };
 
@@ -573,25 +576,30 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     if (consoleId == null) {
       return;
     }
+    const store = useWorkspaceStore.getState();
+    const current = store.getTransactionState(consoleId);
     try {
       const result = await transactionServer.commitTransaction(transactionRequest(consoleId));
-      useWorkspaceStore.getState().setTransactionState(consoleId, {
+      const outcomeUnknown = result?.outcome === TransactionOutcome.UNKNOWN;
+      store.setTransactionState(consoleId, {
         // An unknown outcome means the server could not prove that the bound
         // transaction ended. Keep the console in manual mode until it is
         // explicitly resolved instead of hiding the recovery controls.
-        inTransaction: Boolean(result?.inTransaction),
+        inTransaction: outcomeUnknown ? current?.inTransaction ?? true : Boolean(result?.inTransaction),
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
-      if (result?.outcome === TransactionOutcome.UNKNOWN) {
+      if (outcomeUnknown) {
         staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
+        void reconcileCurrentTransactionState(consoleId);
       }
     } catch (error) {
-      useWorkspaceStore.getState().setTransactionState(consoleId, {
-        inTransaction: false,
+      store.setTransactionState(consoleId, {
+        inTransaction: current?.inTransaction ?? true,
         lastOutcome: TransactionOutcome.UNKNOWN,
         lastError: String(error),
       });
+      void reconcileCurrentTransactionState(consoleId);
       staticMessage.error(String(error));
     }
   };
@@ -601,22 +609,27 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     if (consoleId == null) {
       return;
     }
+    const store = useWorkspaceStore.getState();
+    const current = store.getTransactionState(consoleId);
     try {
       const result = await transactionServer.rollbackTransaction(transactionRequest(consoleId));
-      useWorkspaceStore.getState().setTransactionState(consoleId, {
-        inTransaction: Boolean(result?.inTransaction),
+      const outcomeUnknown = result?.outcome === TransactionOutcome.UNKNOWN;
+      store.setTransactionState(consoleId, {
+        inTransaction: outcomeUnknown ? current?.inTransaction ?? true : Boolean(result?.inTransaction),
         lastOutcome: result?.outcome,
         lastError: result?.lastError,
       });
-      if (result?.outcome === TransactionOutcome.UNKNOWN) {
+      if (outcomeUnknown) {
         staticMessage.warning(i18n('workspace.transaction.outcomeUnknown'));
+        void reconcileCurrentTransactionState(consoleId);
       }
     } catch (error) {
-      useWorkspaceStore.getState().setTransactionState(consoleId, {
-        inTransaction: false,
+      store.setTransactionState(consoleId, {
+        inTransaction: current?.inTransaction ?? true,
         lastOutcome: TransactionOutcome.UNKNOWN,
         lastError: String(error),
       });
+      void reconcileCurrentTransactionState(consoleId);
       staticMessage.error(String(error));
     }
   };
@@ -627,6 +640,17 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     schemaName: dbInfo?.schemaName,
     consoleId,
   });
+
+  const reconcileCurrentTransactionState = async (consoleId: number) => {
+    try {
+      const store = useWorkspaceStore.getState();
+      const current = store.getTransactionState(consoleId);
+      const result = await transactionServer.getTransactionState(transactionRequest(consoleId));
+      store.setTransactionState(consoleId, reconcileTransactionState(current, result));
+    } catch (_error) {
+      // Keep the existing recovery controls when reconciliation cannot prove the server state.
+    }
+  };
 
   const handleExecuteRoutine = async () => {
     const routineRequest = getRoutineOperationRequest(type, dbInfo);

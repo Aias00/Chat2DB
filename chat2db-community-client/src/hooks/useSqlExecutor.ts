@@ -48,6 +48,29 @@ interface DesktopExecutionControl {
   resolve: (results: IManageResultData[]) => void;
 }
 
+export function shouldAbortSqlExecutionAfterManualBegin(
+  executionRequestTracker: SqlExecutionRequestTracker,
+  requestSequence: number,
+) {
+  return isSqlExecutionCancellationRequested(executionRequestTracker, requestSequence);
+}
+
+export function createSqlExecutionCancelledBeforeStartEvent(
+  requestSequence: number,
+  occurredAtEpochMs = Date.now(),
+): SqlExecutionEvent {
+  return {
+    executionId: `cancelled-before-start-${requestSequence}`,
+    occurredAtEpochMs,
+    eventType: 'cancelled',
+    message: {},
+  };
+}
+
+function createSqlExecutionAbortError() {
+  return new DOMException('SQL execution was cancelled before the request started', 'AbortError');
+}
+
 const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
   const {
     onlyOne,
@@ -131,6 +154,15 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
       // In manual transaction mode, ensure a server-side transaction is open before executing so
       // this execution reuses the console's bound connection. begin is idempotent on the server.
       await ensureManualTransaction(params);
+      if (shouldAbortSqlExecutionAfterManualBegin(executionRequestTracker, requestSequence)) {
+        finishSqlExecutionRequest(executionRequestTracker, requestSequence);
+        setExecuting(false);
+        if (desktopExecution) {
+          onExecutionEvent?.(createSqlExecutionCancelledBeforeStartEvent(requestSequence), requestSequence);
+          return [];
+        }
+        return Promise.reject(createSqlExecutionAbortError());
+      }
     } catch (error) {
       let rejection = error;
       if (finishSqlExecutionRequest(executionRequestTracker, requestSequence)) {
@@ -267,14 +299,15 @@ const useSqlExecutor = (props?: IUseSqlExecutorProps) => {
   // Stop executing sql
   const stopExecuteSQL = useCallback(() => {
     const executionRequestTracker = executionRequestTrackerRef.current!;
+    const activeRequestSequence = executionRequestTracker.activeRequestSequence;
     if (isDesktop && onExecutionEvent) {
-      const activeRequestSequence = executionRequestTracker.activeRequestSequence;
       const activeExecutionId = requestSqlExecutionCancellation(executionRequestTracker);
       if (activeExecutionId && activeRequestSequence !== undefined) {
         requestDesktopCancellation(activeExecutionId, activeRequestSequence);
       }
       return;
     }
+    requestSqlExecutionCancellation(executionRequestTracker);
     abortRequest();
   }, [abortRequest, onExecutionEvent, requestDesktopCancellation]);
 

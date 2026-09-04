@@ -211,25 +211,28 @@ async function run() {
     'the global close shortcut uses the shared guard',
   );
   const deleteTabBody = consoleActionSource.slice(consoleActionSource.indexOf('deleteActiveWorkspaceTab'));
-  assert.ok(
-    deleteTabBody.indexOf('confirmAndReleaseTransaction') < deleteTabBody.indexOf('confirmWorkspaceTabsClose'),
-    'the global close shortcut must resolve the transaction before the ordinary editor-save prompt',
+  assert.match(
+    deleteTabBody,
+    /confirmWorkspaceTabsClose[\s\S]*?confirmAndReleaseTransaction/,
+    'the global close shortcut must defer transaction resolution until other close confirmations pass',
   );
   const tabCloseGuardBody = workspaceTabsSource.slice(workspaceTabsSource.indexOf('const confirmWorkspaceTabItemsClose'));
-  assert.ok(
-    tabCloseGuardBody.indexOf('confirmAndReleaseTransaction') < tabCloseGuardBody.indexOf('confirmWorkspaceTabsClose'),
-    'tab close must resolve the transaction before the ordinary editor-save prompt',
+  assert.match(
+    tabCloseGuardBody,
+    /confirmWorkspaceTabsClose[\s\S]*?confirmAndReleaseTransaction/,
+    'tab close must defer transaction resolution until other close confirmations pass',
   );
   const bulkCloseBody = workspaceTabsSource.slice(workspaceTabsSource.indexOf('const requestCloseWorkspaceTabs'));
-  assert.ok(
-    bulkCloseBody.indexOf('confirmAndReleaseTransaction') < bulkCloseBody.indexOf('confirmWorkspaceTabsClose'),
-    'bulk tab close must resolve the transaction before the ordinary editor-save prompt',
+  assert.match(
+    bulkCloseBody,
+    /confirmWorkspaceTabsClose[\s\S]*?confirmAndReleaseTransaction/,
+    'bulk tab close must defer transaction resolution until other close confirmations pass',
   );
   const applicationExitBody = applicationExitSource.slice(applicationExitSource.indexOf('confirmDirtyEditors'));
-  assert.ok(
-    applicationExitBody.indexOf('confirmAndReleaseTransaction') <
-      applicationExitBody.indexOf('prepareWorkspaceEditorsForApplicationExit'),
-    'application exit must resolve transactions before the ordinary editor-save prompt',
+  assert.match(
+    applicationExitBody,
+    /confirmDirtyEditors:[\s\S]*?prepareWorkspaceEditorsForApplicationExit[\s\S]*?finalizeBeforeClose:[\s\S]*?confirmAndReleaseTransaction/,
+    'application exit must defer transaction resolution until editor and task confirmations pass',
   );
   assert.match(editorSource, /hasUnsavedChangesBeforeClose/, 'editor refs expose dirty-state detection');
   assert.match(editorSource, /saveBeforeClose/, 'editor refs expose a real save operation');

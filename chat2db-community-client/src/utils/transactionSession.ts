@@ -75,6 +75,7 @@ function confirmTransactionClose(consoles: TxConsole[]): Promise<boolean> {
         store: useWorkspaceStore.getState(),
         commitTransaction: transactionServer.commitTransaction,
         releaseTransaction: transactionServer.releaseTransaction,
+        getTransactionState: transactionServer.getTransactionState,
         onUnknownOutcome: () => staticMessage.warning(i18n('workspace.transaction.outcomeUnknown')),
       });
       if (!success) {

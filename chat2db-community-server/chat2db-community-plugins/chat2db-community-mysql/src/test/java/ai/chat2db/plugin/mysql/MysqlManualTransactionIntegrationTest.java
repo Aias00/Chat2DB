@@ -1,13 +1,11 @@
 package ai.chat2db.plugin.mysql;
 
 import ai.chat2db.community.domain.api.config.DriverConfig;
-import ai.chat2db.community.domain.api.model.result.ExecuteResponse;
-import ai.chat2db.community.domain.api.model.result.ResultCell;
 import ai.chat2db.community.domain.api.model.runtime.TransactionIsolationLevel;
-import ai.chat2db.community.domain.api.model.sql.SqlExecuteRequest;
-import ai.chat2db.community.domain.api.service.db.ISqlExecutionResultConsumer;
-import ai.chat2db.community.domain.api.service.db.ISqlExecutionStatementListener;
-import ai.chat2db.spi.DefaultSQLExecutor;
+import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionContext;
+import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionOperation;
+import ai.chat2db.community.domain.api.model.sql.extension.SqlExecutionPlan;
+import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.IPlugin;
 import ai.chat2db.spi.model.datasource.ConnectInfo;
 import ai.chat2db.spi.sql.Chat2DBContext;
@@ -25,21 +23,24 @@ import java.net.Socket;
 import java.lang.reflect.Field;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class MysqlManualTransactionIntegrationTest {
 
+    private static final String REQUIRE_MYSQL_FIXTURE_PROPERTY = "chat2db.mysql.fixture.required";
     private static final AtomicLong CONSOLE_IDS = new AtomicLong(20_000L);
     private static IPlugin previousMysqlPlugin;
     private static Field messageSourceField;
@@ -78,7 +79,7 @@ class MysqlManualTransactionIntegrationTest {
     @ParameterizedTest(name = "MySQL transaction commit/rollback on port {0}")
     @ValueSource(ints = {3357, 3380})
     void commitAndRollbackControlVisibility(int port) throws Exception {
-        assumeMysqlAvailable(port);
+        requireMysqlAvailable(port);
         prepareSchema(port);
         try (Connection observer = open(port)) {
             long commitConsole = nextConsoleId();
@@ -102,7 +103,7 @@ class MysqlManualTransactionIntegrationTest {
     @ParameterizedTest(name = "MySQL MyISAM rollback semantics on port {0}")
     @ValueSource(ints = {3357, 3380})
     void myIsamChangesRemainVisibleAfterRollback(int port) throws Exception {
-        assumeMysqlAvailable(port);
+        requireMysqlAvailable(port);
         prepareSchema(port);
         long consoleId = nextConsoleId();
         try (Connection observer = open(port)) {
@@ -115,38 +116,40 @@ class MysqlManualTransactionIntegrationTest {
         }
     }
 
-    @ParameterizedTest(name = "MySQL DDL warning ordering on port {0}")
+    @ParameterizedTest(name = "MySQL blocks implicit-commit DDL on port {0}")
     @ValueSource(ints = {3357, 3380})
-    void warnsBeforeDdlImplicitlyCommitsPendingDml(int port) throws Exception {
-        assumeMysqlAvailable(port);
+    void policyBlocksDdlBeforeImplicitCommitAndKeepsConsolesIsolated(int port) throws Exception {
+        requireMysqlAvailable(port);
         prepareSchema(port);
-        long consoleId = nextConsoleId();
-        List<String> events = new ArrayList<>();
+        long ddlConsoleId = nextConsoleId();
+        long isolatedConsoleId = nextConsoleId();
         try (Connection observer = open(port)) {
-            ConnectInfo bound = registerBound(port, consoleId);
-            execute(bound.getConnection(), "INSERT INTO tx_innodb(val) VALUES ('before-ddl')");
+            ConnectInfo ddlConsole = registerBound(port, ddlConsoleId);
+            ConnectInfo isolatedConsole = registerBound(port, isolatedConsoleId);
+            execute(ddlConsole.getConnection(), "INSERT INTO tx_innodb(val) VALUES ('before-blocked-ddl')");
+            execute(isolatedConsole.getConnection(), "INSERT INTO tx_innodb(val) VALUES ('isolated-console')");
             assertEquals(0, count(observer, "tx_innodb"));
-            Chat2DBContext.putContext(bound);
 
-            SqlExecuteRequest request = request(consoleId,
-                    "CREATE TABLE tx_ddl_marker(id INT PRIMARY KEY) ENGINE=InnoDB");
-            DefaultSQLExecutor.getInstance().executeStreaming(
-                    request,
-                    noOpConsumer(),
-                    warningListener(() -> {
-                        events.add("warning");
-                        assertEquals(0, count(observer, "tx_innodb"));
-                        assertFalse(tableExists(observer, "tx_ddl_marker"));
-                    }),
-                    () -> false
-            );
+            Chat2DBContext.putContext(ddlConsole);
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> Chat2DBContext.beforeExecute(executionPlan(
+                            "CREATE TABLE tx_ddl_marker(id INT PRIMARY KEY) ENGINE=InnoDB")));
 
-            assertEquals(List.of("warning"), events);
-            assertTrue(tableExists(observer, "tx_ddl_marker"));
-            assertEquals(1, count(observer, "tx_innodb"));
+            assertEquals("transaction.implicitCommit.blocked", exception.getCode());
+            assertFalse(tableExists(observer, "tx_ddl_marker"));
+            assertEquals(0, count(observer, "tx_innodb"));
+
+            assertEquals(ConnectionPool.TransactionOutcome.COMMITTED, ConnectionPool.commit(ddlConsoleId));
+            assertEquals(1, countWhereVal(observer, "tx_innodb", "before-blocked-ddl"));
+            assertEquals(0, countWhereVal(observer, "tx_innodb", "isolated-console"));
+
+            assertEquals(ConnectionPool.TransactionOutcome.ROLLED_BACK, ConnectionPool.rollback(isolatedConsoleId));
+            assertEquals(1, countWhereVal(observer, "tx_innodb", "before-blocked-ddl"));
+            assertEquals(0, countWhereVal(observer, "tx_innodb", "isolated-console"));
         } finally {
             Chat2DBContext.removeContext();
-            ConnectionPool.release(consoleId, true);
+            ConnectionPool.release(ddlConsoleId, true);
+            ConnectionPool.release(isolatedConsoleId, true);
         }
     }
 
@@ -169,64 +172,19 @@ class MysqlManualTransactionIntegrationTest {
         return connectInfo;
     }
 
-    private static SqlExecuteRequest request(long consoleId, String sql) {
-        SqlExecuteRequest request = new SqlExecuteRequest();
-        request.setScript(sql);
-        request.setConsoleId(consoleId);
-        request.setDataSourceId(1L);
-        request.setDatabaseName("c2d_tx_test");
-        request.setPageNo(1);
-        request.setPageSize(100);
-        return request;
-    }
-
-    private static ISqlExecutionStatementListener warningListener(SqlRunnable assertion) {
-        return new ISqlExecutionStatementListener() {
-            @Override
-            public void onStatementCreated(Statement statement) {
-            }
-
-            @Override
-            public void onStatementClosed(Statement statement) {
-            }
-
-            @Override
-            public void onImplicitCommitWarning(String sql) {
-                try {
-                    assertion.run();
-                } catch (Exception e) {
-                    throw new AssertionError(e);
-                }
-            }
-        };
-    }
-
-    private static ISqlExecutionResultConsumer noOpConsumer() {
-        return new ISqlExecutionResultConsumer() {
-            @Override
-            public void statementStarted(String sql, String originalSql, String comment) {
-            }
-
-            @Override
-            public void resultStarted(ExecuteResponse result) {
-            }
-
-            @Override
-            public void rows(ExecuteResponse result, List<List<ResultCell>> rows) {
-            }
-
-            @Override
-            public void resultFinished(ExecuteResponse result) {
-            }
-
-            @Override
-            public void updateCount(ExecuteResponse result) {
-            }
-
-            @Override
-            public void statementFinished(String sql, long duration) {
-            }
-        };
+    private static SqlExecutionPlan executionPlan(String sql) {
+        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
+        SqlExecutionContext context = new SqlExecutionContext(
+                connectInfo.getDataSourceId(),
+                connectInfo.getDbType(),
+                connectInfo.getDatabaseName(),
+                connectInfo.getSchemaName(),
+                null,
+                sql,
+                SqlExecutionOperation.EXECUTE,
+                null
+        );
+        return new SqlExecutionPlan(context, sql, null, "mysql-manual-transaction-integration-test");
     }
 
     private static void prepareSchema(int port) throws SQLException {
@@ -255,6 +213,17 @@ class MysqlManualTransactionIntegrationTest {
         }
     }
 
+    private static int countWhereVal(Connection connection, String table, String val) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT COUNT(*) FROM " + table + " WHERE val = ?")) {
+            statement.setString(1, val);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                assertTrue(resultSet.next());
+                return resultSet.getInt(1);
+            }
+        }
+    }
+
     private static boolean tableExists(Connection connection, String table) throws SQLException {
         try (ResultSet resultSet = connection.getMetaData().getTables(
                 "c2d_tx_test", null, table, new String[]{"TABLE"})) {
@@ -271,20 +240,19 @@ class MysqlManualTransactionIntegrationTest {
         );
     }
 
-    private static void assumeMysqlAvailable(int port) {
+    private static void requireMysqlAvailable(int port) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", port), 500);
         } catch (Exception e) {
-            assumeTrue(false, "MySQL test fixture is not running on port " + port);
+            String message = "MySQL test fixture is not running on loopback port " + port;
+            if (Boolean.getBoolean(REQUIRE_MYSQL_FIXTURE_PROPERTY)) {
+                fail(message, e);
+            }
+            assumeTrue(false, message);
         }
     }
 
     private static long nextConsoleId() {
         return CONSOLE_IDS.incrementAndGet();
-    }
-
-    @FunctionalInterface
-    private interface SqlRunnable {
-        void run() throws Exception;
     }
 }

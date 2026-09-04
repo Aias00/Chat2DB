@@ -7,10 +7,12 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -99,6 +101,7 @@ class ConnectionPoolTransactionTest {
         connectInfo.setDataSourceId(42L);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(countingConnection(new AtomicInteger(), new AtomicInteger()));
+        connectInfo.updatePoolGeneration(ConnectionPool.currentGeneration(connectInfo.getDataSourceId()));
 
         assertTrue(ConnectionPool.registerIfAbsent(
                 consoleId,
@@ -126,6 +129,7 @@ class ConnectionPoolTransactionTest {
         connectInfo.setDataSourceId(42L);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
+        connectInfo.updatePoolGeneration(ConnectionPool.currentGeneration(connectInfo.getDataSourceId()));
         assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo));
 
         ConnectionPool.close(connectInfo);
@@ -154,13 +158,109 @@ class ConnectionPoolTransactionTest {
         assertTrue(ConnectionPool.isInTransaction(consoleId));
     }
 
+    @Test
+    void consoleLockRefreshesActivityAfterLongOperationBeforeIdleEvictionCanRollback() throws Exception {
+        long consoleId = 9106L;
+        CountDownLatch operationEntered = new CountDownLatch(1);
+        CountDownLatch finishOperation = new CountDownLatch(1);
+        AtomicInteger rollbacks = new AtomicInteger();
+        registerBound(consoleId, countingConnection(new AtomicInteger(), rollbacks));
+        ConnectionPool.BoundTransaction candidate = ConnectionPool.getBoundTransaction(consoleId);
+        candidate.touch(0L);
+
+        FutureTask<Void> operation = new FutureTask<>(() -> ConnectionPool.withConsoleLock(consoleId, () -> {
+            operationEntered.countDown();
+            assertTrue(finishOperation.await(2, TimeUnit.SECONDS));
+            return null;
+        }));
+        new Thread(operation, "long-console-operation").start();
+        assertTrue(operationEntered.await(2, TimeUnit.SECONDS));
+
+        FutureTask<Boolean> eviction =
+                new FutureTask<>(() -> ConnectionPool.evictIdleCandidate(consoleId, candidate));
+        new Thread(eviction, "idle-eviction").start();
+
+        Thread.sleep(100);
+        assertFalse(eviction.isDone());
+        finishOperation.countDown();
+
+        operation.get(2, TimeUnit.SECONDS);
+        assertFalse(eviction.get(2, TimeUnit.SECONDS));
+        assertEquals(0, rollbacks.get());
+        assertTrue(ConnectionPool.isInTransaction(consoleId));
+    }
+
+    @Test
+    void registerRejectsConnectionFromStaleDatasourceGeneration() {
+        long consoleId = 9107L;
+        long datasourceId = -9107L;
+        ConnectInfo connectInfo = new ConnectInfo();
+        connectInfo.setConsoleId(consoleId);
+        connectInfo.setDataSourceId(datasourceId);
+        connectInfo.setConsoleOwn(Boolean.TRUE);
+        connectInfo.setConnection(countingConnection(new AtomicInteger(), new AtomicInteger()));
+        connectInfo.updatePoolGeneration(ConnectionPool.currentGeneration(datasourceId));
+
+        ConnectionPool.removeConnection(datasourceId);
+
+        assertFalse(ConnectionPool.registerIfAbsent(consoleId, connectInfo));
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
+    }
+
+    @Test
+    void commitKeepsCommittedOutcomeWhenCleanupFailsAndDiscardsConnection() {
+        long consoleId = 9108L;
+        AtomicInteger commits = new AtomicInteger();
+        AtomicBoolean aborted = new AtomicBoolean();
+        ConnectInfo connectInfo = boundConnectInfo(
+                consoleId,
+                cleanupFailingConnection(commits, new AtomicInteger(), aborted)
+        );
+        assertTrue(ConnectionPool.registerIfAbsent(
+                consoleId,
+                connectInfo,
+                TransactionIsolationLevel.READ_COMMITTED,
+                List.of(TransactionIsolationLevel.DEFAULT, TransactionIsolationLevel.READ_COMMITTED),
+                Connection.TRANSACTION_REPEATABLE_READ
+        ));
+
+        assertEquals(ConnectionPool.TransactionOutcome.COMMITTED, ConnectionPool.commit(consoleId));
+
+        assertEquals(1, commits.get());
+        assertTrue(aborted.get());
+        assertNull(connectInfo.getConnection());
+        assertEquals(
+                "Failed to restore transaction isolation: restore isolation failed",
+                ConnectionPool.consumeLastTransactionCleanupError()
+        );
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
+    }
+
+    @Test
+    void commitFailureReturnsUnknownWithoutCleanupError() {
+        long consoleId = 9109L;
+        ConnectInfo connectInfo = boundConnectInfo(consoleId, commitFailingConnection());
+        assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo));
+
+        assertEquals(ConnectionPool.TransactionOutcome.UNKNOWN, ConnectionPool.commit(consoleId));
+
+        assertNull(ConnectionPool.consumeLastTransactionCleanupError());
+        assertNull(connectInfo.getConnection());
+        assertFalse(ConnectionPool.isInTransaction(consoleId));
+    }
+
     private static void registerBound(long consoleId, Connection connection) {
+        assertTrue(ConnectionPool.registerIfAbsent(consoleId, boundConnectInfo(consoleId, connection)));
+    }
+
+    private static ConnectInfo boundConnectInfo(long consoleId, Connection connection) {
         ConnectInfo connectInfo = new ConnectInfo();
         connectInfo.setConsoleId(consoleId);
         connectInfo.setDataSourceId(42L);
         connectInfo.setConsoleOwn(Boolean.TRUE);
         connectInfo.setConnection(connection);
-        assertTrue(ConnectionPool.registerIfAbsent(consoleId, connectInfo));
+        connectInfo.updatePoolGeneration(ConnectionPool.currentGeneration(connectInfo.getDataSourceId()));
+        return connectInfo;
     }
 
     private static Connection blockingCommitConnection(CountDownLatch commitEntered,
@@ -198,6 +298,43 @@ class ConnectionPoolTransactionTest {
                         rollbacks.incrementAndGet();
                         yield null;
                     }
+                    case "setAutoCommit", "close", "abort" -> null;
+                    case "isClosed" -> false;
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Connection cleanupFailingConnection(AtomicInteger commits, AtomicInteger rollbacks,
+            AtomicBoolean aborted) {
+        return (Connection) Proxy.newProxyInstance(
+                ConnectionPoolTransactionTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "commit" -> {
+                        commits.incrementAndGet();
+                        yield null;
+                    }
+                    case "rollback" -> {
+                        rollbacks.incrementAndGet();
+                        yield null;
+                    }
+                    case "setTransactionIsolation" -> throw new SQLException("restore isolation failed");
+                    case "setAutoCommit", "close" -> null;
+                    case "abort" -> {
+                        aborted.set(true);
+                        yield null;
+                    }
+                    case "isClosed" -> false;
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Connection commitFailingConnection() {
+        return (Connection) Proxy.newProxyInstance(
+                ConnectionPoolTransactionTest.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "commit" -> throw new SQLException("commit failed");
                     case "setAutoCommit", "close", "abort" -> null;
                     case "isClosed" -> false;
                     default -> defaultValue(method.getReturnType());
