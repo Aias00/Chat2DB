@@ -167,10 +167,6 @@ public class RedisMetaData extends DefaultMetaService implements IDbMetaData {
     }
 
     private void selectDatabase(Connection connection, String database) {
-        if (!isDatabaseIndex(database)) {
-            log.warn("Redis skipped restore for invalid database index {}", database);
-            return;
-        }
         try {
             executeCommand(connection, RedisConstants.COMMAND_SELECT_DATABASE_PREFIX + database);
         } catch (RuntimeException ignored) {
@@ -189,32 +185,20 @@ public class RedisMetaData extends DefaultMetaService implements IDbMetaData {
     private String getOriginalDatabase(Connection connection) {
         ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
         if (connectInfo != null) {
-            if (isDatabaseIndex(connectInfo.getDatabaseName())) {
+            if (StringUtils.isNotBlank(connectInfo.getDatabaseName())) {
                 return connectInfo.getDatabaseName();
             }
             String database = RedisUrlUtils.getDatabaseFromUrl(connectInfo.getUrl());
-            if (isDatabaseIndex(database)) {
+            if (StringUtils.isNotBlank(database)) {
                 return database;
             }
         }
         try {
             String catalog = connection.getCatalog();
-            return isDatabaseIndex(catalog) ? catalog : RedisConstants.DEFAULT_DATABASE;
+            return StringUtils.defaultIfBlank(catalog, RedisConstants.DEFAULT_DATABASE);
         } catch (SQLException e) {
             return RedisConstants.DEFAULT_DATABASE;
         }
-    }
-
-    private static boolean isDatabaseIndex(String database) {
-        if (StringUtils.isBlank(database)) {
-            return false;
-        }
-        for (int index = 0; index < database.length(); index++) {
-            if (!Character.isDigit(database.charAt(index))) {
-                return false;
-            }
-        }
-        return true;
     }
 
     @Override

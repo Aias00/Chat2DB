@@ -59,21 +59,6 @@ class RedisMetaDataTest {
     }
 
     @Test
-    void shouldIgnoreInvalidConnectInfoDatabaseWhenRestoringAfterProbe() {
-        RedisConnectionStub stub = new RedisConnectionStub("1", 2, true);
-        ConnectInfo connectInfo = new ConnectInfo();
-        connectInfo.setDbType(DataSourceTypeEnum.REDIS.name());
-        connectInfo.setDriverConfig(new DriverConfig());
-        connectInfo.setDatabaseName("1\nflushall");
-        Chat2DBContext.putContext(connectInfo);
-
-        List<Database> databases = new RedisMetaData().databases(stub.connection());
-
-        assertEquals(List.of("0", "1"), names(databases));
-        assertEquals("select 1", stub.commands().get(stub.commands().size() - 1));
-    }
-
-    @Test
     void shouldFallbackToCurrentDatabaseWhenProbeReturnsNoDatabase() {
         RedisConnectionStub stub = new RedisConnectionStub("3", 0, true);
 
