@@ -13,7 +13,7 @@
 ## Verification
 
 1. Connect as `import003_admin`; import `fixture_multi_sheet.xlsx`.
-2. Verify the sheet selector lists Records, WithIntro, and HiddenData; select Records.
+2. Verify the sheet selector lists Records and WithIntro but not HiddenData; select Records.
 3. Verify typed previews: the big number stays a number, booleans show `true`/`false`
    with a [boolean] marker, the date cell shows a date, and the formula cell shows the
    cached result (30) with a [formula] marker — no formula is evaluated.
