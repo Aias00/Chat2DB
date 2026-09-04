@@ -150,6 +150,15 @@ class MysqlPartitionManagerTest {
         assertThrows(BusinessException.class,
                 () -> service.addPartitionSql("orders_db", "orders", "p_bad", "VALUES IN (1)", null));
 
+        Map<String, Object> maxValuePartition = baseRow();
+        maxValuePartition.put("PARTITION_NAME", "p_future");
+        maxValuePartition.put("PARTITION_METHOD", "RANGE");
+        maxValuePartition.put("PARTITION_DESCRIPTION", "MAXVALUE");
+        Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
+                connection(new HashMap<>(), List.of(maxValuePartition))));
+        assertThrows(BusinessException.class,
+                () -> service.addPartitionSql("orders_db", "orders", "p2026", "VALUES LESS THAN (2027)", null));
+
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), partitionRows("LINEAR HASH", "p0"))));
 
@@ -189,10 +198,12 @@ class MysqlPartitionManagerTest {
         Chat2DBContext.putContext(connectInfo(DatabaseTypeEnum.MYSQL.name(), "8.0.36",
                 connection(new HashMap<>(), partitionRows("RANGE", "p202401"))));
 
-        assertEquals("ANALYZE TABLE `orders_db`.`orders` PARTITION `p202401`",
+        assertEquals("ALTER TABLE `orders_db`.`orders` ANALYZE PARTITION `p202401`",
                 service.maintainPartitionSql("orders_db", "orders", "analyze", "p202401"));
-        assertEquals("CHECK TABLE `orders_db`.`orders` PARTITION ALL",
+        assertEquals("ALTER TABLE `orders_db`.`orders` CHECK PARTITION ALL",
                 service.maintainPartitionSql("orders_db", "orders", "CHECK", null));
+        assertEquals("ALTER TABLE `orders_db`.`orders` OPTIMIZE PARTITION `p202401`",
+                service.maintainPartitionSql("orders_db", "orders", "OPTIMIZE", "p202401"));
         assertThrows(BusinessException.class,
                 () -> service.maintainPartitionSql("orders_db", "orders", "REPAIR", "p202401"));
     }

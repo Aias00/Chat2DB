@@ -1,4 +1,5 @@
 import type { IDdlExecuteRequest } from '@/service/dmlRequest';
+import { DatabaseTypeCode } from '@/constants/common';
 
 export interface PartitionOperationContext {
   dataSourceId: number;
@@ -41,6 +42,10 @@ export interface PartitionOperationAvailability {
   reorganize: boolean;
   coalesce: boolean;
   maintain: boolean;
+}
+
+export function canInspectMysqlPartitions(databaseType?: DatabaseTypeCode | string | null): boolean {
+  return databaseType === DatabaseTypeCode.MYSQL;
 }
 
 export function normalizePartitionMethod(method?: string | null) {

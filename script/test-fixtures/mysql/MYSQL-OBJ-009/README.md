@@ -21,10 +21,10 @@
 1. Connect as `obj009_admin`; right-click `obj009_sales_range` -> Partitions.
 2. Verify four partitions are listed with method RANGE, expression YEAR(sale_date),
    boundaries (2024/2025/2026/MAXVALUE), and row counts.
-3. ADD PARTITION on `obj009_sales_range` — enter partition `p2026` and definition
-   `VALUES LESS THAN (2027)`; verify the preview
-   `ALTER TABLE ... ADD PARTITION (PARTITION \`p2026\` VALUES LESS THAN (2027))`,
-   execute, and verify the partition appears after reload.
+3. ADD PARTITION on `obj009_regions_list` — enter partition `p_north` and definition
+   `VALUES IN ('NORTH')`; verify the preview, execute it, and confirm the partition
+   appears after reload. Direct ADD on the RANGE fixture is rejected because its
+   `MAXVALUE` partition must be split with REORGANIZE PARTITION.
 4. REORGANIZE PARTITION `p_future` — enter replacement definitions
    `PARTITION p2027 VALUES LESS THAN (2028), PARTITION p_future VALUES LESS THAN MAXVALUE`;
    verify preview + reload.

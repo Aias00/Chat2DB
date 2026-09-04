@@ -111,7 +111,8 @@ public class MysqlPartitionManager implements IPartitionManager {
     public String addPartitionSql(String databaseName, String tableName, String partitionName,
             String partitionDefinition, Integer count) {
         requireSupportedMysql();
-        String method = requirePartitionedTable(databaseName, tableName).method;
+        PartitionedTable table = requirePartitionedTable(databaseName, tableName);
+        String method = table.method;
         if (HASH_KEY_METHODS.contains(method)) {
             requirePositiveCount(count);
             return "ALTER TABLE " + qualifiedTable(databaseName, tableName)
@@ -119,6 +120,9 @@ public class MysqlPartitionManager implements IPartitionManager {
         }
         if (!RANGE_LIST_METHODS.contains(method)) {
             throw new BusinessException("partition.typeUnsupported");
+        }
+        if (method.contains("RANGE") && table.hasMaxValue) {
+            throw new BusinessException("partition.addRequiresReorganize");
         }
         if (StringUtils.isBlank(partitionName) || StringUtils.isBlank(partitionDefinition)) {
             throw new BusinessException("partition.name.required");
@@ -172,7 +176,7 @@ public class MysqlPartitionManager implements IPartitionManager {
         String target = StringUtils.isBlank(partitionName)
                 ? "PARTITION ALL"
                 : "PARTITION " + quote(partitionName);
-        return op + " TABLE " + qualifiedTable(databaseName, tableName) + " " + target;
+        return "ALTER TABLE " + qualifiedTable(databaseName, tableName) + " " + op + " " + target;
     }
 
     private PartitionedTable requirePartitionedTable(String databaseName, String tableName) {
@@ -188,13 +192,17 @@ public class MysqlPartitionManager implements IPartitionManager {
             throw new BusinessException("partition.typeUnsupported");
         }
         Set<String> partitionNames = new HashSet<>();
+        boolean hasMaxValue = false;
         for (TablePartition row : rows) {
             String name = row.getPartitionName();
             if (StringUtils.isNotBlank(name)) {
                 partitionNames.add(name);
             }
+            if (StringUtils.containsIgnoreCase(row.getDescription(), "MAXVALUE")) {
+                hasMaxValue = true;
+            }
         }
-        return new PartitionedTable(method, partitionNames);
+        return new PartitionedTable(method, partitionNames, hasMaxValue);
     }
 
     private static Long nullableLong(ResultSet resultSet, String column) throws SQLException {
@@ -272,6 +280,6 @@ public class MysqlPartitionManager implements IPartitionManager {
         return Chat2DBContext.getDbMetaData().getMetaDataName(name);
     }
 
-    private record PartitionedTable(String method, Set<String> partitionNames) {
+    private record PartitionedTable(String method, Set<String> partitionNames, boolean hasMaxValue) {
     }
 }

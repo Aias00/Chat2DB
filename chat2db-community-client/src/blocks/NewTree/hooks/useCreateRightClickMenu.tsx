@@ -54,6 +54,7 @@ import accountAdminService, { AccountActionType, formatAccountExecuteMessage } f
 import CreateAccountContent, { CreateAccountValues } from '../components/CreateAccountContent';
 import DeleteDatabaseSchemaConfirmContent from '../components/DeleteDatabaseSchemaConfirmContent';
 import PartitionsContent from '../components/PartitionsContent';
+import { canInspectMysqlPartitions } from '../components/PartitionsContent/partitionOperations';
 import { PARTITION_REQUIRED_OPERATIONS } from '../components/PartitionsContent/partitionPrivileges';
 import { buildWorkspaceObjectTabTitle } from '@/utils/workspaceObjectTabTitle';
 import { allowsResourceOperations } from '@/client-extension/resourceOperationCapabilities';
@@ -411,6 +412,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.Partitions]: {
         text: i18n('workspace.ops.partitions'),
         icon: 'icon-table',
+        discard: !canInspectMysqlPartitions(databaseType),
         requiredOperations: PARTITION_REQUIRED_OPERATIONS,
         handle: () => {
           staticModal.confirm({

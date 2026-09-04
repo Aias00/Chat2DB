@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import {
   buildPartitionDdlExecuteRequest,
+  canInspectMysqlPartitions,
   defaultPartitionDefinition,
   executePartitionPreviewSql,
   getPartitionOperationAvailability,
   isPartitionDropConfirmationValid,
   PARTITION_READBACK_FIELD_KEYS,
 } from './partitionOperations';
+import { DatabaseTypeCode } from '@/constants/common';
 
 const context = {
   dataSourceId: 42,
@@ -14,6 +16,10 @@ const context = {
   tableName: 'orders',
 };
 const sql = 'ALTER TABLE `orders_db`.`orders` TRUNCATE PARTITION `p202401`';
+
+assert.equal(canInspectMysqlPartitions(DatabaseTypeCode.MYSQL), true);
+assert.equal(canInspectMysqlPartitions(DatabaseTypeCode.POSTGRESQL), false);
+assert.equal(canInspectMysqlPartitions(null), false);
 
 assert.deepEqual(
   buildPartitionDdlExecuteRequest(context, sql),
