@@ -67,21 +67,23 @@ public interface IDbDatabaseService {
     /**
      * Returns the database default character set and collation reported by the server.
      *
+     * @param dataSourceId the datasource identifier used for metadata authorization.
      * @param databaseName the database name.
      * @return map with {@code charset} and {@code collation} keys.
      */
-    Map<String, String> databaseInfo(String databaseName);
+    Map<String, String> databaseInfo(Long dataSourceId, String databaseName);
 
     /**
      * Generates an ALTER DATABASE statement for a default character set / collation change.
      * No DDL is generated when both values are unchanged.
      *
+     * @param dataSourceId the datasource identifier used for metadata authorization.
      * @param databaseName the database name.
      * @param charset      the new default character set.
      * @param collation    the new default collation.
      * @return the SQL preview, or null when nothing changed.
      */
-    String previewAlterDatabaseSql(String databaseName, String charset, String collation);
+    String previewAlterDatabaseSql(Long dataSourceId, String databaseName, String charset, String collation);
 
     /**
      * Deletes a schema according to the supplied operation parameters.

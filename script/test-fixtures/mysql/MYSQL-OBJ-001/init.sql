@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS `obj001_contacts` (
 INSERT INTO `obj001_contacts` (`name`) VALUES ('Alice'), ('Bob');
 
 CREATE USER IF NOT EXISTS 'obj001_admin'@'%' IDENTIFIED BY 'Obj001_admin_2026';
-GRANT ALL PRIVILEGES ON `obj001_test`.* TO 'obj001_admin'@'%';
+CREATE USER IF NOT EXISTS 'obj001_viewer'@'%' IDENTIFIED BY 'Obj001_viewer_2026';

@@ -109,6 +109,14 @@ export function isCharsetCollationCompatible(
   return !option?.charset || option.charset === charset;
 }
 
+export function getCompatibleCollationValue(
+  charset: string | null | undefined,
+  collation: string | number | null | undefined,
+  collations: IOption[],
+): string | number | null | undefined {
+  return isCharsetCollationCompatible(charset, collation, collations) ? collation : null;
+}
+
 export function validateTableCharsetCollations(
   table: Pick<IEditTableInfo, 'charset' | 'collate' | 'columnList'>,
   collations: IOption[],

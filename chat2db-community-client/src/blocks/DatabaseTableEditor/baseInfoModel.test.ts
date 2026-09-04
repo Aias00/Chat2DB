@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildBaseInfoFormValues,
   filterCollationsByCharset,
+  getCompatibleCollationValue,
   getFirstTablePreviewSql,
   isCharsetCollationCompatible,
   mapDatabaseSupportFieldOptions,
@@ -73,6 +74,17 @@ assert.equal(
   isCharsetCollationCompatible('utf8mb4', 'utf8mb4_general_ci', options.collations),
   true,
   'matching charset and collation remain valid',
+);
+
+assert.equal(
+  getCompatibleCollationValue('utf8mb4', 'utf8_general_ci', options.collations),
+  null,
+  'changing a column charset clears an incompatible selected collation',
+);
+assert.equal(
+  getCompatibleCollationValue('utf8mb4', 'utf8mb4_general_ci', options.collations),
+  'utf8mb4_general_ci',
+  'changing a column charset preserves a compatible selected collation',
 );
 
 assert.equal(getFirstTablePreviewSql([{ sql: '' }]), null, 'empty table DDL is treated as no changes');

@@ -28,6 +28,12 @@ assert.match(
 );
 
 assert.match(
+  menuSource,
+  /\[OperationColumn\.DatabaseProperties\]:[\s\S]*?discard:[\s\S]*?DatabaseCapability\.DATABASE_PROPERTIES/,
+  'database properties menu must be hidden for database types without plugin support',
+);
+
+assert.match(
   source,
   /previewAlterDatabaseSql\(\{\s*dataSourceId,\s*databaseName,\s*charset:\s*values\.charset,\s*collation:\s*values\.collation\s*\}\)/s,
   'database charset preview must send dataSourceId with databaseName',

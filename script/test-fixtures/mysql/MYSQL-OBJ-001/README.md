@@ -3,8 +3,8 @@
 ## Fixture
 
 - `init.sql` creates `obj001_test` (utf8mb4 / utf8mb4_unicode_ci) with a table
-  `obj001_contacts` and `obj001_admin`.
-- `grants.sql` grants ALTER on the database and tables.
+  `obj001_contacts`, an ALTER+SELECT `obj001_admin`, and a SELECT-only `obj001_viewer`.
+- `grants.sql` grants only the privileges required by each test role.
 - `cleanup.sql` drops test objects and users.
 
 ## Verification
@@ -24,3 +24,5 @@
    verify the reloaded value in information_schema.tables.
 9. Verify the UI states that changing defaults does not convert existing column data.
 10. Restore the original collations afterwards.
+11. Connect as `obj001_viewer`; verify readback and preview work, while executing
+    the preview fails because the account does not have ALTER privilege.

@@ -48,12 +48,15 @@ public class MysqlDatabasePropertiesManager implements IDatabasePropertiesManage
             throw new BusinessException("database.name.required");
         }
         Map<String, String> current = databaseInfo(connection, databaseName);
-        if (StringUtils.isAllBlank(charset, collation)
-                || StringUtils.equalsIgnoreCase(charset, current.get("charset"))
-                && StringUtils.equalsIgnoreCase(collation, current.get("collation"))) {
+        boolean charsetChanged = StringUtils.isNotBlank(charset)
+                && !StringUtils.equalsIgnoreCase(charset, current.get("charset"));
+        boolean collationChanged = StringUtils.isNotBlank(collation)
+                && !StringUtils.equalsIgnoreCase(collation, current.get("collation"));
+        if (!charsetChanged && !collationChanged) {
             return null;
         }
-        validateOptions(charset, collation);
+        String effectiveCharset = charsetChanged ? charset : current.get("charset");
+        validateOptions(effectiveCharset, collationChanged ? collation : null);
         Database oldDatabase = Database.builder()
                 .name(databaseName)
                 .charset(current.get("charset"))
@@ -61,8 +64,8 @@ public class MysqlDatabasePropertiesManager implements IDatabasePropertiesManage
                 .build();
         Database newDatabase = Database.builder()
                 .name(databaseName)
-                .charset(charset)
-                .collation(collation)
+                .charset(charsetChanged ? charset : null)
+                .collation(collationChanged ? collation : null)
                 .build();
         return sqlBuilder.database().buildAlterDatabase(oldDatabase, newDatabase);
     }

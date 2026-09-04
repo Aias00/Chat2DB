@@ -410,6 +410,7 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.DatabaseProperties]: {
         text: i18n('workspace.ops.databaseProperties'),
         icon: 'icon-setting',
+        discard: !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.DATABASE_PROPERTIES),
         handle: () => {
           staticModal.confirm({
             title: i18n('workspace.ops.databaseProperties'),

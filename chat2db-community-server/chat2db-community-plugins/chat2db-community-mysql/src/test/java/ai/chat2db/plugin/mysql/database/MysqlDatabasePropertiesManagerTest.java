@@ -73,6 +73,8 @@ class MysqlDatabasePropertiesManagerTest {
                         connection, "app", "utf8mb4", "utf8mb4_0900_ai_ci;DROP"));
         assertThrows(BusinessException.class,
                 () -> manager.previewAlterDatabaseSql(connection, "app", "latin1", "utf8mb4_bin"));
+        assertThrows(BusinessException.class,
+                () -> manager.previewAlterDatabaseSql(connection, "app", null, "utf8_general_ci"));
     }
 
     @Test
@@ -82,7 +84,7 @@ class MysqlDatabasePropertiesManagerTest {
         String sql = manager.previewAlterDatabaseSql(
                 jdbc.connection(), "app-db", "utf8mb4", "utf8mb4_bin");
 
-        assertEquals("ALTER DATABASE `app-db` DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_bin", sql);
+        assertEquals("ALTER DATABASE `app-db` DEFAULT COLLATE utf8mb4_bin", sql);
     }
 
     @Test
@@ -90,8 +92,20 @@ class MysqlDatabasePropertiesManagerTest {
         Connection connection = new RecordingJdbc().connection();
 
         assertNull(manager.previewAlterDatabaseSql(connection, "app", null, null));
+        assertNull(manager.previewAlterDatabaseSql(connection, "app", "utf8mb4", null));
+        assertNull(manager.previewAlterDatabaseSql(connection, "app", null, "utf8mb4_0900_ai_ci"));
         assertNull(manager.previewAlterDatabaseSql(
                 connection, "app", "utf8mb4", "utf8mb4_0900_ai_ci"));
+    }
+
+    @Test
+    void previewIncludesOnlyPropertiesThatActuallyChange() {
+        Connection connection = new RecordingJdbc().connection();
+
+        assertEquals("ALTER DATABASE `app` DEFAULT COLLATE utf8mb4_bin",
+                manager.previewAlterDatabaseSql(connection, "app", null, "utf8mb4_bin"));
+        assertEquals("ALTER DATABASE `app` DEFAULT CHARACTER SET latin1",
+                manager.previewAlterDatabaseSql(connection, "app", "latin1", null));
     }
 
     private static final class RecordingJdbc {

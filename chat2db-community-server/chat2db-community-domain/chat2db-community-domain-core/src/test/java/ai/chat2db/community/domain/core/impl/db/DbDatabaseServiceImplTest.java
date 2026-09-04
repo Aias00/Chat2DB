@@ -3,6 +3,7 @@ package ai.chat2db.community.domain.core.impl.db;
 import ai.chat2db.community.domain.api.config.DBConfig;
 import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.model.metadata.Schema;
+import ai.chat2db.community.domain.core.impl.db.extension.MetadataAccessPolicyManager;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.IDatabasePropertiesManager;
 import ai.chat2db.spi.IPlugin;
@@ -52,9 +53,9 @@ class DbDatabaseServiceImplTest {
         DbDatabaseServiceImpl service = new DbDatabaseServiceImpl();
 
         assertEquals(Map.of("charset", "utf8mb4", "collation", "utf8mb4_bin"),
-                service.databaseInfo("app"));
+                service.databaseInfo(42L, "app"));
         assertEquals("ALTER DATABASE `app` DEFAULT COLLATE utf8mb4_bin",
-                service.previewAlterDatabaseSql("app", null, "utf8mb4_bin"));
+                service.previewAlterDatabaseSql(42L, "app", null, "utf8mb4_bin"));
 
         assertNotNull(manager.connection);
         assertEquals("app", manager.databaseName);
@@ -66,9 +67,28 @@ class DbDatabaseServiceImplTest {
         bindContext(null);
 
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> new DbDatabaseServiceImpl().databaseInfo("app"));
+                () -> new DbDatabaseServiceImpl().databaseInfo(42L, "app"));
 
         assertEquals("database.properties.unsupported", exception.getCode());
+    }
+
+    @Test
+    void rejectsDatabasePropertiesOperationsDeniedByMetadataPolicy() {
+        RecordingDatabasePropertiesManager manager = new RecordingDatabasePropertiesManager();
+        bindContext(manager);
+        MetadataAccessPolicyManager policyManager = new MetadataAccessPolicyManager(List.of(
+                resources -> resources.stream()
+                        .map(resource -> !"hidden".equals(resource.getDatabaseName()))
+                        .toList()));
+        DbDatabaseServiceImpl service = new DbDatabaseServiceImpl(policyManager);
+
+        BusinessException infoException = assertThrows(BusinessException.class,
+                () -> service.databaseInfo(42L, "hidden"));
+        BusinessException previewException = assertThrows(BusinessException.class,
+                () -> service.previewAlterDatabaseSql(42L, "hidden", "utf8mb4", "utf8mb4_bin"));
+
+        assertEquals("common.permissionDenied", infoException.getCode());
+        assertEquals("common.permissionDenied", previewException.getCode());
     }
 
     @Test

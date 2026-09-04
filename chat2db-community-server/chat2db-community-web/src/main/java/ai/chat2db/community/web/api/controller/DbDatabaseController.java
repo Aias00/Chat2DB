@@ -127,7 +127,7 @@ public class DbDatabaseController {
      */
     @GetMapping("/info")
     public DataResult<Map<String, String>> info(@Valid DataSourceBaseRequest request) {
-        return DataResult.of(databaseService.databaseInfo(request.getDatabaseName()));
+        return DataResult.of(databaseService.databaseInfo(request.getDataSourceId(), request.getDatabaseName()));
     }
 
     /**
@@ -138,7 +138,7 @@ public class DbDatabaseController {
     @PostMapping("/alter_preview")
     public DataResult<String> alterPreview(@RequestBody @Valid AlterDatabasePreviewRequest request) {
         return DataResult.of(databaseService.previewAlterDatabaseSql(
-                request.getDatabaseName(), request.getCharset(), request.getCollation()));
+                request.getDataSourceId(), request.getDatabaseName(), request.getCharset(), request.getCollation()));
     }
 
     @Data

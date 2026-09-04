@@ -145,14 +145,23 @@ public class DbDatabaseServiceImpl implements IDbDatabaseService {
     }
 
     @Override
-    public Map<String, String> databaseInfo(String databaseName) {
+    public Map<String, String> databaseInfo(Long dataSourceId, String databaseName) {
+        requireVisibleDatabase(dataSourceId, databaseName);
         return requireDatabasePropertiesManager().databaseInfo(Chat2DBContext.getConnection(), databaseName);
     }
 
     @Override
-    public String previewAlterDatabaseSql(String databaseName, String charset, String collation) {
+    public String previewAlterDatabaseSql(Long dataSourceId, String databaseName, String charset, String collation) {
+        requireVisibleDatabase(dataSourceId, databaseName);
         return requireDatabasePropertiesManager().previewAlterDatabaseSql(
                 Chat2DBContext.getConnection(), databaseName, charset, collation);
+    }
+
+    private void requireVisibleDatabase(Long dataSourceId, String databaseName) {
+        if (!metadataAccessPolicyManager.isAllowed(
+                resource(dataSourceId, currentDbType(), databaseName, null, null, null))) {
+            throw new BusinessException("common.permissionDenied");
+        }
     }
 
     private IDatabasePropertiesManager requireDatabasePropertiesManager() {
