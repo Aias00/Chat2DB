@@ -3,8 +3,8 @@
 ## Fixture
 
 - `init.sql` creates `sec006_double` (function), `sec006_bump` (procedure), a
-  manager with EXECUTE/ALTER ROUTINE + GRANT OPTION, an unprivileged user, and a
-  routine role for inherited-role evidence.
+  manager with EXECUTE/ALTER ROUTINE + GRANT OPTION and read-only grant metadata
+  access, an unprivileged user, and a routine role for inherited-role evidence.
 - `grants.sql` applies direct routine grants, an inherited database EXECUTE
   grant, a role assignment, and then runs `SHOW GRANTS FOR 'sec006_user'@'%'`.
 - `cleanup.sql` drops test objects and users.

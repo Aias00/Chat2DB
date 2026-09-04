@@ -97,6 +97,9 @@ final class MysqlGrantParser {
         } else {
             return null;
         }
+        if (!hasRoutinePrivilege(privileges)) {
+            return null;
+        }
 
         QualifiedName name = parseQualifiedName(qualifiedName);
         AccountGrant grant = baseGrant(rawStatement, SOURCE_DIRECT_ROUTINE, scope, privileges, grantOption);

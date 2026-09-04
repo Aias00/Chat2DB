@@ -98,14 +98,14 @@ class MysqlAccountManagerTest {
         AccountGrantSummary summary = MysqlGrantParser.readable(List.of(
                 "GRANT USAGE ON *.* TO 'runner'@'%'",
                 "GRANT SELECT ON `app`.* TO 'runner'@'%'",
-                "GRANT EXECUTE ON `app`.`jobs` TO 'runner'@'%'"
+                "GRANT EXECUTE ON `app`.`jobs` TO 'runner'@'%'",
+                "GRANT USAGE ON PROCEDURE `app`.`sync_orders` TO 'runner'@'%' WITH GRANT OPTION"
         ));
 
-        assertEquals(3, summary.getRawStatements().size());
-        assertEquals(3, summary.getGrants().size());
-        assertEquals(MysqlGrantParser.SOURCE_UNPARSED, summary.getGrants().get(0).getSource());
-        assertEquals(MysqlGrantParser.SOURCE_UNPARSED, summary.getGrants().get(1).getSource());
-        assertEquals(MysqlGrantParser.SOURCE_UNPARSED, summary.getGrants().get(2).getSource());
+        assertEquals(4, summary.getRawStatements().size());
+        assertEquals(4, summary.getGrants().size());
+        summary.getGrants().forEach(
+                grant -> assertEquals(MysqlGrantParser.SOURCE_UNPARSED, grant.getSource()));
     }
 
     @Test
