@@ -199,7 +199,12 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
                 }
                 boolean forceVisibleKeyword = isColumnVisibilityChangedToVisible(oldTable, tableColumn);
                 rejectInvisibleColumnIfUnsupported(oldTable, tableColumn);
-                if (moved || added) {
+                if (isGeneratedColumnStorageConversion(oldTable, tableColumn)) {
+                    script.append(SQLConstants.TAB)
+                            .append(buildGeneratedColumnStorageConversion(tableColumn, typeEnum, newTable,
+                                    forceVisibleKeyword))
+                            .append(SQLConstants.COMMA_LINE_SEPARATOR);
+                } else if (moved || added) {
                     script.append(SQLConstants.TAB).append(typeEnum.buildModifyColumn(tableColumn, true,
                                     findPrevious(tableColumn, newTable), forceVisibleKeyword))
                             .append(SQLConstants.COMMA_LINE_SEPARATOR);
@@ -399,6 +404,28 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
 
     private static String generatedColumnStorage(TableColumn column) {
         return MysqlSqlGuards.requireGeneratedColumnStorageType(column == null ? null : column.getGeneratedColumnType());
+    }
+
+    private static boolean isGeneratedColumnStorageConversion(Table oldTable, TableColumn newColumn) {
+        TableColumn oldColumn = findOldColumn(oldTable, newColumn);
+        return isGeneratedColumn(oldColumn) && isGeneratedColumn(newColumn)
+                && !StringUtils.equals(generatedColumnStorage(oldColumn), generatedColumnStorage(newColumn));
+    }
+
+    private String buildGeneratedColumnStorageConversion(TableColumn column, MysqlColumnTypeEnum typeEnum,
+            Table newTable, boolean forceVisibleKeyword) {
+        String oldName = StringUtils.defaultIfBlank(column.getOldName(), column.getName());
+        String previousColumn = findPrevious(column, newTable);
+        StringBuilder sql = new StringBuilder("DROP COLUMN ")
+                .append(quoteMysqlIdentifier(oldName))
+                .append(SQLConstants.COMMA_LINE_SEPARATOR)
+                .append(SQLConstants.TAB)
+                .append("ADD COLUMN ")
+                .append(typeEnum.buildCreateColumnSql(column, forceVisibleKeyword));
+        if (PREVIOUS_COLUMN_NOT_FOUND.equals(previousColumn)) {
+            return sql.append(" FIRST").toString();
+        }
+        return sql.append(" AFTER ").append(quoteMysqlIdentifier(previousColumn)).toString();
     }
 
     @Override

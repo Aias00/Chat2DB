@@ -23,4 +23,7 @@
 6. Add a VIRTUAL generated column with a UNIQUE index requirement on MySQL 8.0 — verify
    the server error for unsupported constraints is surfaced (generated columns support
    only UNIQUE indexes, not foreign keys).
-7. Drop the `discounted` column — verify it is removed and reloads correctly.
+7. Change `discounted` between VIRTUAL and STORED — verify preview is rejected until
+   the rebuild confirmation is accepted, then uses one `DROP COLUMN` + `ADD COLUMN`
+   statement and reloads with the requested storage type.
+8. Drop the `discounted` column — verify it is removed and reloads correctly.

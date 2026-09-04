@@ -103,6 +103,24 @@ class MysqlGeneratedColumnSupportTest {
     }
 
     @Test
+    void generatedStringColumnPlacesCharsetAndCollationBeforeExpression() {
+        TableColumn column = generatedColumn();
+        column.setColumnType("VARCHAR");
+        column.setColumnSize(64);
+        column.setCharSetName("utf8mb4");
+        column.setCollationName("utf8mb4_bin");
+
+        withMysqlVersion("8.0.36");
+        String sql = MysqlColumnTypeEnum.VARCHAR.buildCreateColumnSql(column);
+
+        int charset = sql.indexOf("CHARACTER SET utf8mb4");
+        int collation = sql.indexOf("COLLATE utf8mb4_bin");
+        int expression = sql.indexOf("GENERATED ALWAYS AS");
+        assertTrue(charset >= 0 && charset < expression, sql);
+        assertTrue(collation >= 0 && collation < expression, sql);
+    }
+
+    @Test
     void tableMetaExposesGeneratedColumnCapabilityFromServerVersion() {
         MysqlMetaData metaData = new MysqlMetaData();
 
@@ -193,7 +211,10 @@ class MysqlGeneratedColumnSupportTest {
 
         newTable.setAllowGeneratedColumnStorageRebuild(Boolean.TRUE);
         String sql = builder.buildAlterTable(oldTable, newTable);
-        assertTrue(sql.contains("MODIFY COLUMN `double_price` INT GENERATED ALWAYS AS (`price` * 2) STORED"), sql);
+        assertTrue(sql.contains("DROP COLUMN `double_price`,\n"
+                + "\tADD COLUMN `double_price` INT GENERATED ALWAYS AS (`price` * 2) STORED"), sql);
+        assertTrue(sql.contains(" FIRST"), sql);
+        assertFalse(sql.contains("MODIFY COLUMN `double_price`"), sql);
     }
 
     @Test

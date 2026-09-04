@@ -177,6 +177,16 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
 
         script.append(buildDataType(column, type)).append(" ");
 
+        String charset = buildCharset(column, type);
+        if (StringUtils.isNotBlank(charset)) {
+            script.append(charset).append(" ");
+        }
+
+        String collation = buildCollation(column, type);
+        if (StringUtils.isNotBlank(collation)) {
+            script.append(collation).append(" ");
+        }
+
         boolean generated = isGeneratedColumn(column);
         if (generated) {
             // MySQL column grammar: data_type [GENERATED ALWAYS] AS (expr) [VIRTUAL|STORED]
@@ -188,10 +198,6 @@ public enum MysqlColumnTypeEnum implements IColumnBuilder {
             script.append("GENERATED ALWAYS AS (").append(expression).append(") ")
                     .append(storage).append(" ");
         }
-
-        script.append(buildCharset(column, type)).append(" ");
-
-        script.append(buildCollation(column, type)).append(" ");
 
         script.append(buildNullable(column, type)).append(" ");
 
