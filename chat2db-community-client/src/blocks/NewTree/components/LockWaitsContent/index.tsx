@@ -1,29 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Table, Tabs, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import i18n from '@/i18n';
 import sqlService, {
   type IDataLock,
   type ILockSession,
   type ILockView,
+  type ILockWaitChain,
   type IMetadataLock,
   LockViewErrorCode,
   LockViewSource,
 } from '@/service/sql';
 import { beginLatestRequest, invalidateLatestRequest, isLatestRequest } from '@/utils/latestRequest';
 
-/**
- * Lock waits and blocking chains (MYSQL-OPS-003). Read-only; InnoDB data locks come from
- * performance_schema (8.0) or information_schema (5.7), metadata locks are shown only
- * when instrumented. The feature never terminates sessions — termination belongs to the
- * session flow (MYSQL-OPS-001).
- */
 interface LockWaitsContentProps {
   dataSourceId: number;
   onOpenSession?: (target: LockSessionNavigationTarget) => void;
 }
-
-type WaitChainRow = ILockView['waitChains'][number];
 
 export interface LockSessionNavigationTarget {
   dataSourceId: number;
@@ -45,7 +39,8 @@ const sourceLabel = (source: ILockView['source']) => {
   return i18n('workspace.ops.lockSourceUnavailable');
 };
 
-const valueText = (value: unknown) => (value == null || value === '' ? i18n('workspace.ops.valueUnavailable') : String(value));
+const valueText = (value: unknown) =>
+  value == null || value === '' ? i18n('workspace.ops.valueUnavailable') : String(value);
 
 export const lockObjectText = (
   objectSchema: string | null,
@@ -72,11 +67,36 @@ export const metadataLockRowKey = (row: IMetadataLock) =>
     .join(':');
 
 export const lockViewErrorText = (errors: ILockView['errors']) => {
-  if (!errors.length) return null;
-  return errors.some(({ code }) => code === LockViewErrorCode.PRIVILEGE_REQUIRED)
-    ? i18n('workspace.ops.lockPrivilegeRequired')
-    : i18n('workspace.ops.lockMetadataUnavailable');
+  const messages = new Set<string>();
+  for (const { code } of errors) {
+    messages.add(
+      code === LockViewErrorCode.PRIVILEGE_REQUIRED
+        ? i18n('workspace.ops.lockPrivilegeRequired')
+        : i18n('workspace.ops.lockMetadataUnavailable'),
+    );
+  }
+  return messages.size ? Array.from(messages).join('; ') : null;
 };
+
+const waitChainRowKey = (row: ILockWaitChain, dataSourceId: number) =>
+  [
+    dataSourceId,
+    row.lockKind,
+    row.lockObject,
+    row.waiterTransactionId,
+    row.blockerTransactionId,
+    row.waiterLockId,
+    row.blockerLockId,
+    row.waiterEngineThreadId,
+    row.blockerEngineThreadId,
+  ]
+    .map((value) => value ?? '')
+    .join(':');
+
+const dataLockRowKey = (row: IDataLock) =>
+  [row.lockId, row.transactionId, row.engineThreadId, row.eventId, row.objectSchema, row.objectName, row.lockType]
+    .map((value) => value ?? '')
+    .join(':');
 
 const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps) => {
   const [view, setView] = useState<ILockView | null>(null);
@@ -88,6 +108,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     const requestGeneration = beginLatestRequest(requestGenerationRef);
     setLoading(true);
     setError(null);
+    setView((current) => (current?.dataSourceId === dataSourceId ? current : null));
     sqlService
       .getLockView({ dataSourceId })
       .then((result) => {
@@ -95,10 +116,10 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
         setView(result);
         setError(lockViewErrorText(result.errors));
       })
-      .catch((e) => {
+      .catch((requestError) => {
         if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         setView(null);
-        setError(e?.message || i18n('common.text.failure'));
+        setError(requestError?.message || i18n('common.text.failure'));
       })
       .finally(() => {
         if (isLatestRequest(requestGenerationRef, requestGeneration)) setLoading(false);
@@ -111,13 +132,13 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
   }, [load]);
 
   const renderSessionThread = (
-    threadId: string | null,
+    sessionId: string | null,
     sessionAvailable: boolean,
     engineThreadId: string | null,
     metadataLockCount: number,
     sessionContext: Omit<LockSessionNavigationTarget, 'dataSourceId' | 'sessionId'>,
   ) => {
-    const canOpenSession = Boolean(onOpenSession && sessionAvailable && threadId);
+    const canOpenSession = Boolean(onOpenSession && sessionAvailable && sessionId);
     return (
       <span>
         {canOpenSession ? (
@@ -128,25 +149,31 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
               onOpenSession?.({
                 ...sessionContext,
                 dataSourceId: view?.dataSourceId ?? dataSourceId,
-                sessionId: threadId!,
+                sessionId: sessionId!,
               })
             }
-            aria-label={i18n('workspace.ops.lockOpenSession', threadId)}
+            aria-label={i18n('workspace.ops.lockOpenSession', sessionId)}
           >
-            {valueText(threadId)}
+            {valueText(sessionId)}
           </Button>
         ) : (
-          valueText(threadId)
+          valueText(sessionId)
         )}
         {!sessionAvailable && <Tag>{i18n('workspace.ops.sessionStale')}</Tag>}
-        {engineThreadId && engineThreadId !== threadId && <Tag>{i18n('workspace.ops.engineThread', engineThreadId)}</Tag>}
-        {metadataLockCount > 0 && <Tag color="blue">{i18n('workspace.ops.metadataLockCount', metadataLockCount)}</Tag>}
+        {engineThreadId && engineThreadId !== sessionId && (
+          <Tag>{i18n('workspace.ops.engineThread', engineThreadId)}</Tag>
+        )}
+        {metadataLockCount > 0 && (
+          <Tag color="blue">{i18n('workspace.ops.metadataLockCount', metadataLockCount)}</Tag>
+        )}
       </span>
     );
   };
 
-  const chainColumns: ColumnsType<WaitChainRow> = [
+  const chainColumns: ColumnsType<ILockWaitChain> = [
     { title: i18n('workspace.ops.datasourceId'), dataIndex: 'dataSourceId', width: 110 },
+    { title: i18n('workspace.ops.lockType'), dataIndex: 'lockKind', width: 100, render: valueText },
+    { title: i18n('workspace.ops.lockObject'), dataIndex: 'lockObject', width: 220, render: valueText },
     {
       title: i18n('workspace.ops.waiterThread'),
       dataIndex: 'waiterThreadId',
@@ -168,6 +195,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     },
     { title: i18n('workspace.ops.waiterUser'), dataIndex: 'waiterUser', width: 120 },
     { title: i18n('workspace.ops.waiterState'), dataIndex: 'waiterState', width: 100 },
+    { title: i18n('workspace.ops.waiterLockMode'), dataIndex: 'waiterLockMode', width: 120, render: valueText },
     { title: i18n('workspace.ops.waiterQuery'), dataIndex: 'waiterQuery', ellipsis: true },
     {
       title: i18n('workspace.ops.blockerThread'),
@@ -190,6 +218,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     },
     { title: i18n('workspace.ops.blockerUser'), dataIndex: 'blockerUser', width: 120 },
     { title: i18n('workspace.ops.blockerState'), dataIndex: 'blockerState', width: 100 },
+    { title: i18n('workspace.ops.blockerLockMode'), dataIndex: 'blockerLockMode', width: 120, render: valueText },
     { title: i18n('workspace.ops.blockerQuery'), dataIndex: 'blockerQuery', ellipsis: true },
     {
       title: i18n('workspace.ops.role'),
@@ -223,8 +252,8 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
       title: i18n('workspace.ops.sessionId'),
       dataIndex: 'sessionId',
       width: 100,
-      render: (_v, r) => {
-        const { sessionId, engineThreadId } = r;
+      render: (_, record) => {
+        const { sessionId, engineThreadId } = record;
         if (!onOpenSession || !sessionId) {
           return valueText(sessionId ?? engineThreadId);
         }
@@ -237,10 +266,10 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
                 dataSourceId: view?.dataSourceId ?? dataSourceId,
                 sessionId,
                 engineThreadId,
-                databaseName: r.databaseName,
-                user: r.user,
-                host: r.host,
-                query: r.query,
+                databaseName: record.databaseName,
+                user: record.user,
+                host: record.host,
+                query: record.query,
               })
             }
             aria-label={i18n('workspace.ops.lockOpenSession', sessionId)}
@@ -296,79 +325,85 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
           />
           <Tabs
             items={[
-            {
-              key: 'chains',
-              label: i18n('workspace.ops.blockingChains'),
-              children: (
-                <Table
-                  size="small"
-                  rowKey={(r) =>
-                    [
-                      dataSourceId,
-                      r.waiterTransactionId ?? 'no-waiter-trx',
-                      r.blockerTransactionId ?? 'no-blocker-trx',
-                      r.waiterLockId ?? 'no-waiter-lock',
-                      r.blockerLockId ?? 'no-blocker-lock',
-                      r.waiterThreadId ?? 'no-waiter-thread',
-                      r.blockerThreadId ?? 'no-blocker-thread',
-                    ].join(':')
-                  }
-                  columns={chainColumns}
-                  dataSource={view.waitChains}
-                  loading={loading}
-                  pagination={false}
-                  scroll={{ x: 1400, y: 300 }}
-                  locale={{ emptyText: i18n('workspace.ops.noLockWaits') }}
-                />
-              ),
-            },
-            {
-              key: 'dataLocks',
-              label: i18n('workspace.ops.innodbDataLocks', view.dataLocks.length),
-              children: (
-                <Table
-                  size="small"
-                  rowKey="lockId"
-                  columns={lockColumns}
-                  dataSource={view.dataLocks}
-                  loading={loading}
-                  pagination={false}
-                  scroll={{ x: 1200, y: 300 }}
-                />
-              ),
-            },
-            {
-              key: 'metaLocks',
-              label: i18n('workspace.ops.metadataLocks', view.metaLocks.length),
-              children: (
-                <Table
-                  size="small"
-                  rowKey={metadataLockRowKey}
-                  columns={metadataColumns}
-                  dataSource={view.metaLocks}
-                  loading={loading}
-                  pagination={false}
-                  scroll={{ x: 800, y: 300 }}
-                  locale={{ emptyText: i18n('workspace.ops.metadataLocksUnavailable') }}
-                />
-              ),
-            },
-            {
-              key: 'sessions',
-              label: i18n('workspace.ops.sessions', view.sessions?.length || 0),
-              children: (
-                <Table
-                  size="small"
-                  rowKey={(r) => r.sessionId ?? r.engineThreadId ?? r.transactionId ?? 'unknown-session'}
-                  columns={sessionColumns}
-                  dataSource={view.sessions || []}
-                  loading={loading}
-                  pagination={false}
-                  scroll={{ x: 1000, y: 300 }}
-                  locale={{ emptyText: i18n('workspace.ops.sessionsUnavailable') }}
-                />
-              ),
-            },
+              {
+                key: 'chains',
+                label: i18n('workspace.ops.blockingChains'),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey={(row) => waitChainRowKey(row, dataSourceId)}
+                    columns={chainColumns}
+                    dataSource={view.waitChains}
+                    loading={loading}
+                    pagination={false}
+                    scroll={{ x: 1700, y: 300 }}
+                    locale={{ emptyText: i18n('workspace.ops.noLockWaits') }}
+                  />
+                ),
+              },
+              {
+                key: 'metadataChains',
+                label: i18n('workspace.ops.metadataBlockingChains', view.metadataWaitChains.length),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey={(row) => waitChainRowKey(row, dataSourceId)}
+                    columns={chainColumns}
+                    dataSource={view.metadataWaitChains}
+                    loading={loading}
+                    pagination={false}
+                    scroll={{ x: 1700, y: 300 }}
+                    locale={{ emptyText: i18n('workspace.ops.noLockWaits') }}
+                  />
+                ),
+              },
+              {
+                key: 'dataLocks',
+                label: i18n('workspace.ops.innodbDataLocks', view.dataLocks.length),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey={dataLockRowKey}
+                    columns={lockColumns}
+                    dataSource={view.dataLocks}
+                    loading={loading}
+                    pagination={false}
+                    scroll={{ x: 1200, y: 300 }}
+                  />
+                ),
+              },
+              {
+                key: 'metaLocks',
+                label: i18n('workspace.ops.metadataLocks', view.metaLocks.length),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey={metadataLockRowKey}
+                    columns={metadataColumns}
+                    dataSource={view.metaLocks}
+                    loading={loading}
+                    pagination={false}
+                    scroll={{ x: 800, y: 300 }}
+                    locale={{ emptyText: i18n('workspace.ops.metadataLocksUnavailable') }}
+                  />
+                ),
+              },
+              {
+                key: 'sessions',
+                label: i18n('workspace.ops.sessions', view.sessions.length),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey={(row) => row.sessionId ?? row.engineThreadId ?? row.transactionId ?? 'unknown-session'}
+                    columns={sessionColumns}
+                    dataSource={view.sessions}
+                    loading={loading}
+                    pagination={false}
+                    scroll={{ x: 1000, y: 300 }}
+                    locale={{ emptyText: i18n('workspace.ops.sessionsUnavailable') }}
+                  />
+                ),
+              },
             ]}
           />
         </>

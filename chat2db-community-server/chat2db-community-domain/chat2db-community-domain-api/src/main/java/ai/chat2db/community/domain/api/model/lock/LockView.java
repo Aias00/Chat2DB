@@ -17,7 +17,13 @@ public class LockView {
         DATA_LOCKS,
         WAITS,
         METADATA_LOCKS,
+        METADATA_WAITS,
         SESSIONS
+    }
+
+    public enum LockKind {
+        DATA,
+        METADATA
     }
 
     public enum ErrorCode {
@@ -32,6 +38,7 @@ public class LockView {
     private List<MetadataLock> metaLocks;
     private List<LockSession> sessions;
     private List<WaitChain> waitChains;
+    private List<WaitChain> metadataWaitChains;
     private List<ViewError> errors;
 
     @Data
@@ -101,6 +108,8 @@ public class LockView {
     @Data
     public static class WaitChain {
         private Long dataSourceId;
+        private LockKind lockKind;
+        private String lockObject;
         private String waiterTransactionId;
         private String waiterLockId;
         private String waiterThreadId;
@@ -112,6 +121,7 @@ public class LockView {
         private String waiterQuery;
         private boolean waiterSessionAvailable;
         private int waiterMetadataLockCount;
+        private String waiterLockMode;
         private String blockerTransactionId;
         private String blockerLockId;
         private String blockerThreadId;
@@ -123,6 +133,7 @@ public class LockView {
         private String blockerQuery;
         private boolean blockerSessionAvailable;
         private int blockerMetadataLockCount;
+        private String blockerLockMode;
         private boolean rootBlocker;
         private boolean cycle;
     }

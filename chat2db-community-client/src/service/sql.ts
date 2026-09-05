@@ -451,7 +451,13 @@ export enum LockViewErrorSection {
   DATA_LOCKS = 'DATA_LOCKS',
   WAITS = 'WAITS',
   METADATA_LOCKS = 'METADATA_LOCKS',
+  METADATA_WAITS = 'METADATA_WAITS',
   SESSIONS = 'SESSIONS',
+}
+
+export enum LockViewKind {
+  DATA = 'DATA',
+  METADATA = 'METADATA',
 }
 
 export interface IDataLock {
@@ -515,31 +521,35 @@ export interface ILockSession {
 }
 
 export interface ILockWaitChain {
-    dataSourceId?: number;
-    waiterTransactionId: string | null;
-    waiterLockId: string | null;
-    waiterThreadId: string | null;
-    waiterEngineThreadId: string | null;
-    waiterState: string | null;
-    waiterUser: string | null;
-    waiterHost: string | null;
-    waiterDatabase: string | null;
-    waiterQuery: string | null;
-    waiterSessionAvailable: boolean;
-    waiterMetadataLockCount: number;
-    blockerTransactionId: string | null;
-    blockerLockId: string | null;
-    blockerThreadId: string | null;
-    blockerEngineThreadId: string | null;
-    blockerState: string | null;
-    blockerUser: string | null;
-    blockerHost: string | null;
-    blockerDatabase: string | null;
-    blockerQuery: string | null;
-    blockerSessionAvailable: boolean;
-    blockerMetadataLockCount: number;
-    rootBlocker: boolean;
-    cycle: boolean;
+  dataSourceId?: number;
+  lockKind: LockViewKind;
+  lockObject: string | null;
+  waiterTransactionId: string | null;
+  waiterLockId: string | null;
+  waiterThreadId: string | null;
+  waiterEngineThreadId: string | null;
+  waiterState: string | null;
+  waiterUser: string | null;
+  waiterHost: string | null;
+  waiterDatabase: string | null;
+  waiterQuery: string | null;
+  waiterSessionAvailable: boolean;
+  waiterMetadataLockCount: number;
+  waiterLockMode: string | null;
+  blockerTransactionId: string | null;
+  blockerLockId: string | null;
+  blockerThreadId: string | null;
+  blockerEngineThreadId: string | null;
+  blockerState: string | null;
+  blockerUser: string | null;
+  blockerHost: string | null;
+  blockerDatabase: string | null;
+  blockerQuery: string | null;
+  blockerSessionAvailable: boolean;
+  blockerMetadataLockCount: number;
+  blockerLockMode: string | null;
+  rootBlocker: boolean;
+  cycle: boolean;
 }
 
 /** Lock view (MYSQL-OPS-003). */
@@ -551,6 +561,7 @@ export interface ILockView {
   metaLocks: IMetadataLock[];
   sessions: ILockSession[];
   waitChains: ILockWaitChain[];
+  metadataWaitChains: ILockWaitChain[];
   errors: {
     section: LockViewErrorSection;
     code: LockViewErrorCode;

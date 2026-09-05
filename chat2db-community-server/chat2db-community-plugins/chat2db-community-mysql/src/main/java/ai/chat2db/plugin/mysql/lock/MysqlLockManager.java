@@ -4,6 +4,7 @@ import ai.chat2db.community.domain.api.model.lock.LockView;
 import ai.chat2db.community.domain.api.model.lock.LockView.DataLock;
 import ai.chat2db.community.domain.api.model.lock.LockView.ErrorCode;
 import ai.chat2db.community.domain.api.model.lock.LockView.ErrorSection;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockKind;
 import ai.chat2db.community.domain.api.model.lock.LockView.LockSession;
 import ai.chat2db.community.domain.api.model.lock.LockView.LockWait;
 import ai.chat2db.community.domain.api.model.lock.LockView.MetadataLock;
@@ -24,20 +25,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_COLUMN_COMMAND_DENIED;
+import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_COMMAND_DENIED;
+import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_DATABASE_ACCESS_DENIED;
+import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_SPECIFIC_ACCESS_DENIED;
+import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_TABLE_NOT_FOUND;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_DATA_LOCKS_57;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_DATA_LOCKS_80;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_DATA_LOCK_WAITS_57;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_DATA_LOCK_WAITS_80;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_METADATA_LOCKS;
+import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_METADATA_LOCK_WAITS;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_PROBE_DATA_LOCKS_80;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_SESSION_INFO_57;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_SESSION_INFO_PERFORMANCE_SCHEMA;
-import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_STATE_ACCESS_DENIED;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_STATE_INVALID_AUTHORIZATION;
 import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.SQL_STATE_TABLE_NOT_FOUND;
-import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_ACCESS_DENIED;
-import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_COMMAND_DENIED;
-import static ai.chat2db.plugin.mysql.constant.MysqlLockConstants.MYSQL_ERROR_TABLE_NOT_FOUND;
 
 /** MySQL lock inspection for Performance Schema (8.0) and InnoDB (5.7). */
 public class MysqlLockManager implements ILockManager {
@@ -66,6 +69,8 @@ public class MysqlLockManager implements ILockManager {
 
         List<MetadataLock> metadataLocks = queryRows(connection, SQL_METADATA_LOCKS,
                 ErrorSection.METADATA_LOCKS, errors, MysqlLockManager::readMetadataLock);
+        List<MetadataWait> metadataWaits = queryRows(connection, SQL_METADATA_LOCK_WAITS,
+                ErrorSection.METADATA_WAITS, errors, MysqlLockManager::readMetadataWait);
         List<LockSession> sessions = querySessionRows(connection, errors);
         enrichMetadataLocks(metadataLocks, sessions);
 
@@ -75,8 +80,9 @@ public class MysqlLockManager implements ILockManager {
         view.setDataLocks(dataLocks);
         view.setWaits(waits);
         view.setMetaLocks(metadataLocks);
-        view.setSessions(sessions);
+        view.setSessions(relevantSessions(sessions, dataLocks, waits, metadataLocks, metadataWaits));
         view.setWaitChains(buildWaitChains(waits, dataLocks, metadataLocks, sessions, dataSourceId));
+        view.setMetadataWaitChains(buildMetadataWaitChains(metadataWaits, metadataLocks, sessions, dataSourceId));
         view.setErrors(errors);
         return view;
     }
@@ -119,17 +125,21 @@ public class MysqlLockManager implements ILockManager {
     private static <T> List<T> queryRows(Connection connection, String sql, ErrorSection section,
             List<ViewError> errors, RowMapper<T> mapper) {
         try {
-            return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
-                List<T> rows = new ArrayList<>();
-                while (resultSet.next()) {
-                    rows.add(mapper.map(resultSet));
-                }
-                return rows;
-            });
+            return queryRows(connection, sql, mapper);
         } catch (RuntimeException exception) {
             errors.add(error(section, exception));
             return List.of();
         }
+    }
+
+    private static <T> List<T> queryRows(Connection connection, String sql, RowMapper<T> mapper) {
+        return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
+            List<T> rows = new ArrayList<>();
+            while (resultSet.next()) {
+                rows.add(mapper.map(resultSet));
+            }
+            return rows;
+        });
     }
 
     private static ViewError error(ErrorSection section, RuntimeException exception) {
@@ -142,7 +152,7 @@ public class MysqlLockManager implements ILockManager {
     private static List<LockSession> querySessionRows(Connection connection, List<ViewError> errors) {
         try {
             return queryRows(connection, SQL_SESSION_INFO_PERFORMANCE_SCHEMA,
-                    resultSet -> readPerformanceSchemaSession(resultSet));
+                    MysqlLockManager::readPerformanceSchemaSession);
         } catch (RuntimeException performanceSchemaException) {
             try {
                 return queryRows(connection, SQL_SESSION_INFO_57, MysqlLockManager::readLegacySession);
@@ -151,16 +161,6 @@ public class MysqlLockManager implements ILockManager {
                 return List.of();
             }
         }
-    }
-
-    private static <T> List<T> queryRows(Connection connection, String sql, RowMapper<T> mapper) {
-        return DefaultSQLExecutor.getInstance().execute(connection, sql, resultSet -> {
-            List<T> rows = new ArrayList<>();
-            while (resultSet.next()) {
-                rows.add(mapper.map(resultSet));
-            }
-            return rows;
-        });
     }
 
     private static DataLock readDataLock(ResultSet resultSet, boolean performanceSchema) throws SQLException {
@@ -226,6 +226,21 @@ public class MysqlLockManager implements ILockManager {
         return lock;
     }
 
+    private static MetadataWait readMetadataWait(ResultSet resultSet) throws SQLException {
+        return new MetadataWait(
+                value(resultSet, "OBJECT_SCHEMA"),
+                value(resultSet, "OBJECT_NAME"),
+                value(resultSet, "WAITING_THREAD_ID"),
+                value(resultSet, "WAITING_PID"),
+                value(resultSet, "WAITING_ACCOUNT"),
+                value(resultSet, "WAITING_LOCK_TYPE"),
+                value(resultSet, "WAITING_QUERY"),
+                value(resultSet, "BLOCKING_THREAD_ID"),
+                value(resultSet, "BLOCKING_PID"),
+                value(resultSet, "BLOCKING_ACCOUNT"),
+                value(resultSet, "BLOCKING_LOCK_TYPE"));
+    }
+
     private static LockSession readPerformanceSchemaSession(ResultSet resultSet) throws SQLException {
         LockSession session = new LockSession();
         session.setEngineThreadId(value(resultSet, "THREAD_ID"));
@@ -253,6 +268,39 @@ public class MysqlLockManager implements ILockManager {
         return session;
     }
 
+    private static List<LockSession> relevantSessions(List<LockSession> sessions, List<DataLock> dataLocks,
+            List<LockWait> waits, List<MetadataLock> metadataLocks, List<MetadataWait> metadataWaits) {
+        Set<String> transactionIds = new HashSet<>();
+        Set<String> threadIds = new HashSet<>();
+        for (DataLock lock : dataLocks) {
+            addIdentifier(transactionIds, lock.getTransactionId());
+            addIdentifier(threadIds, lock.getEngineThreadId());
+        }
+        for (LockWait wait : waits) {
+            addIdentifier(transactionIds, wait.getWaiterTransactionId());
+            addIdentifier(transactionIds, wait.getBlockerTransactionId());
+            addIdentifier(threadIds, wait.getWaiterThreadId());
+            addIdentifier(threadIds, wait.getBlockerThreadId());
+        }
+        for (MetadataLock lock : metadataLocks) {
+            addIdentifier(threadIds, lock.getOwnerThreadId());
+        }
+        for (MetadataWait wait : metadataWaits) {
+            addIdentifier(threadIds, wait.waiterThreadId());
+            addIdentifier(threadIds, wait.blockerThreadId());
+        }
+        return sessions.stream()
+                .filter(session -> transactionIds.contains(session.getTransactionId())
+                        || threadIds.contains(session.getEngineThreadId()))
+                .toList();
+    }
+
+    private static void addIdentifier(Set<String> identifiers, String value) {
+        if (value != null) {
+            identifiers.add(value);
+        }
+    }
+
     private static List<WaitChain> buildWaitChains(List<LockWait> waits, List<DataLock> dataLocks,
             List<MetadataLock> metadataLocks, List<LockSession> sessions, Long dataSourceId) {
         SessionIndex sessionIndex = new SessionIndex(sessions);
@@ -278,10 +326,14 @@ public class MysqlLockManager implements ILockManager {
         for (WaitEdge edge : edges) {
             LockSession waiter = sessionIndex.find(edge.waiterTransactionId(), edge.waiterThreadId());
             LockSession blocker = sessionIndex.find(edge.blockerTransactionId(), edge.blockerThreadId());
+            DataLock waiterLock = dataLocksById.get(edge.waiterLockId());
+            DataLock blockerLock = dataLocksById.get(edge.blockerLockId());
             boolean cycle = reaches(edge.blockerKey(), edge.waiterKey(), outgoing, new HashSet<>());
 
             WaitChain chain = new WaitChain();
             chain.setDataSourceId(dataSourceId);
+            chain.setLockKind(LockKind.DATA);
+            chain.setLockObject(dataLockObject(waiterLock));
             chain.setWaiterTransactionId(edge.waiterTransactionId());
             chain.setWaiterLockId(edge.waiterLockId());
             chain.setWaiterThreadId(displayThreadId(waiter, edge.waiterThreadId()));
@@ -294,6 +346,7 @@ public class MysqlLockManager implements ILockManager {
             chain.setWaiterSessionAvailable(waiter != null);
             chain.setWaiterMetadataLockCount(metadataLockCount(waiter, edge.waiterThreadId(),
                     metadataLockCountsByThread));
+            chain.setWaiterLockMode(waiterLock == null ? null : waiterLock.getLockMode());
             chain.setBlockerTransactionId(edge.blockerTransactionId());
             chain.setBlockerLockId(edge.blockerLockId());
             chain.setBlockerThreadId(displayThreadId(blocker, edge.blockerThreadId()));
@@ -306,11 +359,74 @@ public class MysqlLockManager implements ILockManager {
             chain.setBlockerSessionAvailable(blocker != null);
             chain.setBlockerMetadataLockCount(metadataLockCount(blocker, edge.blockerThreadId(),
                     metadataLockCountsByThread));
+            chain.setBlockerLockMode(blockerLock == null ? null : blockerLock.getLockMode());
             chain.setRootBlocker(!cycle && !outgoing.containsKey(edge.blockerKey()));
             chain.setCycle(cycle);
             chains.add(chain);
         }
         return chains;
+    }
+
+    private static List<WaitChain> buildMetadataWaitChains(List<MetadataWait> metadataWaits,
+            List<MetadataLock> metadataLocks, List<LockSession> sessions, Long dataSourceId) {
+        SessionIndex sessionIndex = new SessionIndex(sessions);
+        Map<String, Integer> metadataLockCountsByThread = metadataLockCountsByThread(metadataLocks);
+        Map<String, Set<String>> outgoing = new HashMap<>();
+        for (MetadataWait wait : metadataWaits) {
+            if (validMetadataEdge(wait)) {
+                outgoing.computeIfAbsent(wait.waiterThreadId(), ignored -> new LinkedHashSet<>())
+                        .add(wait.blockerThreadId());
+            }
+        }
+
+        List<WaitChain> chains = new ArrayList<>();
+        for (MetadataWait wait : metadataWaits) {
+            if (!validMetadataEdge(wait)) {
+                continue;
+            }
+            LockSession waiter = sessionIndex.find(null, wait.waiterThreadId());
+            LockSession blocker = sessionIndex.find(null, wait.blockerThreadId());
+            String object = qualifiedObject(wait.objectSchema(), wait.objectName());
+            boolean cycle = reaches(wait.blockerThreadId(), wait.waiterThreadId(), outgoing, new HashSet<>());
+
+            WaitChain chain = new WaitChain();
+            chain.setDataSourceId(dataSourceId);
+            chain.setLockKind(LockKind.METADATA);
+            chain.setLockObject(object);
+            chain.setWaiterLockId(metadataLockId(object, wait.waiterThreadId()));
+            chain.setWaiterThreadId(first(wait.waiterSessionId(), displayThreadId(waiter, wait.waiterThreadId())));
+            chain.setWaiterEngineThreadId(wait.waiterThreadId());
+            chain.setWaiterState(waiter == null ? null : waiter.getState());
+            chain.setWaiterUser(first(waiter == null ? null : waiter.getUser(), wait.waiterAccount()));
+            chain.setWaiterHost(waiter == null ? null : waiter.getHost());
+            chain.setWaiterDatabase(first(waiter == null ? null : waiter.getDatabaseName(), wait.objectSchema()));
+            chain.setWaiterQuery(first(wait.waiterQuery(), waiter == null ? null : waiter.getQuery()));
+            chain.setWaiterSessionAvailable(wait.waiterSessionId() != null || waiter != null);
+            chain.setWaiterMetadataLockCount(metadataLockCount(waiter, wait.waiterThreadId(),
+                    metadataLockCountsByThread));
+            chain.setWaiterLockMode(wait.waiterLockMode());
+            chain.setBlockerLockId(metadataLockId(object, wait.blockerThreadId()));
+            chain.setBlockerThreadId(first(wait.blockerSessionId(), displayThreadId(blocker, wait.blockerThreadId())));
+            chain.setBlockerEngineThreadId(wait.blockerThreadId());
+            chain.setBlockerState(blocker == null ? null : blocker.getState());
+            chain.setBlockerUser(first(blocker == null ? null : blocker.getUser(), wait.blockerAccount()));
+            chain.setBlockerHost(blocker == null ? null : blocker.getHost());
+            chain.setBlockerDatabase(first(blocker == null ? null : blocker.getDatabaseName(), wait.objectSchema()));
+            chain.setBlockerQuery(blocker == null ? null : blocker.getQuery());
+            chain.setBlockerSessionAvailable(wait.blockerSessionId() != null || blocker != null);
+            chain.setBlockerMetadataLockCount(metadataLockCount(blocker, wait.blockerThreadId(),
+                    metadataLockCountsByThread));
+            chain.setBlockerLockMode(wait.blockerLockMode());
+            chain.setRootBlocker(!cycle && !outgoing.containsKey(wait.blockerThreadId()));
+            chain.setCycle(cycle);
+            chains.add(chain);
+        }
+        return chains;
+    }
+
+    private static boolean validMetadataEdge(MetadataWait wait) {
+        return wait.waiterThreadId() != null && wait.blockerThreadId() != null
+                && !wait.waiterThreadId().equals(wait.blockerThreadId());
     }
 
     private static WaitEdge waitEdge(LockWait wait, Map<String, DataLock> dataLocksById) {
@@ -331,6 +447,21 @@ public class MysqlLockManager implements ILockManager {
         }
         return new WaitEdge(waiterKey, blockerKey, waiterTransactionId, blockerTransactionId,
                 waiterThreadId, blockerThreadId, wait.getWaiterLockId(), wait.getBlockerLockId());
+    }
+
+    private static String dataLockObject(DataLock lock) {
+        return lock == null ? null : qualifiedObject(lock.getObjectSchema(), lock.getObjectName());
+    }
+
+    private static String qualifiedObject(String schema, String name) {
+        if (schema == null) {
+            return name;
+        }
+        return name == null ? schema : schema + "." + name;
+    }
+
+    private static String metadataLockId(String object, String threadId) {
+        return "metadata:" + (object == null ? "unknown" : object) + ":" + threadId;
     }
 
     private static Map<String, Integer> metadataLockCountsByThread(List<MetadataLock> metadataLocks) {
@@ -419,10 +550,11 @@ public class MysqlLockManager implements ILockManager {
     private static boolean isPrivilegeError(Throwable throwable) {
         if (throwable instanceof SQLException sqlException) {
             int errorCode = sqlException.getErrorCode();
-            String sqlState = sqlException.getSQLState();
-            if (errorCode == MYSQL_ERROR_COMMAND_DENIED || errorCode == MYSQL_ERROR_ACCESS_DENIED
-                    || SQL_STATE_ACCESS_DENIED.equals(sqlState)
-                    || SQL_STATE_INVALID_AUTHORIZATION.equals(sqlState)) {
+            if (errorCode == MYSQL_ERROR_DATABASE_ACCESS_DENIED
+                    || errorCode == MYSQL_ERROR_COMMAND_DENIED
+                    || errorCode == MYSQL_ERROR_COLUMN_COMMAND_DENIED
+                    || errorCode == MYSQL_ERROR_SPECIFIC_ACCESS_DENIED
+                    || SQL_STATE_INVALID_AUTHORIZATION.equals(sqlException.getSQLState())) {
                 return true;
             }
         }
@@ -440,6 +572,11 @@ public class MysqlLockManager implements ILockManager {
     }
 
     private record LockSourceProbe(boolean performanceSchema, RuntimeException failure) {
+    }
+
+    private record MetadataWait(String objectSchema, String objectName, String waiterThreadId,
+            String waiterSessionId, String waiterAccount, String waiterLockMode, String waiterQuery,
+            String blockerThreadId, String blockerSessionId, String blockerAccount, String blockerLockMode) {
     }
 
     private record WaitEdge(String waiterKey, String blockerKey, String waiterTransactionId,

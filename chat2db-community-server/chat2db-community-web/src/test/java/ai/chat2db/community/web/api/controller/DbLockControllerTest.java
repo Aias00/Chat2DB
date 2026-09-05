@@ -3,9 +3,11 @@ package ai.chat2db.community.web.api.controller;
 import ai.chat2db.community.domain.api.model.lock.LockView;
 import ai.chat2db.community.domain.api.model.lock.LockView.ErrorCode;
 import ai.chat2db.community.domain.api.model.lock.LockView.ErrorSection;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockKind;
 import ai.chat2db.community.domain.api.model.lock.LockView.MetadataLock;
 import ai.chat2db.community.domain.api.model.lock.LockView.Source;
 import ai.chat2db.community.domain.api.model.lock.LockView.ViewError;
+import ai.chat2db.community.domain.api.model.lock.LockView.WaitChain;
 import ai.chat2db.community.web.api.model.request.data.source.DataSourceBaseRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +44,9 @@ class DbLockControllerTest {
         ViewError error = new ViewError();
         error.setSection(ErrorSection.DATA_LOCKS);
         error.setCode(ErrorCode.PRIVILEGE_REQUIRED);
+        WaitChain metadataWait = new WaitChain();
+        metadataWait.setLockKind(LockKind.METADATA);
+        metadataWait.setLockObject("app.orders");
         LockView view = new LockView();
         view.setDataSourceId(42L);
         view.setSource(Source.PERFORMANCE_SCHEMA);
@@ -50,6 +55,7 @@ class DbLockControllerTest {
         view.setMetaLocks(List.of(metadataLock));
         view.setSessions(List.of());
         view.setWaitChains(List.of());
+        view.setMetadataWaitChains(List.of(metadataWait));
         view.setErrors(List.of(error));
 
         JsonNode json = new ObjectMapper().valueToTree(view);
@@ -58,6 +64,8 @@ class DbLockControllerTest {
         assertEquals("PERFORMANCE_SCHEMA", json.path("source").asText());
         assertEquals("1001", json.path("metaLocks").get(0).path("objectInstanceId").asText());
         assertEquals(true, json.path("metaLocks").get(0).path("ownerSessionAvailable").asBoolean());
+        assertEquals("METADATA", json.path("metadataWaitChains").get(0).path("lockKind").asText());
+        assertEquals("app.orders", json.path("metadataWaitChains").get(0).path("lockObject").asText());
         assertEquals("DATA_LOCKS", json.path("errors").get(0).path("section").asText());
         assertEquals("PRIVILEGE_REQUIRED", json.path("errors").get(0).path("code").asText());
         assertEquals("INFORMATION_SCHEMA", new ObjectMapper().valueToTree(Source.INFORMATION_SCHEMA).asText());

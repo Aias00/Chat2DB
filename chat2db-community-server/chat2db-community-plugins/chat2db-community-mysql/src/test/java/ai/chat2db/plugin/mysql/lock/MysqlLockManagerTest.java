@@ -4,6 +4,8 @@ import ai.chat2db.community.domain.api.model.lock.LockView;
 import ai.chat2db.community.domain.api.model.lock.LockView.DataLock;
 import ai.chat2db.community.domain.api.model.lock.LockView.ErrorCode;
 import ai.chat2db.community.domain.api.model.lock.LockView.ErrorSection;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockKind;
+import ai.chat2db.community.domain.api.model.lock.LockView.LockSession;
 import ai.chat2db.community.domain.api.model.lock.LockView.MetadataLock;
 import ai.chat2db.community.domain.api.model.lock.LockView.Source;
 import ai.chat2db.community.domain.api.model.lock.LockView.WaitChain;
@@ -35,6 +37,7 @@ class MysqlLockManagerTest {
                 "information_schema.innodb_locks", new SQLException("Access denied"),
                 "information_schema.innodb_lock_waits", new SQLException("Access denied"),
                 "performance_schema.metadata_locks", new SQLException("Access denied"),
+                "sys.schema_table_lock_waits", new SQLException("Access denied"),
                 "information_schema.innodb_trx", new SQLException("Access denied")
         );
 
@@ -46,8 +49,9 @@ class MysqlLockManagerTest {
         assertEquals(List.of(), view.getWaits());
         assertEquals(List.of(), view.getMetaLocks());
         assertEquals(List.of(), view.getWaitChains());
+        assertEquals(List.of(), view.getMetadataWaitChains());
         assertEquals(List.of(ErrorSection.DATA_LOCKS, ErrorSection.WAITS,
-                        ErrorSection.METADATA_LOCKS, ErrorSection.SESSIONS),
+                        ErrorSection.METADATA_LOCKS, ErrorSection.METADATA_WAITS, ErrorSection.SESSIONS),
                 view.getErrors().stream().map(LockView.ViewError::getSection).toList());
         assertTrue(view.getErrors().stream().allMatch(error -> error.getCode() == ErrorCode.PRIVILEGE_REQUIRED));
     }
@@ -61,14 +65,30 @@ class MysqlLockManagerTest {
     }
 
     @Test
-    void buildsPerformanceSchemaGraphForMultipleRootsCyclesDisconnectedAndStaleSessions() {
+    void reportsSyntaxFailuresAsUnavailableInsteadOfPrivilegeErrors() {
+        Map<String, SQLException> failures = Map.of(
+                "performance_schema.data_locks",
+                new SQLException("You have an error in your SQL syntax", "42000", 1064));
+
+        LockView view = new MysqlLockManager().lockView(connection(failures, Map.of()), 22L);
+
+        assertEquals(List.of(ErrorCode.UNAVAILABLE, ErrorCode.UNAVAILABLE), view.getErrors().stream()
+                .filter(error -> error.getSection() == ErrorSection.DATA_LOCKS
+                        || error.getSection() == ErrorSection.WAITS)
+                .map(LockView.ViewError::getCode)
+                .toList());
+    }
+
+    @Test
+    void buildsTypedDataAndMetadataWaitGraphsAndFiltersUnrelatedSessions() {
         Map<String, List<Map<String, Object>>> sqlRows = Map.of(
                 "performance_schema.data_locks", List.of(
                         row("ENGINE_LOCK_ID", "l-100", "ENGINE_TRANSACTION_ID", "100", "THREAD_ID", "10",
                                 "EVENT_ID", "1", "OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders",
                                 "INDEX_NAME", "PRIMARY", "LOCK_TYPE", "RECORD", "LOCK_MODE", "X",
                                 "LOCK_STATUS", "GRANTED", "LOCK_DATA", "1"),
-                        row("ENGINE_LOCK_ID", "l-200", "ENGINE_TRANSACTION_ID", "200", "THREAD_ID", "20"),
+                        row("ENGINE_LOCK_ID", "l-200", "ENGINE_TRANSACTION_ID", "200", "THREAD_ID", "20",
+                                "OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders", "LOCK_MODE", "X"),
                         row("ENGINE_LOCK_ID", "l-300", "ENGINE_TRANSACTION_ID", "300", "THREAD_ID", "30"),
                         row("ENGINE_LOCK_ID", "l-400", "ENGINE_TRANSACTION_ID", "400", "THREAD_ID", "40"),
                         row("ENGINE_LOCK_ID", "l-500", "ENGINE_TRANSACTION_ID", "500", "THREAD_ID", "50"),
@@ -77,25 +97,12 @@ class MysqlLockManagerTest {
                         row("ENGINE_LOCK_ID", "l-900", "ENGINE_TRANSACTION_ID", "900", "THREAD_ID", "90")
                 ),
                 "performance_schema.data_lock_waits", List.of(
-                        row("REQUESTING_ENGINE_LOCK_ID", "l-100", "REQUESTING_ENGINE_TRANSACTION_ID", "100",
-                                "REQUESTING_THREAD_ID", "10", "REQUESTING_EVENT_ID", "1",
-                                "BLOCKING_ENGINE_LOCK_ID", "l-200", "BLOCKING_ENGINE_TRANSACTION_ID", "200",
-                                "BLOCKING_THREAD_ID", "20", "BLOCKING_EVENT_ID", "2"),
-                        row("REQUESTING_ENGINE_LOCK_ID", "l-100", "REQUESTING_ENGINE_TRANSACTION_ID", "100",
-                                "REQUESTING_THREAD_ID", "10", "BLOCKING_ENGINE_LOCK_ID", "l-300",
-                                "BLOCKING_ENGINE_TRANSACTION_ID", "300", "BLOCKING_THREAD_ID", "30"),
-                        row("REQUESTING_ENGINE_LOCK_ID", "l-200", "REQUESTING_ENGINE_TRANSACTION_ID", "200",
-                                "REQUESTING_THREAD_ID", "20", "BLOCKING_ENGINE_LOCK_ID", "l-400",
-                                "BLOCKING_ENGINE_TRANSACTION_ID", "400", "BLOCKING_THREAD_ID", "40"),
-                        row("REQUESTING_ENGINE_LOCK_ID", "l-500", "REQUESTING_ENGINE_TRANSACTION_ID", "500",
-                                "REQUESTING_THREAD_ID", "50", "BLOCKING_ENGINE_LOCK_ID", "l-600",
-                                "BLOCKING_ENGINE_TRANSACTION_ID", "600", "BLOCKING_THREAD_ID", "60"),
-                        row("REQUESTING_ENGINE_LOCK_ID", "l-600", "REQUESTING_ENGINE_TRANSACTION_ID", "600",
-                                "REQUESTING_THREAD_ID", "60", "BLOCKING_ENGINE_LOCK_ID", "l-500",
-                                "BLOCKING_ENGINE_TRANSACTION_ID", "500", "BLOCKING_THREAD_ID", "50"),
-                        row("REQUESTING_ENGINE_LOCK_ID", "l-800", "REQUESTING_ENGINE_TRANSACTION_ID", "800",
-                                "REQUESTING_THREAD_ID", "80", "BLOCKING_ENGINE_LOCK_ID", "l-900",
-                                "BLOCKING_ENGINE_TRANSACTION_ID", "900", "BLOCKING_THREAD_ID", "90")
+                        wait("l-100", "100", "10", "l-200", "200", "20"),
+                        wait("l-100", "100", "10", "l-300", "300", "30"),
+                        wait("l-200", "200", "20", "l-400", "400", "40"),
+                        wait("l-500", "500", "50", "l-600", "600", "60"),
+                        wait("l-600", "600", "60", "l-500", "500", "50"),
+                        wait("l-800", "800", "80", "l-900", "900", "90")
                 ),
                 "performance_schema.metadata_locks", List.of(
                         row("OBJECT_TYPE", "TABLE", "OBJECT_SCHEMA", "app", "OBJECT_NAME", "orders",
@@ -105,6 +112,22 @@ class MysqlLockManagerTest {
                                 "OBJECT_INSTANCE_BEGIN", "1002", "LOCK_TYPE", "EXCLUSIVE",
                                 "LOCK_DURATION", "TRANSACTION", "LOCK_STATUS", "PENDING", "OWNER_THREAD_ID", "40")
                 ),
+                "sys.schema_table_lock_waits", List.of(
+                        row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers",
+                                "WAITING_THREAD_ID", "40", "WAITING_PID", "104",
+                                "WAITING_ACCOUNT", "dave@client-d", "WAITING_LOCK_TYPE", "EXCLUSIVE",
+                                "WAITING_LOCK_DURATION", "TRANSACTION", "WAITING_QUERY", "alter table customers",
+                                "BLOCKING_THREAD_ID", "30", "BLOCKING_PID", "103",
+                                "BLOCKING_ACCOUNT", "carol@client-c", "BLOCKING_LOCK_TYPE", "SHARED_READ",
+                                "BLOCKING_LOCK_DURATION", "TRANSACTION"),
+                        row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers",
+                                "WAITING_THREAD_ID", "40", "WAITING_PID", "104",
+                                "WAITING_ACCOUNT", "dave@client-d", "WAITING_LOCK_TYPE", "EXCLUSIVE",
+                                "WAITING_LOCK_DURATION", "TRANSACTION", "WAITING_QUERY", "alter table customers",
+                                "BLOCKING_THREAD_ID", "40", "BLOCKING_PID", "104",
+                                "BLOCKING_ACCOUNT", "dave@client-d", "BLOCKING_LOCK_TYPE", "SHARED_UPGRADABLE",
+                                "BLOCKING_LOCK_DURATION", "TRANSACTION")
+                ),
                 "performance_schema.threads", List.of(
                         session("10", "101", "100", "alice", "client-a", "app", "LOCK WAIT", "wait 100"),
                         session("20", "102", "200", "bob", "client-b", "app", "LOCK WAIT", "wait 200"),
@@ -112,7 +135,9 @@ class MysqlLockManagerTest {
                         session("40", "104", "400", "dave", "client-d", "app", "executing", "update root b"),
                         session("50", "105", "500", "erin", "client-e", "app", "LOCK WAIT", "cycle a"),
                         session("60", "106", "600", "frank", "client-f", "app", "LOCK WAIT", "cycle b"),
-                        session("80", "108", "800", "gina", "client-g", "app", "LOCK WAIT", "wait stale")
+                        session("80", "108", "800", "gina", "client-g", "app", "LOCK WAIT", "wait stale"),
+                        session("999", "1999", "1999", "unrelated", "client-z", "other", "executing",
+                                "select secret from unrelated_table")
                 )
         );
 
@@ -121,6 +146,7 @@ class MysqlLockManagerTest {
         assertEquals(Source.PERFORMANCE_SCHEMA, view.getSource());
         assertEquals(8, view.getDataLocks().size());
         assertEquals(7, view.getSessions().size());
+        assertTrue(view.getSessions().stream().map(LockSession::getUser).noneMatch("unrelated"::equals));
         DataLock dataLock = view.getDataLocks().get(0);
         assertEquals("app", dataLock.getObjectSchema());
         assertEquals("orders", dataLock.getObjectName());
@@ -129,34 +155,42 @@ class MysqlLockManagerTest {
         assertEquals("X", dataLock.getLockMode());
         assertEquals("GRANTED", dataLock.getLockStatus());
         assertEquals("1", dataLock.getLockData());
-        assertEquals("1", view.getWaits().get(0).getWaiterEventId());
-        assertEquals("2", view.getWaits().get(0).getBlockerEventId());
+
         List<WaitChain> chains = view.getWaitChains();
         assertEquals(6, chains.size());
         WaitChain firstHop = chain(chains, "100", "200");
         assertNotNull(firstHop);
+        assertEquals(LockKind.DATA, firstHop.getLockKind());
+        assertEquals("app.orders", firstHop.getLockObject());
+        assertEquals("X", firstHop.getWaiterLockMode());
+        assertEquals("X", firstHop.getBlockerLockMode());
         assertFalse(firstHop.isRootBlocker());
-        assertFalse(firstHop.isCycle());
         assertEquals("102", firstHop.getBlockerThreadId());
-        WaitChain directRoot = chain(chains, "100", "300");
-        assertTrue(directRoot.isRootBlocker());
-        assertEquals(1, directRoot.getBlockerMetadataLockCount());
-        WaitChain secondRoot = chain(chains, "200", "400");
-        assertTrue(secondRoot.isRootBlocker());
-        assertEquals(1, secondRoot.getBlockerMetadataLockCount());
+        assertTrue(chain(chains, "100", "300").isRootBlocker());
+        assertEquals(1, chain(chains, "100", "300").getBlockerMetadataLockCount());
+        assertTrue(chain(chains, "200", "400").isRootBlocker());
+        assertTrue(chain(chains, "500", "600").isCycle());
+        WaitChain stale = chain(chains, "800", "900");
+        assertFalse(stale.isBlockerSessionAvailable());
+        assertEquals("90", stale.getBlockerThreadId());
+
         assertEquals(List.of("GRANTED", "PENDING"), view.getMetaLocks().stream()
                 .map(MetadataLock::getLockStatus)
                 .toList());
         assertEquals(List.of("1001", "1002"), view.getMetaLocks().stream()
                 .map(MetadataLock::getObjectInstanceId)
                 .toList());
-        WaitChain cycle = chain(chains, "500", "600");
-        assertTrue(cycle.isCycle());
-        assertFalse(cycle.isRootBlocker());
-        WaitChain stale = chain(chains, "800", "900");
-        assertFalse(stale.isBlockerSessionAvailable());
-        assertEquals("90", stale.getBlockerThreadId());
-        assertEquals(41L, stale.getDataSourceId());
+        assertEquals(1, view.getMetadataWaitChains().size());
+        WaitChain metadataChain = view.getMetadataWaitChains().get(0);
+        assertEquals(LockKind.METADATA, metadataChain.getLockKind());
+        assertEquals("app.customers", metadataChain.getLockObject());
+        assertEquals("104", metadataChain.getWaiterThreadId());
+        assertEquals("103", metadataChain.getBlockerThreadId());
+        assertEquals("alter table customers", metadataChain.getWaiterQuery());
+        assertEquals("update root a", metadataChain.getBlockerQuery());
+        assertEquals("EXCLUSIVE", metadataChain.getWaiterLockMode());
+        assertEquals("SHARED_READ", metadataChain.getBlockerLockMode());
+        assertTrue(metadataChain.isRootBlocker());
     }
 
     @Test
@@ -202,6 +236,18 @@ class MysqlLockManagerTest {
         assertTrue(waitChain.isRootBlocker());
         assertTrue(view.getErrors().isEmpty());
         assertEquals("701", view.getMetaLocks().get(0).getOwnerSessionId());
+    }
+
+    private static Map<String, Object> wait(String waiterLockId, String waiterTransactionId,
+            String waiterThreadId, String blockerLockId, String blockerTransactionId, String blockerThreadId) {
+        return row("REQUESTING_ENGINE_LOCK_ID", waiterLockId,
+                "REQUESTING_ENGINE_TRANSACTION_ID", waiterTransactionId,
+                "REQUESTING_THREAD_ID", waiterThreadId,
+                "REQUESTING_EVENT_ID", "1",
+                "BLOCKING_ENGINE_LOCK_ID", blockerLockId,
+                "BLOCKING_ENGINE_TRANSACTION_ID", blockerTransactionId,
+                "BLOCKING_THREAD_ID", blockerThreadId,
+                "BLOCKING_EVENT_ID", "2");
     }
 
     private static WaitChain chain(List<WaitChain> chains, String waiterTransactionId,
