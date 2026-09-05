@@ -41,6 +41,23 @@ const sourceLabel = (source: ILockView['source']) => {
 
 const valueText = (value: unknown) => (value == null || value === '' ? i18n('workspace.ops.valueUnavailable') : String(value));
 
+const lockErrorText = (code: NonNullable<ILockView['errors']>[number]['code'], fallback?: string) => {
+  if (code === 'privilege_required') {
+    return i18n('workspace.ops.lockPrivilegeRequired');
+  }
+  if (code === 'unavailable') {
+    return i18n('workspace.ops.lockMetadataUnavailable');
+  }
+  return fallback || code;
+};
+
+const formatLockErrors = (errors?: ILockView['errors']) => {
+  if (!errors?.length) {
+    return null;
+  }
+  return errors.map((item) => `${item.section}: ${lockErrorText(item.code, item.message)}`).join('; ');
+};
+
 const firstRowValue = (row: LockSnapshotRow, ...keys: string[]) => {
   for (const key of keys) {
     const value = row[key];
@@ -61,13 +78,13 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     const requestGeneration = beginLatestRequest(requestGenerationRef);
     setLoading(true);
     setError(null);
+    setView((current) => (current?.dataSourceId === dataSourceId ? current : null));
     sqlService
       .getLockView({ dataSourceId })
       .then((result) => {
         if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
         setView(result);
-        const firstError = result.errors?.[0];
-        setError(firstError ? `${firstError.section}: ${firstError.code}` : null);
+        setError(formatLockErrors(result.errors));
       })
       .catch((e) => {
         if (!isLatestRequest(requestGenerationRef, requestGeneration)) return;
@@ -121,6 +138,8 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
 
   const chainColumns: ColumnsType<WaitChainRow> = [
     { title: i18n('workspace.ops.datasourceId'), dataIndex: 'dataSourceId', width: 110 },
+    { title: i18n('workspace.ops.lockType'), dataIndex: 'lockKind', width: 100, render: valueText },
+    { title: i18n('workspace.ops.lockObject'), dataIndex: 'lockObject', width: 220, render: valueText },
     {
       title: i18n('workspace.ops.waiterThread'),
       dataIndex: 'waiterThreadId',
@@ -142,6 +161,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     },
     { title: i18n('workspace.ops.waiterUser'), dataIndex: 'waiterUser', width: 120 },
     { title: i18n('workspace.ops.waiterState'), dataIndex: 'waiterState', width: 100 },
+    { title: i18n('workspace.ops.waiterLockMode'), dataIndex: 'waiterLockMode', width: 120, render: valueText },
     { title: i18n('workspace.ops.waiterQuery'), dataIndex: 'waiterQuery', ellipsis: true },
     {
       title: i18n('workspace.ops.blockerThread'),
@@ -164,6 +184,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
     },
     { title: i18n('workspace.ops.blockerUser'), dataIndex: 'blockerUser', width: 120 },
     { title: i18n('workspace.ops.blockerState'), dataIndex: 'blockerState', width: 100 },
+    { title: i18n('workspace.ops.blockerLockMode'), dataIndex: 'blockerLockMode', width: 120, render: valueText },
     { title: i18n('workspace.ops.blockerQuery'), dataIndex: 'blockerQuery', ellipsis: true },
     {
       title: i18n('workspace.ops.role'),
@@ -274,6 +295,29 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
                   loading={loading}
                   pagination={false}
                   scroll={{ x: 1400, y: 300 }}
+                  locale={{ emptyText: i18n('workspace.ops.noLockWaits') }}
+                />
+              ),
+            },
+            {
+              key: 'metadataChains',
+              label: i18n('workspace.ops.metadataBlockingChains', view.metadataWaitChains?.length || 0),
+              children: (
+                <Table
+                  size="small"
+                  rowKey={(r) =>
+                    [
+                      dataSourceId,
+                      r.lockObject ?? 'no-object',
+                      r.waiterEngineThreadId ?? 'no-waiter-thread',
+                      r.blockerEngineThreadId ?? 'no-blocker-thread',
+                    ].join(':')
+                  }
+                  columns={chainColumns}
+                  dataSource={view.metadataWaitChains || []}
+                  loading={loading}
+                  pagination={false}
+                  scroll={{ x: 1700, y: 300 }}
                   locale={{ emptyText: i18n('workspace.ops.noLockWaits') }}
                 />
               ),

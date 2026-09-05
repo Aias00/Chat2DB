@@ -39,6 +39,7 @@ class MysqlLockManagerTest {
         assertEquals(List.of(), view.get("waits"));
         assertEquals(List.of(), view.get("metaLocks"));
         assertEquals(List.of(), view.get("waitChains"));
+        assertEquals(List.of(), view.get("metadataWaitChains"));
         List<Map<String, Object>> errors = errors(view);
         assertEquals(List.of("dataLocks", "waits", "metaLocks", "sessions"),
                 errors.stream().map(error -> error.get("section")).toList());
@@ -52,6 +53,20 @@ class MysqlLockManagerTest {
                 new SQLException("Unknown table 'performance_schema.data_locks'", "42S02", 1146)));
         assertFalse(MysqlLockManager.shouldFallbackToLegacyLocks(
                 new SQLException("SELECT command denied for data_locks", "42000", 1142)));
+    }
+
+    @Test
+    void reportsSyntaxFailuresAsUnavailableInsteadOfPrivilegeErrors() {
+        Map<String, SQLException> sqlFailures = Map.of(
+                "performance_schema.data_locks", new SQLException("You have an error in your SQL syntax", "42000", 1064)
+        );
+
+        Map<String, Object> view = new MysqlLockManager().lockView(connection(sqlFailures, Map.of()), 22L);
+
+        assertEquals(List.of("unavailable", "unavailable"), errors(view).stream()
+                .filter(error -> List.of("dataLocks", "waits").contains(error.get("section")))
+                .map(error -> error.get("code"))
+                .toList());
     }
 
     @Test
@@ -93,6 +108,22 @@ class MysqlLockManagerTest {
                         row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers", "LOCK_TYPE", "EXCLUSIVE",
                                 "LOCK_DURATION", "TRANSACTION", "LOCK_STATUS", "PENDING", "OWNER_THREAD_ID", "40")
                 ),
+                "sys.schema_table_lock_waits", List.of(
+                        row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers",
+                                "WAITING_THREAD_ID", "40", "WAITING_PID", "104",
+                                "WAITING_ACCOUNT", "dave@client-d", "WAITING_LOCK_TYPE", "EXCLUSIVE",
+                                "WAITING_LOCK_DURATION", "TRANSACTION", "WAITING_QUERY", "alter table customers",
+                                "BLOCKING_THREAD_ID", "30", "BLOCKING_PID", "103",
+                                "BLOCKING_ACCOUNT", "carol@client-c", "BLOCKING_LOCK_TYPE", "SHARED_READ",
+                                "BLOCKING_LOCK_DURATION", "TRANSACTION"),
+                        row("OBJECT_SCHEMA", "app", "OBJECT_NAME", "customers",
+                                "WAITING_THREAD_ID", "40", "WAITING_PID", "104",
+                                "WAITING_ACCOUNT", "dave@client-d", "WAITING_LOCK_TYPE", "EXCLUSIVE",
+                                "WAITING_LOCK_DURATION", "TRANSACTION", "WAITING_QUERY", "alter table customers",
+                                "BLOCKING_THREAD_ID", "40", "BLOCKING_PID", "104",
+                                "BLOCKING_ACCOUNT", "dave@client-d", "BLOCKING_LOCK_TYPE", "SHARED_UPGRADABLE",
+                                "BLOCKING_LOCK_DURATION", "TRANSACTION")
+                ),
                 "performance_schema.threads", List.of(
                         session("10", "101", "100", "alice", "client-a", "app", "LOCK WAIT", "wait 100"),
                         session("20", "102", "200", "bob", "client-b", "app", "LOCK WAIT", "wait 200"),
@@ -100,7 +131,9 @@ class MysqlLockManagerTest {
                         session("40", "104", "400", "dave", "client-d", "app", "executing", "update root b"),
                         session("50", "105", "500", "erin", "client-e", "app", "LOCK WAIT", "cycle a"),
                         session("60", "106", "600", "frank", "client-f", "app", "LOCK WAIT", "cycle b"),
-                        session("80", "108", "800", "gina", "client-g", "app", "LOCK WAIT", "wait stale")
+                        session("80", "108", "800", "gina", "client-g", "app", "LOCK WAIT", "wait stale"),
+                        session("999", "1999", "1999", "unrelated", "client-z", "other", "executing",
+                                "select secret from unrelated_table")
                 )
         );
         MysqlLockManager manager = new MysqlLockManager();
@@ -110,6 +143,7 @@ class MysqlLockManagerTest {
         assertEquals("performance_schema", view.get("source"));
         assertEquals(8, rows(view, "dataLocks").size());
         assertEquals(7, rows(view, "sessions").size());
+        assertTrue(rows(view, "sessions").stream().noneMatch(row -> "unrelated".equals(row.get("PROCESSLIST_USER"))));
         List<Map<String, Object>> chains = rows(view, "waitChains");
         assertEquals(6, chains.size());
         Map<String, Object> firstHop = chain(chains, "100", "200");
@@ -126,6 +160,15 @@ class MysqlLockManagerTest {
         assertEquals(List.of("GRANTED", "PENDING"), rows(view, "metaLocks").stream()
                 .map(row -> row.get("LOCK_STATUS"))
                 .toList());
+        assertEquals(1, rows(view, "metadataWaitChains").size());
+        Map<String, Object> metadataChain = rows(view, "metadataWaitChains").get(0);
+        assertEquals("METADATA", metadataChain.get("lockKind"));
+        assertEquals("app.customers", metadataChain.get("lockObject"));
+        assertEquals("104", metadataChain.get("waiterThreadId"));
+        assertEquals("103", metadataChain.get("blockerThreadId"));
+        assertEquals("alter table customers", metadataChain.get("waiterQuery"));
+        assertEquals("update root a", metadataChain.get("blockerQuery"));
+        assertTrue((Boolean) metadataChain.get("rootBlocker"));
         Map<String, Object> cycle = chain(chains, "500", "600");
         assertTrue((Boolean) cycle.get("cycle"));
         assertFalse((Boolean) cycle.get("rootBlocker"));

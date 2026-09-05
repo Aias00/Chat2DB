@@ -437,6 +437,38 @@ const copyTable = createRequest<ICopyTableParams, void>('/api/rdb/table/copy', {
 
 
 /** Lock view (MYSQL-OPS-003). */
+export interface ILockWaitChain {
+  dataSourceId?: number;
+  lockKind?: 'DATA' | 'METADATA';
+  lockObject?: string | null;
+  waiterTransactionId: string | null;
+  waiterLockId: string | null;
+  waiterThreadId: string | null;
+  waiterEngineThreadId: string | null;
+  waiterState: string | null;
+  waiterUser: string | null;
+  waiterHost: string | null;
+  waiterDatabase: string | null;
+  waiterQuery: string | null;
+  waiterSessionAvailable: boolean;
+  waiterMetadataLockCount: number;
+  waiterLockMode?: string | null;
+  blockerTransactionId: string | null;
+  blockerLockId: string | null;
+  blockerThreadId: string | null;
+  blockerEngineThreadId: string | null;
+  blockerState: string | null;
+  blockerUser: string | null;
+  blockerHost: string | null;
+  blockerDatabase: string | null;
+  blockerQuery: string | null;
+  blockerSessionAvailable: boolean;
+  blockerMetadataLockCount: number;
+  blockerLockMode?: string | null;
+  rootBlocker: boolean;
+  cycle?: boolean;
+}
+
 export interface ILockView {
   dataSourceId?: number;
   source: 'performance_schema' | 'information_schema' | 'unavailable';
@@ -444,33 +476,8 @@ export interface ILockView {
   waits: Record<string, string | null>[];
   metaLocks: Record<string, string | null | boolean | number>[];
   sessions: Record<string, string | null>[];
-  waitChains: {
-    dataSourceId?: number;
-    waiterTransactionId: string | null;
-    waiterLockId: string | null;
-    waiterThreadId: string | null;
-    waiterEngineThreadId: string | null;
-    waiterState: string | null;
-    waiterUser: string | null;
-    waiterHost: string | null;
-    waiterDatabase: string | null;
-    waiterQuery: string | null;
-    waiterSessionAvailable: boolean;
-    waiterMetadataLockCount: number;
-    blockerTransactionId: string | null;
-    blockerLockId: string | null;
-    blockerThreadId: string | null;
-    blockerEngineThreadId: string | null;
-    blockerState: string | null;
-    blockerUser: string | null;
-    blockerHost: string | null;
-    blockerDatabase: string | null;
-    blockerQuery: string | null;
-    blockerSessionAvailable: boolean;
-    blockerMetadataLockCount: number;
-    rootBlocker: boolean;
-    cycle?: boolean;
-  }[];
+  waitChains: ILockWaitChain[];
+  metadataWaitChains: ILockWaitChain[];
   errors?: {
     section: string;
     code: 'privilege_required' | 'unavailable';

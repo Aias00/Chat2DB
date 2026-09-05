@@ -65,6 +65,7 @@ const i18nMessages: Record<string, string> = {
   'workspace.ops.lockBlocking': 'Blocking',
   'workspace.ops.blockerQuery': 'Blocker Query',
   'workspace.ops.blockerState': 'Blocker State',
+  'workspace.ops.blockerLockMode': 'Blocker Lock Mode',
   'workspace.ops.blockerThread': 'Blocker Thread',
   'workspace.ops.blockerUser': 'Blocker User',
   'workspace.ops.blockingChains': 'Blocking Chains',
@@ -84,10 +85,13 @@ const i18nMessages: Record<string, string> = {
     'Current datasource snapshot only. Missing session details can mean the row was released, privileges are limited, or the MySQL version does not expose that source.',
   'workspace.ops.lockSource': 'Source: {1}',
   'workspace.ops.lockSourceUnavailable': 'lock sources unavailable',
+  'workspace.ops.lockPrivilegeRequired': 'Additional privileges are required to inspect lock metadata',
+  'workspace.ops.lockMetadataUnavailable': 'Lock metadata unavailable',
   'workspace.ops.lockStatus': 'Status',
   'workspace.ops.lockType': 'Type',
   'workspace.ops.metadataLockCount': '{1} metadata locks',
   'workspace.ops.metadataLocks': 'Metadata Locks ({1})',
+  'workspace.ops.metadataBlockingChains': 'Metadata Blocking Chains ({1})',
   'workspace.ops.metadataLocksUnavailable': 'Metadata lock instrumentation unavailable',
   'workspace.ops.noLockWaits': 'No active lock waits',
   'workspace.ops.ownerThread': 'Owner Thread',
@@ -106,6 +110,7 @@ const i18nMessages: Record<string, string> = {
   'workspace.ops.valueUnavailable': 'unavailable',
   'workspace.ops.waiterQuery': 'Waiter Query',
   'workspace.ops.waiterState': 'Waiter State',
+  'workspace.ops.waiterLockMode': 'Waiter Lock Mode',
   'workspace.ops.waiterThread': 'Waiter Thread',
   'workspace.ops.waiterUser': 'Waiter User',
 };
@@ -118,6 +123,7 @@ const mockSqlService = {
     metaLocks: [],
     sessions: [],
     waitChains: [],
+    metadataWaitChains: [],
     errors: [],
   }),
 };
@@ -158,6 +164,7 @@ async function testLockViewRequestUsesRenderedDatasource() {
       metaLocks: [],
       sessions: [],
       waitChains: [],
+      metadataWaitChains: [],
       errors: [],
     };
   };
@@ -237,6 +244,39 @@ async function testLockSnapshotShowsDatasourceAndDegradedSessionState() {
         cycle: true,
       },
     ],
+    metadataWaitChains: [
+      {
+        dataSourceId: 73,
+        lockKind: 'METADATA',
+        lockObject: 'app.orders',
+        waiterTransactionId: null,
+        waiterLockId: 'metadata:app.orders:55',
+        waiterThreadId: '155',
+        waiterEngineThreadId: '55',
+        waiterState: 'Waiting for table metadata lock',
+        waiterUser: 'waiter-user',
+        waiterHost: 'client-a',
+        waiterDatabase: 'app',
+        waiterQuery: 'alter table orders add note varchar(32)',
+        waiterSessionAvailable: true,
+        waiterMetadataLockCount: 1,
+        waiterLockMode: 'EXCLUSIVE',
+        blockerTransactionId: null,
+        blockerLockId: 'metadata:app.orders:52',
+        blockerThreadId: '152',
+        blockerEngineThreadId: '52',
+        blockerState: 'executing',
+        blockerUser: 'blocker-user',
+        blockerHost: 'client-b',
+        blockerDatabase: 'app',
+        blockerQuery: 'select * from orders for update',
+        blockerSessionAvailable: true,
+        blockerMetadataLockCount: 1,
+        blockerLockMode: 'SHARED_WRITE',
+        rootBlocker: true,
+        cycle: false,
+      },
+    ],
     errors: [],
   });
   let openedSession: unknown;
@@ -261,6 +301,7 @@ async function testLockSnapshotShowsDatasourceAndDegradedSessionState() {
     assert.match(text, /stale/);
     assert.match(text, /Cycle/);
     assert.match(text, /Sessions \(1\)/);
+    assert.match(text, /Metadata Blocking Chains \(1\)/);
     assert.equal(document.querySelector('[aria-label="Open session 52"]'), null);
 
     const openWaiterSession = document.querySelector('[aria-label="Open session 101"]');
@@ -312,6 +353,7 @@ function emptyLockView(dataSourceId: number) {
     metaLocks: [],
     sessions: [],
     waitChains: [],
+    metadataWaitChains: [],
     errors: [],
   };
 }
@@ -332,9 +374,21 @@ async function testLatestRefreshWins() {
     });
     assert.equal(requestCount, 1);
     await act(async () => {
+      first.resolve(emptyLockView(80));
+      await first.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.match(container.textContent || '', /Datasource ID: 80/);
+
+    await act(async () => {
       root.render(createElement(LockWaitsContent, { dataSourceId: 81 }));
     });
     assert.equal(requestCount, 2);
+    assert.doesNotMatch(
+      container.textContent || '',
+      /Datasource ID: 80/,
+      'the previous datasource snapshot must be hidden while the new datasource loads',
+    );
 
     await act(async () => {
       second.resolve(emptyLockView(81));
@@ -343,13 +397,46 @@ async function testLatestRefreshWins() {
     });
     assert.match(container.textContent || '', /Datasource ID: 81/);
 
-    await act(async () => {
-      first.resolve(emptyLockView(80));
-      await first.promise;
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
     assert.match(container.textContent || '', /Datasource ID: 81/);
     assert.doesNotMatch(container.textContent || '', /Datasource ID: 80/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    mockSqlService.getLockView = originalGetLockView;
+  }
+}
+
+async function testDegradedErrorsUseActionableLocalizedMessages() {
+  const { default: LockWaitsContent } = await import('./index');
+  const originalGetLockView = mockSqlService.getLockView;
+  mockSqlService.getLockView = async () => ({
+    ...emptyLockView(82),
+    source: 'unavailable',
+    errors: [
+      {
+        section: 'dataLocks',
+        code: 'privilege_required',
+        message: 'backend fallback should not be rendered',
+      },
+      {
+        section: 'metaLocks',
+        code: 'unavailable',
+        message: 'another backend fallback should not be rendered',
+      },
+    ],
+  });
+  const container = createTestContainer();
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(createElement(LockWaitsContent, { dataSourceId: 82 }));
+    });
+    assert.match(container.textContent || '', /Additional privileges are required to inspect lock metadata/);
+    assert.match(container.textContent || '', /Lock metadata unavailable/);
+    assert.doesNotMatch(container.textContent || '', /dataLocks: privilege_required/);
   } finally {
     await act(async () => {
       root.unmount();
@@ -363,6 +450,7 @@ Promise.resolve()
   .then(testLockViewRequestUsesRenderedDatasource)
   .then(testLockSnapshotShowsDatasourceAndDegradedSessionState)
   .then(testLatestRefreshWins)
+  .then(testDegradedErrorsUseActionableLocalizedMessages)
   .catch((error) => {
   console.error(error);
   process.exitCode = 1;

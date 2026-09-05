@@ -4,7 +4,8 @@
 
 - `init.sql` creates `ops003_admin` (PROCESS) and `ops003_user`, plus `ops003_ledger`
   with a unique key for row-lock and gap-lock wait chains.
-- `grants.sql` grants PROCESS to the admin account.
+- `grants.sql` grants PROCESS plus read access required by Performance Schema and
+  the cross-version `sys.schema_table_lock_waits` view.
 - `cleanup.sql` drops test objects and users.
 
 ## Verification
@@ -21,9 +22,11 @@
 4. **Metadata lock**: on connection E run
    `START TRANSACTION; SELECT * FROM ops003_ledger WHERE id = 1 FOR UPDATE;` then on
    connection F run `ALTER TABLE ops003_ledger ADD COLUMN note VARCHAR(32) NULL;` — F waits
-   for the metadata lock. Refresh — verify the metadata lock row appears in the Metadata
-   Locks tab (when instrumentation is available) with F as the owner.
+   for the metadata lock. Refresh — verify the pending row appears in Metadata Locks and
+   Metadata Blocking Chains links F to E with E as root blocker. No self-blocking edge
+   should be shown.
 5. **Release**: commit B — refresh — verify the chains disappear.
 6. Connect as `ops003_user` (no PROCESS) — refresh — verify the view still loads and
    other sessions' locks are not visible (no crash, explicit empty/unavailable state).
 7. Verify the view never offers a kill action (termination belongs to the session view).
+8. Start an unrelated sleeping session and verify it is not returned in the Sessions tab.

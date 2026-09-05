@@ -21,6 +21,16 @@ public final class MysqlLockConstants {
     public static final String SQL_METADATA_LOCKS =
             "SELECT OBJECT_SCHEMA, OBJECT_NAME, LOCK_TYPE, LOCK_DURATION, LOCK_STATUS, OWNER_THREAD_ID, OWNER_EVENT_ID "
                     + "FROM performance_schema.metadata_locks ORDER BY OBJECT_SCHEMA, OBJECT_NAME";
+    public static final String SQL_METADATA_LOCK_WAITS =
+            "SELECT object_schema AS OBJECT_SCHEMA, object_name AS OBJECT_NAME, "
+                    + "waiting_thread_id AS WAITING_THREAD_ID, waiting_pid AS WAITING_PID, "
+                    + "waiting_account AS WAITING_ACCOUNT, waiting_lock_type AS WAITING_LOCK_TYPE, "
+                    + "waiting_lock_duration AS WAITING_LOCK_DURATION, waiting_query AS WAITING_QUERY, "
+                    + "blocking_thread_id AS BLOCKING_THREAD_ID, blocking_pid AS BLOCKING_PID, "
+                    + "blocking_account AS BLOCKING_ACCOUNT, blocking_lock_type AS BLOCKING_LOCK_TYPE, "
+                    + "blocking_lock_duration AS BLOCKING_LOCK_DURATION "
+                    + "FROM sys.schema_table_lock_waits WHERE waiting_thread_id <> blocking_thread_id "
+                    + "ORDER BY object_schema, object_name, waiting_thread_id";
     public static final String SQL_SESSION_INFO_PERFORMANCE_SCHEMA =
             "SELECT th.THREAD_ID, th.PROCESSLIST_ID, th.PROCESSLIST_USER, th.PROCESSLIST_HOST, "
                     + "th.PROCESSLIST_DB, th.PROCESSLIST_COMMAND, th.PROCESSLIST_TIME, "
@@ -42,6 +52,7 @@ public final class MysqlLockConstants {
     public static final String SECTION_DATA_LOCKS = "dataLocks";
     public static final String SECTION_WAITS = "waits";
     public static final String SECTION_META_LOCKS = "metaLocks";
+    public static final String SECTION_METADATA_WAITS = "metadataWaits";
     public static final String SECTION_SESSIONS = "sessions";
     public static final String ERROR_PRIVILEGE_REQUIRED = "privilege_required";
     public static final String ERROR_UNAVAILABLE = "unavailable";
@@ -51,6 +62,10 @@ public final class MysqlLockConstants {
             "Lock metadata is unavailable for this server or database account.";
     public static final String SQL_STATE_TABLE_NOT_FOUND = "42S02";
     public static final int MYSQL_ERROR_TABLE_NOT_FOUND = 1146;
+    public static final int MYSQL_ERROR_DATABASE_ACCESS_DENIED = 1044;
+    public static final int MYSQL_ERROR_COMMAND_DENIED = 1142;
+    public static final int MYSQL_ERROR_COLUMN_COMMAND_DENIED = 1143;
+    public static final int MYSQL_ERROR_SPECIFIC_ACCESS_DENIED = 1227;
 
     private MysqlLockConstants() {
     }
