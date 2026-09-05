@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -62,6 +63,18 @@ class MysqlLockManagerTest {
                 new SQLException("Unknown table 'performance_schema.data_locks'", "42S02", 1146)));
         assertFalse(MysqlLockManager.shouldFallbackToLegacyLocks(
                 new SQLException("SELECT command denied for data_locks", "42000", 1142)));
+    }
+
+    @Test
+    void usesLegacySourceForMysql57BeforeProbingTheMysql80LockTable() {
+        Map<String, SQLException> failures = Map.of(
+                "performance_schema.data_locks", new SQLException("SELECT command denied", "42000", 1142));
+
+        LockView view = new MysqlLockManager().lockView(connection(failures, Map.of(), 5), 23L);
+
+        assertEquals(Source.INFORMATION_SCHEMA, view.getSource());
+        assertTrue(view.getErrors().stream().noneMatch(error -> error.getSection() == ErrorSection.DATA_LOCKS
+                || error.getSection() == ErrorSection.WAITS));
     }
 
     @Test
@@ -278,12 +291,25 @@ class MysqlLockManagerTest {
 
     private static Connection connection(Map<String, SQLException> sqlFailures,
             Map<String, List<Map<String, Object>>> sqlRows) {
+        return connection(sqlFailures, sqlRows, null);
+    }
+
+    private static Connection connection(Map<String, SQLException> sqlFailures,
+            Map<String, List<Map<String, Object>>> sqlRows, Integer databaseMajorVersion) {
         return proxy(Connection.class, (proxy, method, args) -> switch (method.getName()) {
             case "isClosed" -> false;
+            case "getMetaData" -> databaseMajorVersion == null ? null : databaseMetaData(databaseMajorVersion);
             case "prepareStatement" -> statement((String) args[0], sqlFailures, sqlRows);
             case "close" -> null;
             default -> defaultValue(method.getReturnType());
         });
+    }
+
+    private static DatabaseMetaData databaseMetaData(int databaseMajorVersion) {
+        return proxy(DatabaseMetaData.class, (proxy, method, args) ->
+                "getDatabaseMajorVersion".equals(method.getName())
+                        ? databaseMajorVersion
+                        : defaultValue(method.getReturnType()));
     }
 
     private static PreparedStatement statement(String sql, Map<String, SQLException> sqlFailures,

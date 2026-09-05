@@ -15,6 +15,7 @@ import ai.chat2db.spi.DefaultSQLExecutor;
 import ai.chat2db.spi.ILockManager;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -98,6 +99,10 @@ public class MysqlLockManager implements ILockManager {
     }
 
     private static LockSourceProbe probeLockSource(Connection connection) {
+        Integer databaseMajorVersion = databaseMajorVersion(connection);
+        if (databaseMajorVersion != null && databaseMajorVersion < 8) {
+            return new LockSourceProbe(false, null);
+        }
         try {
             DefaultSQLExecutor.getInstance().execute(connection, SQL_PROBE_DATA_LOCKS_80,
                     resultSet -> Boolean.TRUE);
@@ -106,6 +111,15 @@ public class MysqlLockManager implements ILockManager {
             return shouldFallbackToLegacyLocks(exception)
                     ? new LockSourceProbe(false, null)
                     : new LockSourceProbe(true, exception);
+        }
+    }
+
+    private static Integer databaseMajorVersion(Connection connection) {
+        try {
+            DatabaseMetaData metadata = connection.getMetaData();
+            return metadata == null ? null : metadata.getDatabaseMajorVersion();
+        } catch (SQLException | RuntimeException ignored) {
+            return null;
         }
     }
 
