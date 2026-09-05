@@ -131,7 +131,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
                 sessionId: threadId!,
               })
             }
-            aria-label={i18n('workspace.ops.openSession', threadId)}
+            aria-label={i18n('workspace.ops.lockOpenSession', threadId)}
           >
             {valueText(threadId)}
           </Button>
@@ -200,7 +200,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
         ) : record.rootBlocker ? (
           <Tag color="red">{i18n('workspace.ops.rootBlocker')}</Tag>
         ) : (
-          <Tag>{i18n('workspace.ops.blocker')}</Tag>
+          <Tag>{i18n('workspace.ops.lockBlocking')}</Tag>
         ),
     },
   ];
@@ -243,7 +243,7 @@ const LockWaitsContent = ({ dataSourceId, onOpenSession }: LockWaitsContentProps
                 query: r.query,
               })
             }
-            aria-label={i18n('workspace.ops.openSession', sessionId)}
+            aria-label={i18n('workspace.ops.lockOpenSession', sessionId)}
           >
             {sessionId}
           </Button>

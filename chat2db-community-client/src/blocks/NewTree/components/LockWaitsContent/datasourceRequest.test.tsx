@@ -62,7 +62,7 @@ const ResizeObserverStub = class {
 const i18nMessages: Record<string, string> = {
   'common.button.refresh': 'Refresh',
   'common.text.failure': 'Failure',
-  'workspace.ops.blocker': 'Blocking',
+  'workspace.ops.lockBlocking': 'Blocking',
   'workspace.ops.blockerQuery': 'Blocker Query',
   'workspace.ops.blockerState': 'Blocker State',
   'workspace.ops.blockerThread': 'Blocker Thread',
@@ -100,7 +100,7 @@ const i18nMessages: Record<string, string> = {
   'workspace.ops.sessionStale': 'stale',
   'workspace.ops.sessions': 'Sessions ({1})',
   'workspace.ops.sessionsUnavailable': 'Session rows unavailable',
-  'workspace.ops.openSession': 'Open session {1}',
+  'workspace.ops.lockOpenSession': 'Open session {1}',
   'workspace.ops.sessionConsoleTitle': 'Inspect session {1}',
   'workspace.ops.sessionNavigationUnavailable': 'Session navigation is unavailable for this row',
   'workspace.ops.state': 'State',
