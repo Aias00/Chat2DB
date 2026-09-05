@@ -13,6 +13,7 @@ CREATE USER IF NOT EXISTS 'sec004_user2'@'%' IDENTIFIED BY 'Pass123!';
 CREATE ROLE IF NOT EXISTS 'sec004_role_reader';
 CREATE ROLE IF NOT EXISTS 'sec004_role_writer';
 CREATE ROLE IF NOT EXISTS 'sec004_role_admin';
+CREATE ROLE IF NOT EXISTS 'sec004_role_standalone';
 
 -- Grant privileges to roles
 GRANT SELECT ON *.* TO 'sec004_role_reader';

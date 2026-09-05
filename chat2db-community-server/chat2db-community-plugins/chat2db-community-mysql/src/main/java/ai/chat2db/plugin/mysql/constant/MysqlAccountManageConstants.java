@@ -9,8 +9,10 @@ public final class MysqlAccountManageConstants {
     public static final String ERROR_KEY_ACCOUNT_PREVIEW_TOKEN_MISMATCH = "mysql.account.previewTokenMismatch";
     public static final String ERROR_KEY_ACCOUNT_ROLE_UNSUPPORTED = "mysql.account.roleUnsupported";
     public static final String FIELD_ACCOUNT_LOCKED = "account_locked";
+    public static final String FIELD_AUTHENTICATION_STRING = "authentication_string";
     public static final String FIELD_HOST = "Host";
     public static final String FIELD_PLUGIN = "plugin";
+    public static final String FIELD_PASSWORD_EXPIRED = "password_expired";
     public static final String FIELD_USER = "User";
     public static final String FIELD_ADMIN_OPTION = "admin_option";
     public static final String FIELD_GRANTEE_HOST = "grantee_host";
@@ -22,7 +24,8 @@ public final class MysqlAccountManageConstants {
     public static final String SQL_SELECT_CURRENT_USER = "SELECT CURRENT_USER()";
     public static final String SQL_SELECT_DEFAULT_ROLES = "SELECT DEFAULT_ROLE_USER, DEFAULT_ROLE_HOST FROM mysql.default_roles WHERE USER = ? AND HOST = ? ORDER BY DEFAULT_ROLE_USER, DEFAULT_ROLE_HOST";
     public static final String SQL_SELECT_MYSQL_USERS = "SELECT User, Host, plugin FROM mysql.user ORDER BY User, Host";
-    public static final String SQL_SELECT_MYSQL_USERS_WITH_LOCK = "SELECT User, Host, plugin, account_locked FROM mysql.user ORDER BY User, Host";
+    public static final String SQL_SELECT_MYSQL_USERS_WITH_LOCK = "SELECT User, Host, plugin, account_locked, "
+            + "authentication_string, password_expired FROM mysql.user ORDER BY User, Host";
     public static final String SQL_SELECT_DEFAULT_ROLE_ACCOUNTS = "SELECT DISTINCT DEFAULT_ROLE_USER AS role_user, "
             + "DEFAULT_ROLE_HOST AS role_host FROM mysql.default_roles ORDER BY DEFAULT_ROLE_USER, DEFAULT_ROLE_HOST";
     public static final String SQL_SELECT_ROLE_ACCOUNTS = "SELECT DISTINCT FROM_USER AS role_user, FROM_HOST AS role_host "

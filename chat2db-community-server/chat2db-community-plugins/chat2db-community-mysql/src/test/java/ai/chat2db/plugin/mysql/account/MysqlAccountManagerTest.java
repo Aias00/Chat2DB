@@ -50,6 +50,20 @@ class MysqlAccountManagerTest {
     }
 
     @Test
+    void capabilityParsesQuotedRoleNamesContainingDelimiters() {
+        MysqlAccountManager manager = new MysqlAccountManager();
+
+        AccountManagerCapability capability = manager.capability(
+                connection("MySQL", 8, "8.0.35", this::specialRoleCapabilityRows));
+
+        assertEquals(List.of(
+                        role("report,reader", "%"),
+                        role("ops@west", "10.%"),
+                        role("tick`role", "%")),
+                capability.getActiveRoles());
+    }
+
+    @Test
     void previewRejectsRoleLifecycleCommandsBeforeMysql8() {
         MysqlAccountManager manager = new MysqlAccountManager();
         AccountOperationRequest command = new AccountOperationRequest();
@@ -143,6 +157,18 @@ class MysqlAccountManagerTest {
         assertEquals(Boolean.TRUE, accounts.get(1).getRole());
     }
 
+    @Test
+    void listAccountsMarksStandaloneCreateRoleAccountBeforeItHasEdges() {
+        MysqlAccountManager manager = new MysqlAccountManager();
+
+        List<AccountInfo> accounts = manager.listAccounts(
+                connection("MySQL", 8, "8.0.35", this::standaloneRoleRows));
+
+        assertEquals(1, accounts.size());
+        assertEquals("standalone_role", accounts.get(0).getUser());
+        assertEquals(Boolean.TRUE, accounts.get(0).getRole());
+    }
+
     private List<Row> capabilityRows(String sql, List<String> params) {
         if (Objects.equals(sql, SQL_SELECT_USER_HOST_MYSQL_USER) || Objects.equals(sql, SQL_SELECT_ACCOUNT_LOCKED_MYSQL_USER)) {
             return List.of(row("1"));
@@ -154,6 +180,13 @@ class MysqlAccountManagerTest {
             return List.of(row("`reader`@`%`,`writer`@`10.%`"));
         }
         return List.of();
+    }
+
+    private List<Row> specialRoleCapabilityRows(String sql, List<String> params) {
+        if (Objects.equals(sql, SQL_SELECT_CURRENT_ROLE)) {
+            return List.of(row("`report,reader`@`%`,`ops@west`@`10.%`,`tick``role`@`%`"));
+        }
+        return capabilityRows(sql, params);
     }
 
     private List<Row> accountRows(String sql, List<String> params) {
@@ -270,6 +303,25 @@ class MysqlAccountManagerTest {
             return List.of(row("default_only", "%"));
         }
         if (Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES)) {
+            return List.of();
+        }
+        return capabilityRows(sql, params);
+    }
+
+    private List<Row> standaloneRoleRows(String sql, List<String> params) {
+        if (Objects.equals(sql, SQL_SELECT_MYSQL_USERS_WITH_LOCK)) {
+            return List.of(row(Map.of(
+                    "User", "standalone_role",
+                    "Host", "%",
+                    "plugin", "caching_sha2_password",
+                    "account_locked", "Y",
+                    "authentication_string", "",
+                    "password_expired", "Y")));
+        }
+        if (Objects.equals(sql, SQL_SELECT_ROLE_ACCOUNTS)
+                || Objects.equals(sql, SQL_SELECT_DEFAULT_ROLE_ACCOUNTS)
+                || Objects.equals(sql, SQL_SELECT_ROLE_EDGES)
+                || Objects.equals(sql, SQL_SELECT_DEFAULT_ROLES)) {
             return List.of();
         }
         return capabilityRows(sql, params);

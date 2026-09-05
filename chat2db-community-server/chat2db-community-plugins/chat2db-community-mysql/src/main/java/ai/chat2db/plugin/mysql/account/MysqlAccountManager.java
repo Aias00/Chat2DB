@@ -7,6 +7,7 @@ import ai.chat2db.community.domain.api.model.account.AccountExecuteResponse;
 import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import ai.chat2db.community.domain.api.model.account.AccountManagerCapability;
 import ai.chat2db.community.domain.api.model.account.AccountPreview;
+import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
 import ai.chat2db.plugin.mysql.enums.account.MysqlPrivilege;
 import org.apache.commons.lang3.StringUtils;
 
@@ -110,7 +111,12 @@ public class MysqlAccountManager implements IAccountManager {
     }
 
     private void validateRoleCapability(Connection connection, AccountOperationRequest command) {
-        if (!command.getActionType().contains("ROLE")) {
+        AccountActionTypeEnum actionType = AccountActionTypeEnum.from(command == null ? null : command.getActionType());
+        boolean roleAction = switch (actionType) {
+            case CREATE_ROLE, DROP_ROLE, GRANT_ROLE, REVOKE_ROLE, SET_DEFAULT_ROLE -> true;
+            default -> false;
+        };
+        if (!roleAction) {
             return;
         }
         try {
@@ -145,7 +151,8 @@ public class MysqlAccountManager implements IAccountManager {
                     account.setLocked(StringUtils.isBlank(accountLocked) ? null : VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(accountLocked));
                 }
                 account.setDisplayName(account.getUser() + ACCOUNT_DISPLAY_NAME_SEPARATOR + account.getHost());
-                account.setRole(roleAccountKeys.contains(accountKey(account.getUser(), account.getHost())));
+                account.setRole(roleAccountKeys.contains(accountKey(account.getUser(), account.getHost()))
+                        || isStandaloneRole(resultSet, account));
                 List<AccountInfo> directRoles = directRoles(roleEdgesByGrantee, account.getUser(), account.getHost());
                 account.setDirectRoles(directRoles);
                 List<AccountInfo> inheritedRoles = inheritedRoles(roleEdgesByGrantee, directRoles);
@@ -324,7 +331,7 @@ public class MysqlAccountManager implements IAccountManager {
             return List.of();
         }
         List<AccountInfo> roles = new ArrayList<>();
-        for (String item : value.split(",")) {
+        for (String item : splitAccountList(value)) {
             AccountInfo role = parseRoleAccount(item.trim());
             if (role != null) {
                 roles.add(role);
@@ -337,11 +344,71 @@ public class MysqlAccountManager implements IAccountManager {
         if (StringUtils.isBlank(value)) {
             return null;
         }
-        int at = value.indexOf('@');
+        int at = accountSeparator(value);
         if (at <= 0 || at >= value.length() - 1) {
             return roleAccount(unquoteAccountPart(value), "%");
         }
         return roleAccount(unquoteAccountPart(value.substring(0, at)), unquoteAccountPart(value.substring(at + 1)));
+    }
+
+    private List<String> splitAccountList(String value) {
+        List<String> accounts = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        char quote = 0;
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (quote != 0) {
+                current.append(character);
+                if (character == quote) {
+                    if (index + 1 < value.length() && value.charAt(index + 1) == quote) {
+                        current.append(value.charAt(++index));
+                    } else {
+                        quote = 0;
+                    }
+                }
+            } else if (character == '`' || character == '\'') {
+                quote = character;
+                current.append(character);
+            } else if (character == ',') {
+                accounts.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(character);
+            }
+        }
+        accounts.add(current.toString());
+        return accounts;
+    }
+
+    private int accountSeparator(String value) {
+        char quote = 0;
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (quote != 0) {
+                if (character == quote) {
+                    if (index + 1 < value.length() && value.charAt(index + 1) == quote) {
+                        index++;
+                    } else {
+                        quote = 0;
+                    }
+                }
+            } else if (character == '`' || character == '\'') {
+                quote = character;
+            } else if (character == '@') {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isStandaloneRole(ResultSet resultSet, AccountInfo account) {
+        if (!Boolean.TRUE.equals(account.getLocked())) {
+            return false;
+        }
+        String authenticationString = safeGetString(resultSet, FIELD_AUTHENTICATION_STRING);
+        String passwordExpired = safeGetString(resultSet, FIELD_PASSWORD_EXPIRED);
+        return StringUtils.EMPTY.equals(authenticationString)
+                && VALUE_ACCOUNT_LOCKED_YES.equalsIgnoreCase(passwordExpired);
     }
 
     private String unquoteAccountPart(String value) {

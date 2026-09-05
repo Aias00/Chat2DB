@@ -1,6 +1,5 @@
 package ai.chat2db.community.web.api.model.response.db;
 
-import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import lombok.Data;
 
 import java.util.List;
@@ -15,7 +14,7 @@ public class AccountCapabilityResponse {
     private Boolean accountListReadable;
     private Boolean accountLockSupported;
     private Boolean roleManagementSupported;
-    private List<AccountInfo> activeRoles;
+    private List<AccountRoleResponse> activeRoles;
     private List<String> editablePrivileges;
     private String message;
 }
