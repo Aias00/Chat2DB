@@ -10,9 +10,6 @@ import ai.chat2db.community.domain.api.model.account.AccountOperationRequest;
 import ai.chat2db.plugin.mysql.enums.account.MysqlPrivilege;
 import org.apache.commons.lang3.StringUtils;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -106,20 +103,6 @@ class MysqlAccountSqlBuilder {
         return authPlugin;
     }
 
-    static String previewToken(String sql) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance(SHA_256_ALGORITHM);
-            byte[] hash = digest.digest(sql.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder();
-            for (byte b : hash) {
-                builder.append(String.format(HEX_BYTE_FORMAT, b));
-            }
-            return builder.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
     static String account(AccountOperationRequest command) {
         return account(command.getUser(), command.getHost());
     }
@@ -210,6 +193,9 @@ class MysqlAccountSqlBuilder {
         }
         if (hasTlsMaterial && StringUtils.isBlank(command.getTlsRequirement())) {
             throw new BusinessException(ERROR_KEY_ACCOUNT_TLS_MATERIAL_UNSUPPORTED);
+        }
+        if (StringUtils.isNotBlank(command.getAuthPlugin()) && StringUtils.isBlank(command.getPassword())) {
+            throw new BusinessException(ERROR_KEY_ACCOUNT_PASSWORD_REQUIRED);
         }
     }
 

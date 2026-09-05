@@ -7,7 +7,10 @@ import ai.chat2db.community.domain.api.model.account.AccountExecuteResponse;
 import ai.chat2db.community.domain.api.model.account.AccountInfo;
 import ai.chat2db.community.domain.api.model.account.AccountManagerCapability;
 import ai.chat2db.community.domain.api.model.account.AccountPreview;
+import ai.chat2db.community.domain.api.enums.plugin.AccountActionTypeEnum;
 import ai.chat2db.plugin.mysql.enums.account.MysqlPrivilege;
+import ai.chat2db.spi.model.datasource.ConnectInfo;
+import ai.chat2db.spi.sql.Chat2DBContext;
 import org.apache.commons.lang3.StringUtils;
 
 import java.sql.Connection;
@@ -24,6 +27,9 @@ import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SELECT_ACCO
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_SELECT_USER_HOST_MYSQL_USER;
 
 public class MysqlAccountManager implements IAccountManager {
+
+    private final MysqlAccountPreviewToken previewToken = MysqlAccountPreviewToken.INSTANCE;
+
     @Override
     public AccountManagerCapability capability(Connection connection) {
         AccountManagerCapability capability = new AccountManagerCapability();
@@ -77,21 +83,21 @@ public class MysqlAccountManager implements IAccountManager {
         AccountPreview preview = new AccountPreview();
         preview.setActionType(command.getActionType());
         preview.setSql(MysqlAccountSqlBuilder.buildDisplaySql(command));
-        preview.setPreviewToken(MysqlAccountSqlBuilder.previewToken(sql));
+        preview.setPreviewToken(previewToken.issue(sql, currentDataSourceId()));
         return preview;
     }
 
     @Override
     public AccountExecuteResponse execute(Connection connection, AccountOperationRequest command) {
-        AccountPreview preview = preview(connection, command);
-        if (!StringUtils.equals(preview.getPreviewToken(), command.getPreviewToken())) {
+        validateSecurityCommand(connection, command);
+        String executionSql = MysqlAccountSqlBuilder.buildSql(command);
+        if (!previewToken.verify(command.getPreviewToken(), executionSql, currentDataSourceId())) {
             throw new BusinessException(ERROR_KEY_ACCOUNT_PREVIEW_TOKEN_MISMATCH);
         }
 
         AccountExecuteResponse result = new AccountExecuteResponse();
-        result.setActionType(preview.getActionType());
-        result.setSql(preview.getSql());
-        String executionSql = MysqlAccountSqlBuilder.buildSql(command);
+        result.setActionType(command.getActionType());
+        result.setSql(MysqlAccountSqlBuilder.buildDisplaySql(command));
 
         try (PreparedStatement statement = connection.prepareStatement(executionSql)) {
             statement.execute();
@@ -108,7 +114,8 @@ public class MysqlAccountManager implements IAccountManager {
     }
 
     private void validateSecurityCommand(Connection connection, AccountOperationRequest command) {
-        if (!"ALTER_AUTH_PLUGIN".equals(command.getActionType())) {
+        AccountActionTypeEnum actionType = AccountActionTypeEnum.from(command == null ? null : command.getActionType());
+        if (actionType != AccountActionTypeEnum.ALTER_AUTH_PLUGIN) {
             return;
         }
         try {
@@ -123,6 +130,11 @@ public class MysqlAccountManager implements IAccountManager {
         } catch (SQLException e) {
             throw new BusinessException(ERROR_KEY_ACCOUNT_AUTH_PLUGIN_UNAVAILABLE, null, e);
         }
+    }
+
+    private Long currentDataSourceId() {
+        ConnectInfo connectInfo = Chat2DBContext.getConnectInfo();
+        return connectInfo == null ? null : connectInfo.getDataSourceId();
     }
 
     private boolean supportsSecurityManagement(DatabaseMetaData metadata) throws SQLException {

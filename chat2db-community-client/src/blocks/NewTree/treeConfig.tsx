@@ -1,4 +1,4 @@
-import { ConsoleStatus, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
+import { ConsoleStatus, DatabaseCapability, OperationColumn, TreeNodeType, WorkspaceTabType } from '@/constants';
 import i18n from '@/i18n';
 import accountAdminService from '@/service/accountAdmin';
 import connectionService from '@/service/connection';
@@ -7,10 +7,15 @@ import mysqlServer from '@/service/sql';
 import { useTreeStore } from '@/store/tree';
 import { IConnectionDetails, TreeNodeData } from '@/typings';
 import { getDatabaseSupport } from '@/utils/database';
-import { canUseAccountManage, isMongodbTreeDataSource, isRedisTreeDataSource } from '@/utils/databaseJudgments';
+import { isDatabaseCapabilitySupported } from '@/utils/databaseJudgments';
 import { v4 as uuid } from 'uuid';
 import { createSavedConsoleTreeNodeKey } from '@/store/tree/backgroundRefresh';
 import { createDatabaseAccountTreeNodeExtraParams } from './accountTreeNodes';
+import {
+  createActiveTransactionsTreeNodeKey,
+  createMonitorTreeNodeKey,
+  MONITOR_TREE_ITEMS,
+} from './monitorTree';
 
 const fileIcon = 'icon-colourful-folder-close';
 const unfoldFileIcon = 'icon-colourful-folder-open';
@@ -180,6 +185,17 @@ function createSaveConsolesNode(extraParams: any): TreeNodeData {
   };
 }
 
+function createMonitorNode(extraParams: any): TreeNodeData {
+  return {
+    key: createMonitorTreeNodeKey(extraParams.dataSourceId),
+    originalTitle: i18n('workspace.ops.monitor'),
+    title: null,
+    treeNodeType: TreeNodeType.MONITOR,
+    isLeaf: false,
+    extraParams,
+  };
+}
+
 export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
   [TreeNodeType.GROUPS]: {
     getChildren: () => {
@@ -256,7 +272,10 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
       return new Promise((r, j) => {
         const { dataSourceId, databaseType } = extraParams;
         const { supportDatabase, supportSchema } = getDatabaseSupport(databaseType);
-        const accountNode: TreeNodeData | null = canUseAccountManage(databaseType)
+        const accountNode: TreeNodeData | null = isDatabaseCapabilitySupported(
+          databaseType,
+          DatabaseCapability.ACCOUNT_MANAGEMENT,
+        )
           ? {
               key: treeConfig[TreeNodeType.DATABASE_ACCOUNTS].createTreeNodeKey!({ dataSourceId }),
               originalTitle: i18n('workspace.databaseAccount.title'),
@@ -266,6 +285,20 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
               extraParams,
             }
           : null;
+        const monitorNode = MONITOR_TREE_ITEMS.some(({ capability }) =>
+          isDatabaseCapabilitySupported(databaseType, capability),
+        )
+          ? createMonitorNode(extraParams)
+          : null;
+        const appendDataSourceNodes = (data: TreeNodeData[]) => {
+          if (monitorNode) {
+            data.push(monitorNode);
+          }
+          if (accountNode) {
+            data.push(accountNode);
+          }
+          return data;
+        };
         if (supportDatabase === false && supportSchema === false) {
           // No database or schema level at all (Firebird, IoTDB, ...): the
           // connection itself is the namespace, so show the object folders
@@ -315,10 +348,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
             },
             createSaveConsolesNode(nodeExtraParams),
           ];
-          if (accountNode) {
-            data.push(accountNode);
-          }
-          r(data);
+          r(appendDataSourceNodes(data));
           return;
         }
         if (supportDatabase === false) {
@@ -343,10 +373,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
                   },
                 };
               });
-              if (accountNode) {
-                data.push(accountNode);
-              }
-              r(data);
+              r(appendDataSourceNodes(data));
             })
             .catch(() => {
               j();
@@ -373,10 +400,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
                   },
                 };
               });
-              if (accountNode) {
-                data.push(accountNode);
-              }
-              r(data);
+              r(appendDataSourceNodes(data));
             })
             .catch(() => {
               j();
@@ -388,6 +412,29 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
       const { dataSourceId } = formatObject(params);
       return `dataSource_${dataSourceId}`;
     },
+  },
+
+  [TreeNodeType.MONITOR]: {
+    getChildren: (extraParams: any) => {
+      return Promise.resolve(
+        MONITOR_TREE_ITEMS.filter(({ capability }) =>
+          isDatabaseCapabilitySupported(extraParams.databaseType, capability),
+        ).map(({ treeNodeType, titleKey }) => ({
+          key: treeConfig[treeNodeType].createTreeNodeKey!(extraParams),
+          originalTitle: i18n(titleKey),
+          title: null,
+          treeNodeType,
+          isLeaf: true,
+          extraParams,
+        })),
+      );
+    },
+    createTreeNodeKey: (params) => createMonitorTreeNodeKey(params.dataSourceId),
+  },
+
+  [TreeNodeType.ACTIVE_TRANSACTIONS]: {
+    getChildren: () => Promise.resolve([]),
+    createTreeNodeKey: (params) => createActiveTransactionsTreeNodeKey(params.dataSourceId),
   },
 
   [TreeNodeType.DATABASE_ACCOUNTS]: {
@@ -599,7 +646,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
             },
             createSaveConsolesNode(nodeExtraParams),
           ];
-          if (isRedisTreeDataSource(databaseType)) {
+          if (isDatabaseCapabilitySupported(databaseType, DatabaseCapability.REDIS_TREE)) {
             finalData = redisData;
           }
           r(finalData);
@@ -701,7 +748,7 @@ export const treeConfig: { [key in TreeNodeType]: ITreeConfigItem } = {
         ];
 
         let finalData = data;
-        if (isMongodbTreeDataSource(databaseType)) {
+        if (isDatabaseCapabilitySupported(databaseType, DatabaseCapability.MONGODB_TREE)) {
           finalData = mongodbData;
         }
         r(finalData);

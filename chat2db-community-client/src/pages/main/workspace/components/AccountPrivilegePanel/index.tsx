@@ -393,6 +393,7 @@ const AccountPrivilegePanel = memo((props: IProps) => {
         dataSourceId: dataSourceId!,
         actionType: accountActionType,
         values,
+        currentAccount: selectedAccount,
       })).then(() => {
         setAccountModalOpen(false);
       });
@@ -622,7 +623,6 @@ const AccountPrivilegePanel = memo((props: IProps) => {
             <>
               <Form.Item name="authPlugin" label={i18n('workspace.databaseAccount.authenticationPlugin')}>
                 <Select
-                  allowClear
                   options={(capability?.authenticationPlugins || []).map((plugin) => ({
                     label: plugin,
                     value: plugin,

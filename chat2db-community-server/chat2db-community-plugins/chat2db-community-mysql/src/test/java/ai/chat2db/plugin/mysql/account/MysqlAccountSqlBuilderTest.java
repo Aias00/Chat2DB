@@ -53,7 +53,7 @@ class MysqlAccountSqlBuilderTest {
     }
 
     @Test
-    void displaySqlMasksPasswordButTokenUsesExecutableSql() {
+    void displaySqlMasksPassword() {
         AccountOperationRequest command = base(AccountActionTypeEnum.ALTER_PASSWORD);
         command.setPassword("p'a\\ss");
 
@@ -62,18 +62,6 @@ class MysqlAccountSqlBuilderTest {
 
         assertEquals("ALTER USER 'alice''s'@'10.0.%' IDENTIFIED BY '******'", displaySql);
         assertNotEquals(displaySql, executableSql);
-        assertEquals(
-                MysqlAccountSqlBuilder.previewToken(executableSql),
-                MysqlAccountSqlBuilder.previewToken(MysqlAccountSqlBuilder.buildSql(command))
-        );
-    }
-
-    @Test
-    void previewTokenChangesWhenSqlChanges() {
-        String first = MysqlAccountSqlBuilder.previewToken("GRANT SELECT ON *.* TO 'a'@'%'");
-        String second = MysqlAccountSqlBuilder.previewToken("GRANT UPDATE ON *.* TO 'a'@'%'");
-
-        assertNotEquals(first, second);
     }
 
     @Test
@@ -154,6 +142,15 @@ class MysqlAccountSqlBuilderTest {
     void alterAuthPluginRejectsUnsafePluginName() {
         AccountOperationRequest command = base(AccountActionTypeEnum.ALTER_AUTH_PLUGIN);
         command.setAuthPlugin("native_password; DROP USER root");
+        assertThrows(RuntimeException.class, () -> MysqlAccountSqlBuilder.buildSql(command));
+    }
+
+    @Test
+    void alterAuthPluginRequiresPasswordWhenPluginIsIncluded() {
+        AccountOperationRequest command = base(AccountActionTypeEnum.ALTER_AUTH_PLUGIN);
+        command.setAuthPlugin("caching_sha2_password");
+        command.setTlsRequirement("SSL");
+
         assertThrows(RuntimeException.class, () -> MysqlAccountSqlBuilder.buildSql(command));
     }
 

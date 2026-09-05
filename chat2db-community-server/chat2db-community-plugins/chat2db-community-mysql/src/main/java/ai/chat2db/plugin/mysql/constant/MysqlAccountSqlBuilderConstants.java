@@ -22,8 +22,6 @@ public final class MysqlAccountSqlBuilderConstants {
 
     public static final String ERROR_KEY_ACCOUNT_ACTION_UNSUPPORTED = "mysql.account.actionUnsupported";
     public static final String MASKED_PASSWORD_LITERAL = "'******'";
-    public static final String SHA_256_ALGORITHM = "SHA-256";
-    public static final String HEX_BYTE_FORMAT = "%02x";
     public static final String ERROR_KEY_ACCOUNT_USER_REQUIRED = "mysql.account.userRequired";
     public static final String ERROR_KEY_ACCOUNT_HOST_REQUIRED = "mysql.account.hostRequired";
     public static final String ERROR_KEY_ACCOUNT_IDENTIFIER_REQUIRED = "mysql.account.identifierRequired";
