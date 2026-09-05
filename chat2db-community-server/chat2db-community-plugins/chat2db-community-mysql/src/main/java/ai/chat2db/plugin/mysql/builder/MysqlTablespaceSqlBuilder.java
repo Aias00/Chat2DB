@@ -6,7 +6,6 @@ import ai.chat2db.plugin.mysql.identifier.MysqlIdentifierProcessor;
 import ai.chat2db.spi.sql.builder.ITablespaceSqlBuilder;
 import org.apache.commons.lang3.StringUtils;
 
-import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ALTER_TABLESPACE_ADD_DATAFILE_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_ALTER_TABLESPACE_RENAME_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_CREATE_TABLESPACE_TEMPLATE;
 import static ai.chat2db.plugin.mysql.constant.MysqlSqlConstants.SQL_DROP_TABLESPACE_TEMPLATE;
@@ -52,14 +51,6 @@ public class MysqlTablespaceSqlBuilder implements ITablespaceSqlBuilder {
         return String.format(SQL_ALTER_TABLESPACE_RENAME_TEMPLATE,
                 MysqlIdentifierProcessor.INSTANCE.quoteIdentifierAlways(oldName),
                 MysqlIdentifierProcessor.INSTANCE.quoteIdentifierAlways(newName));
-    }
-
-    @Override
-    public String buildAlterTablespaceAddDatafile(String tablespaceName, String dataFile) {
-        String name = MysqlSqlGuards.requireMysqlName(tablespaceName, "tablespace name");
-        String escapedDataFile = MysqlIdentifierProcessor.INSTANCE.escapeString(dataFile);
-        return String.format(SQL_ALTER_TABLESPACE_ADD_DATAFILE_TEMPLATE,
-                MysqlIdentifierProcessor.INSTANCE.quoteIdentifierAlways(name), escapedDataFile);
     }
 
     private String firstDataFile(Tablespace tablespace) {

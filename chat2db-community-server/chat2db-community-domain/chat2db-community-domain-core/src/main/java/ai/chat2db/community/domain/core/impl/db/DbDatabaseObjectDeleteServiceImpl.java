@@ -16,10 +16,12 @@ import ai.chat2db.community.domain.api.service.db.IDbDatabaseObjectDeleteService
 import ai.chat2db.community.domain.core.cache.CacheKey;
 import ai.chat2db.community.domain.core.cache.CacheManage;
 import ai.chat2db.community.domain.core.cache.MemoryCacheManage;
+import ai.chat2db.community.domain.core.impl.db.extension.MetadataAccessPolicyManager;
 import ai.chat2db.community.tools.exception.BusinessException;
 import ai.chat2db.spi.sql.Chat2DBContext;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
@@ -61,8 +63,17 @@ public class DbDatabaseObjectDeleteServiceImpl implements IDbDatabaseObjectDelet
 
     private final IDbConnectionContextService connectionContextService;
 
+    private final TablespaceMetadataAccessFilter tablespaceMetadataAccessFilter;
+
     public DbDatabaseObjectDeleteServiceImpl(IDbConnectionContextService connectionContextService) {
+        this(connectionContextService, new MetadataAccessPolicyManager(List.of()));
+    }
+
+    @Autowired
+    public DbDatabaseObjectDeleteServiceImpl(IDbConnectionContextService connectionContextService,
+                                              MetadataAccessPolicyManager metadataAccessPolicyManager) {
         this.connectionContextService = connectionContextService;
+        this.tablespaceMetadataAccessFilter = new TablespaceMetadataAccessFilter(metadataAccessPolicyManager);
     }
 
     @Override
@@ -170,7 +181,8 @@ public class DbDatabaseObjectDeleteServiceImpl implements IDbDatabaseObjectDelet
                     .sqlPreview(sqlPreview)
                     .objectType(TYPE_TABLESPACE)
                     .dbType(dbType)
-                    .occupyingTables(tablespace.getOccupyingTables())
+                    .occupyingTables(tablespaceMetadataAccessFilter.filterOccupyingTables(
+                            param.getDataSourceId(), dbType, tablespace.getOccupyingTables()))
                     .build();
         } catch (BusinessException e) {
             throw e;
@@ -220,7 +232,7 @@ public class DbDatabaseObjectDeleteServiceImpl implements IDbDatabaseObjectDelet
             return;
         }
         String cacheKey = CacheKey.getTablespacesKey(dataSourceId);
-        CacheManage.fuzzyDelete(cacheKey);
+        CacheManage.remove(cacheKey);
         MemoryCacheManage.remove(cacheKey);
     }
 

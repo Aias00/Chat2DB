@@ -51,6 +51,8 @@ assertCapability(DatabaseTypeCode.ORACLE, DatabaseCapability.ACCOUNT_MANAGEMENT,
 assertCapability(DatabaseTypeCode.MYSQL, DatabaseCapability.TABLESPACE_MANAGEMENT, true);
 assertCapability('mysql', DatabaseCapability.TABLESPACE_MANAGEMENT, true);
 assertCapability(DatabaseTypeCode.POSTGRESQL, DatabaseCapability.TABLESPACE_MANAGEMENT, false);
+assertCapability(DatabaseTypeCode.MYSQL, DatabaseCapability.ACTIVE_TRANSACTION_INSPECTION, true);
+assertCapability(DatabaseTypeCode.POSTGRESQL, DatabaseCapability.ACTIVE_TRANSACTION_INSPECTION, false);
 
 assertCapability(DatabaseTypeCode.MYSQL, DatabaseCapability.DATABASE_DELETE, true);
 assertCapability(DatabaseTypeCode.POSTGRESQL, DatabaseCapability.DATABASE_DELETE, true);

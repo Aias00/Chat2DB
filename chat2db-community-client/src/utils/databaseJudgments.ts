@@ -30,6 +30,9 @@ const databaseJudgments: Record<DatabaseCapability, DatabaseCapabilityJudgment> 
     implementedBy: [DatabaseTypeCode.MYSQL],
     normalizeDatabaseType: true,
   },
+  [DatabaseCapability.ACTIVE_TRANSACTION_INSPECTION]: {
+    implementedBy: [DatabaseTypeCode.MYSQL],
+  },
   [DatabaseCapability.DATABASE_DELETE]: {
     implementedBy: [DatabaseTypeCode.MYSQL, DatabaseTypeCode.POSTGRESQL],
   },

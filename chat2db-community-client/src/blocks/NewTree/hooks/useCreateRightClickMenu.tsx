@@ -63,6 +63,7 @@ import { DataSourceIdentityColorRequestRegistry } from '../dataSourceIdentityCol
 import DataSourceColorMenuItem from '../components/DataSourceColorMenuItem';
 import { withDataSourceColorMenuOption } from '../dataSourceColorMenu';
 import { isDangerousTreeOperation } from '../treeMenuDanger';
+import { createActiveTransactionsWorkspaceTabId } from '../monitorTree';
 
 export interface MenuLabelRenderContext {
   closeMenu: () => void;
@@ -126,6 +127,7 @@ export const canBeDoubleClicked = [
   TreeNodeType.TRIGGER,
   TreeNodeType.ALL_DATA,
   TreeNodeType.DATABASE_ACCOUNT,
+  TreeNodeType.ACTIVE_TRANSACTIONS,
   TreeNodeType.SAVE_CONSOLE,
 ];
 
@@ -475,6 +477,26 @@ export const useCreateRightClickMenu = () => {
         },
       },
 
+      [OperationColumn.ActiveTransactions]: {
+        text: i18n('workspace.ops.activeTransactions'),
+        icon: 'icon-file-text',
+        doubleClickTrigger: true,
+        handle: () => {
+          addWorkspaceTab({
+            id: createActiveTransactionsWorkspaceTabId(dataSourceId),
+            type: WorkspaceTabType.ActiveTransactions,
+            title: i18n('workspace.ops.activeTransactions'),
+            uniqueData: {
+              ...extraParams,
+            },
+          });
+        },
+        discard:
+          !hasPermission ||
+          !isDatabaseCapabilitySupported(databaseType, DatabaseCapability.ACTIVE_TRANSACTION_INSPECTION),
+        requiredOperations: ['SELECT'],
+      },
+
       [OperationColumn.CreateAccount]: {
         text: i18n('workspace.databaseAccount.createUser'),
         icon: 'icon-users',
@@ -518,6 +540,8 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.CreateTablespace]: {
         text: i18n('workspace.tablespace.create'),
         icon: 'icon-newdatabase',
+        discard: !hasPermission,
+        requiredOperations: ['CREATE'],
         handle: () => {
           tablespaceService
             .capability({ dataSourceId: dataSourceId! })
@@ -573,7 +597,8 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.RenameTablespace]: {
         text: i18n('workspace.tablespace.rename'),
         icon: 'icon-edit',
-        discard: tablespaceRenameSupported === false,
+        discard: !hasPermission || tablespaceRenameSupported === false,
+        requiredOperations: ['ALTER'],
         handle: () => {
           tablespaceService
             .capability({ dataSourceId: dataSourceId! })
@@ -631,6 +656,8 @@ export const useCreateRightClickMenu = () => {
       [OperationColumn.DeleteTablespace]: {
         text: i18n('workspace.tablespace.delete'),
         icon: 'icon-delete',
+        discard: !hasPermission,
+        requiredOperations: ['DROP'],
         handle: () => {
           openDeleteTablespaceModal();
         },

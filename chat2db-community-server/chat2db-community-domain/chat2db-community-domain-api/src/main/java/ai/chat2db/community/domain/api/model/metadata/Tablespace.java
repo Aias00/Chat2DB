@@ -34,9 +34,8 @@ public class Tablespace implements Serializable {
     private Long spaceId;
 
     /**
-     * Data-file path(s) from {@code INFORMATION_SCHEMA.FILES}. A general tablespace may have
-     * multiple files via {@code ALTER TABLESPACE ... ADD DATAFILE}. Null/empty when the user
-     * lacks the {@code PROCESS}/{@code FILE} privilege to read {@code FILES}.
+     * Data-file path from {@code INFORMATION_SCHEMA.FILES}. Null/empty when the user lacks the
+     * {@code PROCESS}/{@code FILE} privilege to read {@code FILES}.
      */
     @JsonAlias({"FILE_NAME", "dataFiles"})
     private List<String> dataFiles;

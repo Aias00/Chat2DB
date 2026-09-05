@@ -94,15 +94,6 @@ class MysqlTablespaceSqlBuilderTest {
     }
 
     @Test
-    void shouldBuildAlterTablespaceAddDatafile() {
-        MysqlTablespaceSqlBuilder builder = new MysqlTablespaceSqlBuilder();
-
-        String sql = builder.buildAlterTablespaceAddDatafile("ts_archive", "archive2.ibd");
-
-        assertEquals("ALTER TABLESPACE `ts_archive` ADD DATAFILE 'archive2.ibd' ENGINE = InnoDB", sql);
-    }
-
-    @Test
     void shouldRejectInvalidTablespaceName() {
         MysqlTablespaceSqlBuilder builder = new MysqlTablespaceSqlBuilder();
         Tablespace tablespace = Tablespace.builder()
@@ -186,6 +177,51 @@ class MysqlTablespaceSqlBuilderTest {
         String sql = builder.buildAlterTable(oldTable, newTable);
 
         assertTrue(sql.contains("TABLESPACE `ts_new`"), sql);
+    }
+
+    @Test
+    void shouldMoveTableBackToFilePerTableWhenTablespaceIsCleared() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table oldTable = Table.builder()
+                .databaseName("test_db")
+                .name("t1")
+                .columnList(List.of())
+                .indexList(List.of())
+                .tablespace("ts_old")
+                .build();
+        Table newTable = Table.builder()
+                .databaseName("test_db")
+                .name("t1")
+                .columnList(List.of())
+                .indexList(List.of())
+                .build();
+
+        String sql = builder.buildAlterTable(oldTable, newTable);
+
+        assertTrue(sql.contains("TABLESPACE innodb_file_per_table"), sql);
+    }
+
+    @Test
+    void shouldTreatTablespaceNamesAsCaseSensitive() {
+        MysqlSqlBuilder builder = new MysqlSqlBuilder();
+        Table oldTable = Table.builder()
+                .databaseName("test_db")
+                .name("t1")
+                .columnList(List.of())
+                .indexList(List.of())
+                .tablespace("ts_archive")
+                .build();
+        Table newTable = Table.builder()
+                .databaseName("test_db")
+                .name("t1")
+                .columnList(List.of())
+                .indexList(List.of())
+                .tablespace("TS_ARCHIVE")
+                .build();
+
+        String sql = builder.buildAlterTable(oldTable, newTable);
+
+        assertTrue(sql.contains("TABLESPACE `TS_ARCHIVE`"), sql);
     }
 
     @Test

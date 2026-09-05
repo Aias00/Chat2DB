@@ -122,11 +122,6 @@ public class DefaultSqlBuilder implements ISqlBuilder, IIdentifierSqlBuilder, ID
     }
 
     @Override
-    public String buildAlterTablespaceAddDatafile(String tablespaceName, String dataFile) {
-        throw unsupported(METHOD_BUILD_ALTER_TABLESPACE_ADD_DATAFILE);
-    }
-
-    @Override
     public String quoteIdentifier(String identifier) {
         return identifier;
     }

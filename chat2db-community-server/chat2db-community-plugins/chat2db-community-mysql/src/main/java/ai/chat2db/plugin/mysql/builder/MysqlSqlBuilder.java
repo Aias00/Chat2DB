@@ -184,10 +184,12 @@ public class MysqlSqlBuilder extends DefaultSqlBuilder {
         if (!Objects.equals(oldTable.getIncrementValue(), newTable.getIncrementValue())) {
             script.append(SQLConstants.TAB).append(SQL_AUTO_INCREMENT_ASSIGNMENT).append(newTable.getIncrementValue()).append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
-        if (StringUtils.isNotBlank(newTable.getTablespace())
-                && !StringUtils.equalsIgnoreCase(oldTable.getTablespace(), newTable.getTablespace())) {
+        if (!Objects.equals(oldTable.getTablespace(), newTable.getTablespace())) {
+            String targetTablespace = StringUtils.isBlank(newTable.getTablespace())
+                    ? "innodb_file_per_table"
+                    : quoteMysqlIdentifier(newTable.getTablespace());
             script.append(SQLConstants.TAB).append(SQL_TABLESPACE)
-                    .append(quoteMysqlIdentifier(newTable.getTablespace()))
+                    .append(targetTablespace)
                     .append(SQLConstants.COMMA_LINE_SEPARATOR);
         }
         List<TableColumn> addColumnList = new ArrayList<>();

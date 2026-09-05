@@ -20,10 +20,4 @@ public interface ITablespaceSqlBuilder {
      */
     String buildRenameTablespace(String oldTablespaceName, String newTablespaceName);
 
-    /**
-     * Adds a data file to an existing tablespace. The data-file path is user-supplied and
-     * belongs to the MySQL server filesystem; it is emitted verbatim (escaped) and never
-     * validated or canonicalized by the application.
-     */
-    String buildAlterTablespaceAddDatafile(String tablespaceName, String dataFile);
 }

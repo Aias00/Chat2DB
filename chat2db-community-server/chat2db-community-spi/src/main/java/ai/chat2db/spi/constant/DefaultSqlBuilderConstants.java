@@ -30,9 +30,6 @@ public final class DefaultSqlBuilderConstants {
     public static final String METHOD_BUILD_CREATE_TABLESPACE = "buildCreateTablespace";
     public static final String METHOD_BUILD_DROP_TABLESPACE = "buildDropTablespace";
     public static final String METHOD_BUILD_RENAME_TABLESPACE = "buildRenameTablespace";
-    public static final String METHOD_BUILD_ALTER_TABLESPACE_ADD_DATAFILE =
-            "buildAlterTablespaceAddDatafile";
-
     public static final String SQL_AND = SQLConstants.SQL_AND;
     public static final String SQL_AND_2 = SQLConstants.SQL_AND_LOWER;
     public static final String SQL_COMMENT_COLUMN = SQLConstants.COMMENT_ON_COLUMN_SQL_PREFIX;

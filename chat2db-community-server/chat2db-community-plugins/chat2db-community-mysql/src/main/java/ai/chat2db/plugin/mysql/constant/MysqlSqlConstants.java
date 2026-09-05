@@ -13,8 +13,6 @@ public final class MysqlSqlConstants {
     public static final String SQL_ACCOUNT_UNLOCK = " ACCOUNT UNLOCK";
     public static final String SQL_ALGORITHM = "ALGORITHM = ";
     public static final String SQL_AFTER = " AFTER ";
-    public static final String SQL_ALTER_TABLESPACE_ADD_DATAFILE_TEMPLATE =
-            "ALTER TABLESPACE %s ADD DATAFILE '%s' ENGINE = InnoDB";
     public static final String SQL_ALTER_TABLESPACE_RENAME_TEMPLATE =
             "ALTER TABLESPACE %s RENAME TO %s";
     public static final String SQL_ALTER_USER = "ALTER USER ";
