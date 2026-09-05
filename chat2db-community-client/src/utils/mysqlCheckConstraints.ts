@@ -7,9 +7,12 @@ const CHECK_CONSTRAINT_MIN_VERSION = [8, 0, 16] as const;
 export function isMysqlCheckConstraintsSupported(
   databaseType?: DatabaseTypeCode | string | null,
   dbVersion?: string | null,
-) {
+): boolean | undefined {
   if (databaseType !== DatabaseTypeCode.MYSQL) {
     return false;
+  }
+  if (!dbVersion) {
+    return undefined;
   }
   const parts = String(dbVersion || '')
     .match(/\d+/g)
@@ -24,6 +27,13 @@ export function isMysqlCheckConstraintsSupported(
     }
   }
   return true;
+}
+
+export function resolveMysqlCheckConstraintTab(currentTab: string, supported: boolean | undefined) {
+  if (currentTab === 'check' && supported === false) {
+    return 'column';
+  }
+  return currentTab;
 }
 
 export function isSafeMysqlCheckExpression(expression?: string | null) {

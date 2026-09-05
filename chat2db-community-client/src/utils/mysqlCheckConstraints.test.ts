@@ -6,15 +6,23 @@ import {
   hasEnforcedCheckConstraintChange,
   isMysqlCheckConstraintsSupported,
   isSafeMysqlCheckExpression,
+  resolveMysqlCheckConstraintTab,
   validateMysqlCheckConstraints,
 } from './mysqlCheckConstraints';
 
+assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MYSQL, null), undefined);
 assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MYSQL, '8.0.16'), true);
 assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MYSQL, '8.0.34-commercial'), true);
 assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MYSQL, '5.7.44'), false);
 assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MYSQL, '8.0.15'), false);
 assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MYSQL, 'unknown'), false);
 assert.equal(isMysqlCheckConstraintsSupported(DatabaseTypeCode.MARIADB, '10.11.0'), false);
+
+let requestedTab = resolveMysqlCheckConstraintTab('check', undefined);
+assert.equal(requestedTab, 'check');
+requestedTab = resolveMysqlCheckConstraintTab(requestedTab, true);
+assert.equal(requestedTab, 'check');
+assert.equal(resolveMysqlCheckConstraintTab('check', false), 'column');
 
 assert.equal(isSafeMysqlCheckExpression("`status` IN ('active', 'inactive') AND age >= 0"), true);
 assert.equal(isSafeMysqlCheckExpression("email IS NOT NULL OR name = 'anonymous'"), true);

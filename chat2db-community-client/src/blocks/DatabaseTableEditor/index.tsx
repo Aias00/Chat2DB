@@ -20,6 +20,7 @@ import {
   hasCheckConstraintRecreation,
   hasEnforcedCheckConstraintChange,
   isMysqlCheckConstraintsSupported,
+  resolveMysqlCheckConstraintTab,
   validateMysqlCheckConstraints,
 } from '@/utils/mysqlCheckConstraints';
 
@@ -143,8 +144,9 @@ export default memo((props: IProps) => {
   }, [contentList]);
 
   useEffect(() => {
-    if (!checkConstraintsSupported && currentTab === 'check') {
-      setCurrentTab('column');
+    const nextTab = resolveMysqlCheckConstraintTab(currentTab, checkConstraintsSupported);
+    if (nextTab !== currentTab) {
+      setCurrentTab(nextTab);
     }
   }, [checkConstraintsSupported, currentTab]);
 
