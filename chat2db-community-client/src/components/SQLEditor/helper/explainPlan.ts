@@ -22,6 +22,10 @@ export interface ParsedExplainPlan {
 
 const EMPTY_VALUE = '-';
 
+export function isExplainActionDisabled(hasEditorContent: boolean, unsupported: boolean, loading: boolean) {
+  return !hasEditorContent || unsupported || loading;
+}
+
 export function parseExplainPlan(mode: ExplainPlanMode, rawPlan?: string | null): ParsedExplainPlan {
   const rawText = rawPlan || '';
   if (mode === 'analyze') {

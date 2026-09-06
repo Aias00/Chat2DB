@@ -15,6 +15,7 @@ import org.apache.commons.lang3.StringUtils;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,8 @@ public class MysqlExplainManager implements IExplainManager {
     private static final String ERROR_KEY_ONLY_SELECT = "sql.explain.onlySelect";
     private static final String ERROR_KEY_UNSUPPORTED = "sql.explain.unsupported";
     private static final String ERROR_KEY_ANALYZE_UNSUPPORTED = "sql.explain.analyzeUnsupported";
+    private static final String ERROR_KEY_PERMISSION_DENIED = "sql.explain.permissionDenied";
+    private static final String ERROR_KEY_EXECUTE_FAILED = "sql.explain.executeFailed";
     private static final String MODE_JSON = "json";
     private static final String MODE_ANALYZE = "analyze";
 
@@ -141,6 +144,13 @@ public class MysqlExplainManager implements IExplainManager {
                 }
                 return null;
             }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (SQLException e) {
+            if (isPermissionDenied(e)) {
+                throw new BusinessException(ERROR_KEY_PERMISSION_DENIED, null, e);
+            }
+            throw new BusinessException(ERROR_KEY_EXECUTE_FAILED, new Object[]{e.getMessage()}, e);
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {
@@ -152,6 +162,13 @@ public class MysqlExplainManager implements IExplainManager {
 
     private static String trustedExplainSql(String sql) {
         return new String(sql.toCharArray());
+    }
+
+    private static boolean isPermissionDenied(SQLException exception) {
+        return switch (exception.getErrorCode()) {
+            case 1044, 1045, 1142, 1143, 1227, 1370 -> true;
+            default -> false;
+        };
     }
 
     private static ExplainRequestKey requestKey(String requestId, ConnectInfo connectInfo) {

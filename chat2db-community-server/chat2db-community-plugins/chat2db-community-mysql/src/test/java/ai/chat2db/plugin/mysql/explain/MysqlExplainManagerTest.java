@@ -92,6 +92,42 @@ class MysqlExplainManagerTest {
     }
 
     @Test
+    void reportsExplainPermissionFailuresAsActionableBusinessErrors() {
+        JdbcPlanFixture jdbc = new JdbcPlanFixture("{}");
+        SQLException denied = new SQLException("SELECT command denied", "42000", 1142);
+        jdbc.failExecuteWith(denied);
+        ConnectInfo connectInfo = mysqlContext("8.0.36", 1L, 1L, "test-user");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> manager.explainJson(jdbc.connection(), connectInfo, "8.0.36",
+                        "SELECT * FROM obj002_orders", "req-denied"));
+
+        assertEquals("sql.explain.permissionDenied", exception.getCode());
+        assertEquals(denied, exception.getCause());
+    }
+
+    @Test
+    void preservesDuplicateRequestBusinessError() throws Exception {
+        JdbcPlanFixture first = new JdbcPlanFixture("first");
+        first.blockExecute();
+        ConnectInfo context = mysqlContext("8.0.36", 7L, 11L, "alice");
+        var executor = Executors.newSingleThreadExecutor();
+        var future = executor.submit(() -> manager.executeExplain(
+                first.connection(), "EXPLAIN FORMAT=JSON SELECT 1", "req-duplicate", context));
+
+        assertTrue(first.awaitExecute(), "first request should be active");
+        JdbcPlanFixture duplicate = new JdbcPlanFixture("duplicate");
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> manager.executeExplain(duplicate.connection(),
+                        "EXPLAIN FORMAT=JSON SELECT 1", "req-duplicate", context));
+
+        assertEquals("sql.explain.requestAlreadyRunning", exception.getCode());
+        first.releaseExecute();
+        assertEquals("first", future.get(2, TimeUnit.SECONDS));
+        executor.shutdownNow();
+    }
+
+    @Test
     void cancelInterruptsActiveExplainStatement() throws Exception {
         JdbcPlanFixture jdbc = new JdbcPlanFixture("cancelled");
         jdbc.blockExecute();
@@ -132,6 +168,7 @@ class MysqlExplainManagerTest {
         private final CountDownLatch executeEntered = new CountDownLatch(1);
         private final CountDownLatch releaseExecute = new CountDownLatch(1);
         private boolean blockExecute;
+        private SQLException executeFailure;
 
         private JdbcPlanFixture(String explainValue) {
             this.explainValue = explainValue;
@@ -182,11 +219,18 @@ class MysqlExplainManagerTest {
             if (cancelled.get()) {
                 throw new SQLException("SQL execution canceled");
             }
+            if (executeFailure != null) {
+                throw executeFailure;
+            }
             return true;
         }
 
         private void blockExecute() {
             blockExecute = true;
+        }
+
+        private void failExecuteWith(SQLException exception) {
+            executeFailure = exception;
         }
 
         private boolean awaitExecute() throws InterruptedException {

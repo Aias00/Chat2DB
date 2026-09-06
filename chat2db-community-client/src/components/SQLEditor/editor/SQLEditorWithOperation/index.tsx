@@ -918,6 +918,9 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
     }
 
     const runExplain = async () => {
+      if (activeExplainRequestRef.current) {
+        return;
+      }
       const controller = new AbortController();
       explainAbortRef.current = controller;
       activeExplainRequestIdRef.current = requestId;
@@ -1369,6 +1372,7 @@ const SQLEditorWithOperation = forwardRef<ISQLEditorWithOperationRef, ISQLEditor
           setDBInfo={setDBInfo}
           contentDiffEnabled={enableContentDiffHints}
           explainCapability={explainCapability}
+          explainLoading={explainModal.loading}
           action={handleAction}
         />
       )}

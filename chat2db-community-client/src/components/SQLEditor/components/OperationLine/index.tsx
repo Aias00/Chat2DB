@@ -13,6 +13,7 @@ import { useZoerStore } from '@/store/zoer';
 import { isTemporaryId } from '@/utils';
 import { buildConsoleDefaultTabName } from '@/store/workspace/utils/consoleTabName';
 import type { IExplainCapability } from '@/service/sql';
+import { isExplainActionDisabled } from '../../helper/explainPlan';
 
 interface OperationLineProps {
   active: boolean;
@@ -24,6 +25,7 @@ interface OperationLineProps {
   isConsole?: boolean;
   contentDiffEnabled?: boolean;
   explainCapability?: IExplainCapability | null;
+  explainLoading?: boolean;
 }
 
 const OperationLine = ({
@@ -36,6 +38,7 @@ const OperationLine = ({
   isConsole = true,
   contentDiffEnabled = false,
   explainCapability,
+  explainLoading = false,
 }: OperationLineProps) => {
   const { styles, cx } = useStyles();
 
@@ -169,7 +172,7 @@ const OperationLine = ({
               className={styles.operatingButtonIcon}
               code="icon-sort-ascending1"
               size="sm"
-              disabled={shouldDisableActionButton || disableExplainJson}
+              disabled={isExplainActionDisabled(hasEditorContent, disableExplainJson, explainLoading)}
               title={
                 disableExplainJson
                   ? i18n('common.explain.jsonUnsupported')
@@ -181,7 +184,7 @@ const OperationLine = ({
               className={styles.operatingButtonIcon}
               code="icon-play1"
               size="sm"
-              disabled={shouldDisableActionButton || disableExplainAnalyze}
+              disabled={isExplainActionDisabled(hasEditorContent, disableExplainAnalyze, explainLoading)}
               title={
                 disableExplainAnalyze
                   ? i18n('common.explain.analyzeUnsupported')

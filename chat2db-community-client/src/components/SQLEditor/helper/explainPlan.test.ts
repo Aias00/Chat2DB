@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { displayMetric, parseExplainPlan } from './explainPlan';
+import { displayMetric, isExplainActionDisabled, parseExplainPlan } from './explainPlan';
 
 const mysqlJsonPlan = JSON.stringify({
   query_block: {
@@ -68,5 +68,9 @@ assert.ok(invalidJson.parseError);
 assert.equal(displayMetric(undefined), '-');
 assert.equal(displayMetric([]), '-');
 assert.equal(displayMetric(['idx_a', 'idx_b']), 'idx_a, idx_b');
+assert.equal(isExplainActionDisabled(true, false, false), false);
+assert.equal(isExplainActionDisabled(true, false, true), true);
+assert.equal(isExplainActionDisabled(true, true, false), true);
+assert.equal(isExplainActionDisabled(false, false, false), true);
 
 console.log('explainPlan tests passed');
