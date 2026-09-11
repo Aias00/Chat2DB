@@ -12,11 +12,11 @@ import { useSize } from 'ahooks';
 import VirtualList, { type ListRef } from 'rc-virtual-list';
 import { useStyles } from './style';
 import { Progress, Spin } from 'antd';
+import { staticMessage } from '@chat2db/ui';
 import importExportServices from '@/service/importExport';
 import { ImportExportTaskDetails, ImportExportTaskEvent } from '@/typings/importExport';
 import { ACTIVE_TASK_STATUSES, ImportExportTaskStatus } from '@/constants/importExport';
 import i18n from '@/i18n';
-import { staticMessage } from '@chat2db/ui';
 import { useImportExportStore } from '@/store/importExport';
 import {
   mergeTaskEvents,
@@ -37,6 +37,18 @@ interface ScrollRestore {
   scrollTop: number;
 }
 
+const getTaskDetailsErrorMessage = (error: unknown): string => {
+  if (error && typeof error === 'object') {
+    if ('errorMessage' in error && typeof error.errorMessage === 'string' && error.errorMessage.trim()) {
+      return error.errorMessage;
+    }
+    if ('message' in error && typeof error.message === 'string' && error.message.trim()) {
+      return error.message;
+    }
+  }
+  return typeof error === 'string' && error.trim() ? error : i18n('common.text.failure');
+};
+
 const Log = (props: IProps) => {
   const { taskId } = props;
   const { styles } = useStyles();
@@ -52,7 +64,6 @@ const Log = (props: IProps) => {
   const eventsRef = useRef<ImportExportTaskEvent[]>([]);
   const hasOlderEventsRef = useRef(false);
   const loadingOlderRef = useRef(false);
-  const taskDetailsFailureNotifiedRef = useRef(false);
   const taskGenerationRef = useRef(0);
   const scrollRestoreRef = useRef<ScrollRestore>();
   const viewportSize = useSize(viewportContainerRef);
@@ -68,6 +79,7 @@ const Log = (props: IProps) => {
 
   useEffect(() => {
     let active = true;
+    let taskDetailsFailureNotified = false;
     const generation = ++taskGenerationRef.current;
     let latestSequence = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -97,16 +109,16 @@ const Log = (props: IProps) => {
         details = await importExportServices.getTaskDetails({ taskId });
       } catch (error) {
         if (!active) return;
-        if (!taskDetailsFailureNotifiedRef.current) {
-          taskDetailsFailureNotifiedRef.current = true;
-          staticMessage.error((error as any)?.message || i18n('common.text.failure'));
+        if (!taskDetailsFailureNotified) {
+          taskDetailsFailureNotified = true;
+          staticMessage.error(getTaskDetailsErrorMessage(error));
         }
-        if (active) timer = setTimeout(poll, 1500);
+        timer = setTimeout(poll, 1500);
         return;
       }
       if (!active) return;
 
-      taskDetailsFailureNotifiedRef.current = false;
+      taskDetailsFailureNotified = false;
       setTaskDetails(details);
       onTaskChangeRef.current?.(details);
 
@@ -159,7 +171,6 @@ const Log = (props: IProps) => {
       } catch {
         if (!active) return;
         setEventsLoadFailed(true);
-        taskDetailsFailureNotifiedRef.current = false;
         timer = setTimeout(initialize, 1500);
       }
     };
