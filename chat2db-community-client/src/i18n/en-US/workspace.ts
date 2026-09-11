@@ -158,7 +158,7 @@ export default {
   'workspace.task.events': 'Execution log',
   'workspace.task.events.unit': 'events',
   'workspace.task.events.empty': 'No activity yet',
-  'workspace.task.events.loadFailed': 'Unable to load the execution log. Retrying...',
+  'workspace.task.events.loadFailed': 'Unable to load the execution log. Reopen the log to try again.',
   'workspace.task.event.taskCreated': 'Task created',
   'workspace.task.event.taskStarted': 'Task started',
   'workspace.task.event.taskSucceeded': 'Task completed successfully',

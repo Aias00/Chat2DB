@@ -151,7 +151,7 @@ export default {
   'workspace.task.events': '执行日志',
   'workspace.task.events.unit': '条',
   'workspace.task.events.empty': '暂无执行日志',
-  'workspace.task.events.loadFailed': '执行日志加载失败，正在重试...',
+  'workspace.task.events.loadFailed': '执行日志加载失败，请重新打开日志。',
   'workspace.task.event.taskCreated': '任务已创建',
   'workspace.task.event.taskStarted': '任务已开始',
   'workspace.task.event.taskSucceeded': '任务执行完成',

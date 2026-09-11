@@ -79,7 +79,6 @@ const Log = (props: IProps) => {
 
   useEffect(() => {
     let active = true;
-    let taskDetailsFailureNotified = false;
     const generation = ++taskGenerationRef.current;
     let latestSequence = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -109,21 +108,16 @@ const Log = (props: IProps) => {
         details = await importExportServices.getTaskDetails({ taskId });
       } catch (error) {
         if (!active) return;
-        if (!taskDetailsFailureNotified) {
-          taskDetailsFailureNotified = true;
-          staticMessage.error(getTaskDetailsErrorMessage(error));
-        }
-        timer = setTimeout(poll, 1500);
+        setEventsLoadFailed(true);
+        staticMessage.error(getTaskDetailsErrorMessage(error));
         return;
       }
       if (!active) return;
 
-      taskDetailsFailureNotified = false;
       setTaskDetails(details);
       onTaskChangeRef.current?.(details);
 
       let newEvents: ImportExportTaskEvent[] = [];
-      let eventsLoaded = true;
       try {
         newEvents = await importExportServices.getTaskEvents({
           taskId,
@@ -131,19 +125,20 @@ const Log = (props: IProps) => {
           limit: TASK_EVENT_PAGE_SIZE,
         });
       } catch {
-        eventsLoaded = false;
+        if (active) setEventsLoadFailed(true);
+        return;
       }
       if (!active) return;
 
-      setEventsLoadFailed(!eventsLoaded);
-      if (eventsLoaded && newEvents.length) {
+      setEventsLoadFailed(false);
+      if (newEvents.length) {
         latestSequence = Math.max(latestSequence, ...newEvents.map((event) => event.sequence));
         updateEvents(newEvents);
       }
 
-      const hasMoreNewEvents = eventsLoaded && newEvents.length === TASK_EVENT_PAGE_SIZE;
-      if (hasMoreNewEvents || ACTIVE_TASK_STATUSES.includes(details.status) || !eventsLoaded) {
-        timer = setTimeout(poll, hasMoreNewEvents ? 0 : eventsLoaded ? 1000 : 1500);
+      const hasMoreNewEvents = newEvents.length === TASK_EVENT_PAGE_SIZE;
+      if (hasMoreNewEvents || ACTIVE_TASK_STATUSES.includes(details.status)) {
+        timer = setTimeout(poll, hasMoreNewEvents ? 0 : 1000);
         return;
       }
       getTaskList();
@@ -171,7 +166,7 @@ const Log = (props: IProps) => {
       } catch {
         if (!active) return;
         setEventsLoadFailed(true);
-        timer = setTimeout(initialize, 1500);
+        setInitialLoading(false);
       }
     };
 
@@ -270,7 +265,7 @@ const Log = (props: IProps) => {
   if (initialLoading || !taskDetails) {
     return (
       <div className={styles.loading}>
-        <Spin size="large" />
+        {initialLoading && <Spin size="large" />}
         <span>{eventsLoadFailed ? i18n('workspace.task.events.loadFailed') : i18n('common.text.loading')}</span>
       </div>
     );

@@ -157,7 +157,7 @@ export default {
   'workspace.task.events': '실행 로그',
   'workspace.task.events.unit': '건',
   'workspace.task.events.empty': '실행 로그가 없습니다',
-  'workspace.task.events.loadFailed': '실행 로그를 불러올 수 없습니다. 다시 시도하는 중...',
+  'workspace.task.events.loadFailed': '실행 로그를 불러올 수 없습니다. 로그를 다시 열어 주세요.',
   'workspace.task.event.taskCreated': '작업이 생성되었습니다',
   'workspace.task.event.taskStarted': '작업이 시작되었습니다',
   'workspace.task.event.taskSucceeded': '작업이 완료되었습니다',

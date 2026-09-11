@@ -156,7 +156,7 @@ export default {
   'workspace.task.events': '実行ログ',
   'workspace.task.events.unit': '件',
   'workspace.task.events.empty': '実行ログはありません',
-  'workspace.task.events.loadFailed': '実行ログを読み込めません。再試行しています...',
+  'workspace.task.events.loadFailed': '実行ログを読み込めません。ログを開き直して再度お試しください。',
   'workspace.task.event.taskCreated': 'タスクを作成しました',
   'workspace.task.event.taskStarted': 'タスクを開始しました',
   'workspace.task.event.taskSucceeded': 'タスクが正常に完了しました',

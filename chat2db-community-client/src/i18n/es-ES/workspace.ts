@@ -158,7 +158,7 @@ export default {
   'workspace.task.events': 'Registro de ejecución',
   'workspace.task.events.unit': 'eventos',
   'workspace.task.events.empty': 'Aún no hay registros',
-  'workspace.task.events.loadFailed': 'No se pudo cargar el registro de ejecución. Reintentando...',
+  'workspace.task.events.loadFailed': 'No se pudo cargar el registro de ejecución. Vuelve a abrirlo para intentarlo de nuevo.',
   'workspace.task.event.taskCreated': 'Tarea creada',
   'workspace.task.event.taskStarted': 'Tarea iniciada',
   'workspace.task.event.taskSucceeded': 'Tarea completada correctamente',
