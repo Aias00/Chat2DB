@@ -5,6 +5,7 @@ import ai.chat2db.community.domain.api.config.DriverConfig;
 import ai.chat2db.community.domain.api.enums.parser.IdentifierTypeEnum;
 import ai.chat2db.community.domain.api.enums.parser.SqlTypeEnum;
 import ai.chat2db.community.domain.api.enums.parser.StatementValidTypeEnum;
+import ai.chat2db.community.domain.api.model.db.SimpleColumn;
 import ai.chat2db.community.domain.api.model.metadata.Table;
 import ai.chat2db.community.domain.api.model.metadata.TableColumn;
 import ai.chat2db.community.domain.api.model.parser.position.TokenPosition;
@@ -14,6 +15,7 @@ import ai.chat2db.community.domain.api.model.parser.statement.create.CreateTable
 import ai.chat2db.community.domain.api.model.parser.token.Identifier;
 import ai.chat2db.community.domain.api.model.request.sql.DbSqlContextParserRequest;
 import ai.chat2db.community.domain.core.cache.CacheKey;
+import ai.chat2db.community.domain.core.cache.CacheManage;
 import ai.chat2db.community.domain.core.cache.MemoryCacheManage;
 import ai.chat2db.community.domain.api.service.db.ISqlBatchHandler;
 import ai.chat2db.community.domain.api.service.task.ITaskProgressListener;
@@ -30,7 +32,7 @@ import ai.chat2db.spi.sql.Chat2DBContext;
 import org.antlr.v4.runtime.Token;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -39,7 +41,6 @@ import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -54,12 +55,13 @@ class SqlParserMetadataCacheKeyTest {
     private static final String IDENTIFIER_SCHEMA = "identifier_schema";
     private static final String TABLE_NAME = "orders";
 
+    private final List<TableMetadataRequest> columnRequests = new ArrayList<>();
     private IPlugin previousPlugin;
     private ISqlSyntaxPlugin previousSyntaxPlugin;
 
     @BeforeEach
     void setUp() throws Exception {
-        AtomicReference<TableMetadataRequest> capturedRequest = new AtomicReference<>();
+        clearCaches();
         DBConfig config = new DBConfig();
         config.setDbType(DB_TYPE);
         config.setSupportDatabase(true);
@@ -73,7 +75,7 @@ class SqlParserMetadataCacheKeyTest {
 
             @Override
             public List<TableColumn> columns(Connection connection, TableMetadataRequest request) {
-                capturedRequest.set(request);
+                columnRequests.add(request);
                 return List.of(TableColumn.builder()
                         .name("id")
                         .databaseName(request.getDatabaseName())
@@ -91,16 +93,12 @@ class SqlParserMetadataCacheKeyTest {
         connectInfo.setDriverConfig(config.getDefaultDriverConfig());
         connectInfo.setConnection(connection());
         Chat2DBContext.putContext(connectInfo);
-        CapturedRequestHolder.REQUEST = capturedRequest;
     }
 
     @AfterEach
     void tearDown() throws Exception {
         Chat2DBContext.removeContext();
-        CapturedRequestHolder.REQUEST = null;
-        MemoryCacheManage.remove(CacheKey.getTableKey(DATA_SOURCE_ID, CONSOLE_DATABASE, CONSOLE_SCHEMA));
-        MemoryCacheManage.remove(CacheKey.getColumnKey(DATA_SOURCE_ID, IDENTIFIER_DATABASE, IDENTIFIER_SCHEMA, TABLE_NAME));
-        MemoryCacheManage.remove(CacheKey.getConsoleParserKey(DATA_SOURCE_ID, CONSOLE_ID));
+        clearCaches();
         if (previousPlugin == null) {
             Chat2DBContext.PLUGIN_MAP.remove(DB_TYPE);
         } else {
@@ -113,7 +111,7 @@ class SqlParserMetadataCacheKeyTest {
         }
     }
 
-    @Test
+    @RepeatedTest(2)
     void tableColumnLoaderUsesIdentifierDatabaseAndSchemaForCrossDatabaseReference() {
         DbSqlContextParserRequest request = new DbSqlContextParserRequest();
         request.setDataSourceId(DATA_SOURCE_ID);
@@ -122,10 +120,22 @@ class SqlParserMetadataCacheKeyTest {
         request.setSchemaName(CONSOLE_SCHEMA);
         request.setSql("select * from identifier_db.identifier_schema.orders");
 
-        new DbSqlParserServiceImpl().contextParser(request);
-
-        TableMetadataRequest captured = CapturedRequestHolder.REQUEST.get();
-        assertEquals(new TableMetadataRequest(IDENTIFIER_DATABASE, IDENTIFIER_SCHEMA, TABLE_NAME), captured);
+        DbSqlParserServiceImpl service = new DbSqlParserServiceImpl();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            var statements = service.contextParser(request).getSqlStatementList();
+            assertEquals(1, statements.size());
+            var mappings = statements.get(0).getTableColumns();
+            assertEquals(1, mappings.size());
+            List<SimpleColumn> columns = mappings.get(0).getSimpleColumns();
+            assertEquals(1, columns.size());
+            SimpleColumn column = columns.get(0);
+            assertEquals("id", column.getColumnName());
+            assertEquals(IDENTIFIER_DATABASE, column.getDatabaseName());
+            assertEquals(IDENTIFIER_SCHEMA, column.getSchemaName());
+            assertEquals(TABLE_NAME, column.getTableName());
+            assertEquals(List.of(new TableMetadataRequest(IDENTIFIER_DATABASE, IDENTIFIER_SCHEMA, TABLE_NAME)),
+                    columnRequests);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -242,7 +252,9 @@ class SqlParserMetadataCacheKeyTest {
         }
     }
 
-    private static final class CapturedRequestHolder {
-        private static AtomicReference<TableMetadataRequest> REQUEST;
+    private static void clearCaches() {
+        MemoryCacheManage.remove(CacheKey.getTableKey(DATA_SOURCE_ID, CONSOLE_DATABASE, CONSOLE_SCHEMA));
+        MemoryCacheManage.remove(CacheKey.getConsoleParserKey(DATA_SOURCE_ID, CONSOLE_ID));
+        CacheManage.fuzzyDelete(CacheKey.getSchemasKey(DATA_SOURCE_ID, IDENTIFIER_DATABASE) + "_");
     }
 }
