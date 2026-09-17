@@ -53,7 +53,6 @@ import java.util.stream.Collectors;
 
 
 @Slf4j
-// Chat2DB is an SQL console; this class is the intentional boundary for complete user-authored statements.
 public class DefaultSQLExecutor implements ICommandExecutor {
 
     private static final int STREAMING_ROW_BATCH_SIZE = 200;
@@ -72,8 +71,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
 
 
     public <R> R execute(Connection connection, String sql, IResultSetFunction<R> function) {
-        // Complete SQL-console statements cannot be represented as prepared-statement values.
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             boolean query = stmt.execute();
             if (query) {
@@ -82,7 +79,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                 }
             }
         } catch (Exception e) {
-            log.error("execute failed, sqlLength={}", sqlLength(sql), e);
+            log.error("execute:{}", sql, e);
             throw new RuntimeException(e);
         }
         return null;
@@ -97,13 +94,13 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                 }
             }
         } catch (Exception e) {
-            log.error("execute failed, sqlLength={}", sqlLength(sql), e);
+            log.error("execute:{}", sql, e);
             throw new RuntimeException(e);
         }
     }
 
     public <R> R preExecute(Connection connection, String sql, String[] parameters, IResultSetFunction<R> function) {
-        log.info("execute, sqlLength={}", sqlLength(sql));
+        log.info("execute:{}", sql);
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);
@@ -121,7 +118,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
     }
 
     public void preExecute(Connection connection, String sql, String[] parameters, IResultSetConsumer consumer) {
-        log.info("execute, sqlLength={}", sqlLength(sql));
+        log.info("execute:{}", sql);
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             for (int i = 0; i < parameters.length; i++) {
                 stmt.setString(i + 1, parameters[i]);
@@ -222,7 +219,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
             }
         } catch (SQLException e) {
             checkTaskCancellation(cancellationChecker);
-            log.error("execute failed, sqlLength={}", sqlLength(sql), e);
+            log.error("execute:{}", sql, e);
             throw new RuntimeException(e);
         } finally {
             notifyStatementClosed(statementListener, stmt);
@@ -276,7 +273,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             int affectedRows = stmt.executeUpdate();
             if (affectedRows != n) {
-                log.info("Update row-count mismatch, sqlLength={}, affectedRows={}", sqlLength(sql), affectedRows);
+                log.info("Update error {} update affectedRows = {}", sql, affectedRows);
             }
         }
         return executeResult;
@@ -307,8 +304,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         ExecuteResponse executeResult = ExecuteResponse.builder().sql(sql).success(Boolean.TRUE).build();
         checkTaskCancellation(cancellationChecker);
         PreparedStatement statementToNotify = null;
-        // Complete SQL-console statements cannot be represented as prepared-statement values.
-        // codeql[java/sql-injection]
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             statementToNotify = stmt;
             notifyStatementCreated(statementListener, stmt);
@@ -952,7 +947,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("Execute paged sql failed, sqlLength={}", sqlLength(buildPageLimit), e);
+                    log.error("Execute sql: {} exception", buildPageLimit, e);
                 }
             }
         }
@@ -1033,7 +1028,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("Execute paged sql failed, sqlLength={}", sqlLength(buildPageLimit), e);
+                    log.error("Execute sql: {} exception", buildPageLimit, e);
                 }
             }
         }
@@ -1524,7 +1519,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
             try {
                 sqlStatement = SQLUtils.parseSingleStatement(originalSql, dbType);
             } catch (Exception e) {
-                log.warn("Failed to parse sql, sqlLength={}", sqlLength(originalSql), e);
+                log.warn("Failed to parse sql: {}", originalSql, e);
             }
         }
         if (!supportDruid || (sqlStatement instanceof SQLSelectStatement)) {
@@ -1591,7 +1586,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
                     .count(count)
                     .build());
         } catch (SQLException e) {
-            log.error("Execute sql failed, sqlLength={}", sqlLength(sql), e);
+            log.error("Execute sql: {} exception", sql, e);
             executeResult = ExecuteResponse.builder()
                     .sql(sql)
                     .success(Boolean.FALSE)
@@ -1627,7 +1622,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
             }
         } catch (Exception e) {
             checkTaskCancellation(cancellationChecker);
-            log.error("execute failed, sqlLength={}", sqlLength(sql), e);
+            log.error("execute error:{}", sql, e);
             throw new RuntimeException(e);
         }
     }
@@ -1707,7 +1702,7 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         }
         if (failure != null) {
             checkTaskCancellation(cancellationChecker);
-            log.error("Failed to fetch table records, sqlLength={}", sqlLength(sql), failure);
+            log.error("Failed to fetch table records. Query: {}", sql, failure);
             throw new RuntimeException(failure);
         }
     }
@@ -1764,10 +1759,6 @@ public class DefaultSQLExecutor implements ICommandExecutor {
         if (cancellationChecker != null) {
             cancellationChecker.run();
         }
-    }
-
-    private static int sqlLength(String sql) {
-        return sql == null ? 0 : sql.length();
     }
 
     private void notifyStatementCreated(ISqlExecutionStatementListener statementListener, Statement statement) {

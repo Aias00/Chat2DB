@@ -65,7 +65,7 @@ public class OpsOperationSavedController {
      * @return data result containing long.
      */
     @PostMapping("/create")
-    public DataResult<Long> create(@Valid @RequestBody Operation request) {
+    public DataResult<Long> create(@RequestBody Operation request) {
         return DataResult.of(operationSavedService.createConsole(request));
     }
 
@@ -78,7 +78,7 @@ public class OpsOperationSavedController {
      * @return operation result for the request.
      */
     @RequestMapping(value = "/update", method = {RequestMethod.POST, RequestMethod.PUT})
-    public ActionResult update(@Valid @RequestBody Operation request) {
+    public ActionResult update(@RequestBody Operation request) {
         operationSavedService.updateConsole(request);
         return ActionResult.isSuccess();
     }

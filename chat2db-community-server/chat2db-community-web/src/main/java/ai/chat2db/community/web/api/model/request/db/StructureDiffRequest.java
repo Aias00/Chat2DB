@@ -1,7 +1,6 @@
 package ai.chat2db.community.web.api.model.request.db;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -18,7 +17,6 @@ public class StructureDiffRequest {
     public static class StructureInfo {
         @NotNull
         private Long dataSourceId;
-        @NotBlank
         private String databaseName;
         private String schemaName;
     }

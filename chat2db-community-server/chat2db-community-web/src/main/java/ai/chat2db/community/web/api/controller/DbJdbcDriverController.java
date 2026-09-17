@@ -8,6 +8,7 @@ import ai.chat2db.community.tools.wrapper.result.ActionResult;
 import ai.chat2db.community.tools.wrapper.result.DataResult;
 import ai.chat2db.community.tools.wrapper.result.ListResult;
 import ai.chat2db.community.web.api.converter.driver.JdbcDriverConverter;
+import ai.chat2db.community.web.api.model.request.driver.JdbcDriverDeleteRequest;
 import ai.chat2db.community.web.api.model.request.driver.JdbcDriverRequest;
 import ai.chat2db.community.web.api.model.response.driver.DriverResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -103,7 +104,7 @@ public class DbJdbcDriverController {
      * @return operation result for the request.
      */
     @DeleteMapping("/delete")
-    public ActionResult delete(@Valid @RequestBody JdbcDriverRequest request) {
+    public ActionResult delete(@Valid @RequestBody JdbcDriverDeleteRequest request) {
         jdbcDriverService.deleteCustomDriver(request.getDbType(), request.getJdbcDriver());
         return ActionResult.isSuccess();
     }
